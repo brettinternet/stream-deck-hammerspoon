@@ -1,0 +1,214 @@
+# Stream Deck–Hammerspoon bridge architecture
+
+## Purpose and scope
+
+This repository defines an official Elgato Stream Deck plugin that bridges configured Stream Deck keys to reusable Hammerspoon Lua actions over an authenticated loopback WebSocket. The bridge keeps Stream Deck presentation and device lifecycle on the plugin side, and keeps action registration, callbacks, and action-specific behavior on the Hammerspoon side.
+
+This document is the architecture contract for protocol v1 and the first vertical slice. It describes process boundaries and locked decisions; it is not a promise of features outside that slice.
+
+## Ownership and coexistence
+
+The Stream Deck application and the official plugin own all Stream Deck-facing concerns:
+
+- the plugin UUID is `com.brettinternet.hammerspoon`;
+- the one keypad action UUID is `com.brettinternet.hammerspoon.action`;
+- device connection, key lifecycle events, titles, state, icons, and per-instance settings stay in the official plugin;
+- the property inspector uses the official Stream Deck UI WebSocket and custom `sendToPlugin` events;
+- the compiled plugin is installed and managed as an Elgato `.sdPlugin`.
+
+Hammerspoon owns the local bridge server and reusable Lua API. Hammerspoon does not become a Stream Deck plugin, does not access Stream Deck hardware directly, and does not own the Stream Deck property inspector. A Hammerspoon reload may restart the bridge, but it does not change Stream Deck ownership.
+
+This is deliberately distinct from `hs.streamdeck`: **`hs.streamdeck` is not used, imported, implemented, or treated as a compatibility layer.** The only Hammerspoon integration in this contract is the reusable `hammerspoon/streamdeck/` Lua module and its `hs.httpserver` WebSocket endpoint. Coexistence means the official plugin remains the sole Stream Deck integration while Hammerspoon supplies the action runtime behind a local authenticated connection.
+
+Relevant upstream references:
+
+- [Elgato Stream Deck SDK: Getting Started](https://docs.elgato.com/streamdeck/sdk/introduction/getting-started) (SDK 2.0.0; Node 24+ and Stream Deck 7.1+ for new development).
+- [Elgato Stream Deck SDK: property inspectors](https://docs.elgato.com/streamdeck/sdk/guides/ui).
+- [Hammerspoon `hs.httpserver`](https://www.hammerspoon.org/docs/hs.httpserver.html), including `setInterface`, `setPort`, `websocket`, `start`, and `stop`.
+
+## Monorepo layout
+
+The repository has one Bun workspace/package at the root. The required tree is:
+
+```text
+.
+├── package.json                         # Bun workspace/package root
+├── mise.toml                            # pinned Bun, Node, and Lua runtimes
+├── plugin/
+│   ├── package.json                     # plugin package
+│   ├── src/                             # TypeScript source
+│   └── com.brettinternet.hammerspoon.sdPlugin/
+│       ├── bin/                         # compiled plugin output
+│       ├── imgs/                         # distributed icons/assets
+│       ├── ui/                           # property inspector assets
+│       └── manifest.json                 # official plugin manifest
+├── hammerspoon/
+│   └── streamdeck/                       # reusable Lua bridge/API
+├── protocol/
+│   └── schema/                           # canonical protocol JSON Schema
+├── docs/
+│   └── architecture.md
+└── backlog/                              # present only when the Backlog.md CLI supports it
+```
+
+The source tree and the compiled `.sdPlugin` tree are separate. The compiled directory is the artifact Stream Deck consumes; TypeScript source remains under `plugin/src/`. Protocol schemas are not copied into either runtime as a second source of truth. The `backlog/` node is conditional per the repository bootstrap contract, not a runtime dependency.
+
+## Components and process boundaries
+
+```text
+Stream Deck device
+        │ device events and presentation commands
+        ▼
+Stream Deck application
+        │ official plugin lifecycle / plugin WebSocket
+        ▼
+TypeScript plugin process (plugin/)
+        │ authenticated protocol-v1 WebSocket, localhost:17321 by default
+        ▼
+Hammerspoon hs.httpserver endpoint
+        │ strict protocol validation and instance registry
+        ▼
+Lua bridge (hammerspoon/streamdeck/)
+        │ registered action callback/context
+        ▼
+User Hammerspoon action code
+```
+
+The property inspector is a separate official Stream Deck UI surface. It communicates with the plugin through the official UI WebSocket and custom `sendToPlugin` events. The plugin owns the selected `actionId` in Stream Deck per-instance settings; the inspector does not connect to Hammerspoon directly.
+
+The runtime flow is:
+
+1. Hammerspoon starts a server on loopback (`localhost`) and the fixed default port `17321`; Bonjour is disabled.
+2. The plugin reads the runtime token file and opens one WebSocket connection.
+3. The plugin's first protocol message is `hello`, containing the shared token and `pluginVersion`.
+4. Hammerspoon rejects every other message until a valid `hello` is acknowledged with `helloAck`.
+5. The plugin requests the action registry with `listActions`; the response is the correlated `actions` message.
+6. Stream Deck instance lifecycle events become `instanceAppeared` and `instanceDisappeared`; key presses become `keyDown` events. Appearance refreshes become `requestAppearance`.
+7. Lua computes presentation and sends `appearance`, or sends an asynchronous `error` with a safe code/message.
+8. The plugin applies the v1 `title` and `state` to the Stream Deck key. `showOk`/`showAlert` are feedback only when the callback result warrants them.
+
+Every protocol message has `protocolVersion: 1` and a `type`. Unknown fields are ignored. Malformed messages and unknown types are rejected. TypeScript validates against the canonical JSON Schema with Ajv; Lua mirrors strict required/type checks because it cannot execute that JSON Schema directly.
+
+## Identity and state ownership
+
+- **Plugin identity:** `com.brettinternet.hammerspoon` identifies the official plugin.
+- **Action identity:** `com.brettinternet.hammerspoon.action` is the single generic keypad action UUID. It is not one UUID per Lua action.
+- **Lua action identity:** each registered Lua definition has an explicit, stable `actionId`. Duplicate IDs are rejected. Titles, key positions, and array order are never identifiers.
+- **Instance identity:** each configured Stream Deck key is represented by its Stream Deck-provided `instanceId`. The plugin retains visible instance metadata; the Lua registry keeps independent contexts keyed by instance identity. Multiple instances may select the same or different stable Lua `actionId`s.
+- **Settings:** the property inspector stores the selected `actionId` in Stream Deck per-instance settings. The plugin uses that setting when sending lifecycle and key events.
+- **Context:** a Lua action context is per instance. `context:refresh()` and `context:getSettings()` operate on that instance's state; one instance cannot silently mutate another instance's context.
+
+Identity is explicit across the boundary: an instance identifies a configured key, while an `actionId` identifies registered Lua behavior. Reconnect resends instance identity; it does not create new action IDs or infer identity from presentation.
+
+## First vertical slice
+
+The first slice is one complete path, not a collection of disconnected scaffolds:
+
+1. Register one Lua action with an explicit `actionId` and protected callbacks.
+2. Start the Hammerspoon bridge, create/read the `~/.hammerspoon/streamdeck-token` file as needed, and listen on authenticated loopback WebSocket port `17321`.
+3. Start the official plugin, authenticate with `hello`/`helloAck`, and obtain the action registry through correlated `listActions`/`actions`.
+4. Configure one generic Stream Deck keypad instance through the plain TypeScript/HTML property inspector; persist its selected `actionId` in Stream Deck settings.
+5. Send that instance's `instanceAppeared` event and receive its computed `appearance`.
+6. Render the returned title and state (`0` or `1`) using built-in placeholder icon assets.
+7. Press the key, route `keyDown` to the selected Lua action, and apply the resulting appearance/feedback.
+8. Stop or reload Hammerspoon, observe the plugin's disconnected title, reconnect, authenticate again, and synchronize all visible instances and their appearances.
+
+The v1 appearance contract is only `title` and `state`. The property inspector has action registry/status behavior but no dynamic forms. `showOk` and `showAlert` are not unconditional success indicators; they are emitted only when the callback result warrants feedback.
+
+## Lifecycle and reconnect
+
+### Startup and shutdown
+
+`register(definition)` adds a stable Lua action definition and rejects duplicate IDs. `start(options)` binds the server to loopback, disables Bonjour, applies the default port when no port is supplied, and begins accepting the plugin connection. `stop()` closes the server. `refresh(actionId)` refreshes all relevant appearances for an action, while `context:refresh()` refreshes one instance context. Callbacks are protected with `xpcall`; callback failure becomes a safe asynchronous protocol error rather than an uncaught bridge failure.
+
+The Hammerspoon server accepts one WebSocket client because of `hs.httpserver` limitations. That is sufficient for one local Stream Deck plugin process and is an explicit v1 limit. Because `hs.httpserver:websocket` exposes message callbacks rather than HTTP upgrade headers or a rich connection lifecycle, authentication is a first-message protocol exchange, not a WebSocket header. Unauthenticated messages are rejected.
+
+### Reconnect synchronization
+
+The plugin uses bounded exponential backoff with jitter: 250 ms initially, doubling to a 10 s maximum. A successful authenticated `helloAck` resets the backoff. While disconnected, the plugin retains visible instance metadata in TypeScript and marks titles `Hammerspoon Offline`.
+
+After a new authenticated connection, the plugin performs synchronization in this order:
+
+1. request the current action registry (`listActions`);
+2. resend `instanceAppeared` for every visible instance;
+3. request appearance for every visible instance (`requestAppearance`).
+
+`instanceAppeared` computes normal initial appearance. `requestAppearance` exists separately for refresh and reconnect resynchronization. A Hammerspoon reload drops its registry and instance contexts and starts a new server; the plugin's reconnect path repopulates the server from the visible Stream Deck instances. Stale or unknown instance/action IDs are reported as safe asynchronous errors and do not authorize a fallback action.
+
+### Token lifecycle
+
+The default token path is `~/.hammerspoon/streamdeck-token`. Lua creates it from two UUIDs and applies file mode `0600`; the plugin reads this runtime file. The token is sent only in `hello`, is never logged, and is never included in Stream Deck settings. If the token cannot be read or accepted, the plugin remains disconnected with actionable status; it never falls back to unauthenticated operation.
+
+## Current limitations and roadmap boundary
+
+Current v1 limitations are intentional:
+
+- one local plugin client, one fixed default port, and first-message authentication;
+- loopback transport only; no remote clients, Bonjour discovery, or unauthenticated mode;
+- raw token file permissions may interact with Stream Deck plugin sandbox/file-permission behavior;
+- title and binary state are the only appearance fields;
+- placeholder icons only; no dynamic presentation schema or dynamic property-inspector forms;
+- no direct Stream Deck hardware API from Lua, raw Lua evaluation, polling, or separate daemon;
+- hardware/property-inspector completion cannot be automated without a connected Stream Deck and active inspector; fake transports and official CLI validation cover core bridge behavior, with manual end-to-end verification required.
+
+The roadmap boundary is the locked protocol-v1 first slice above. Additional appearance fields, dynamic forms, more clients, richer connection authentication, or other phase-3-and-later behavior require a new contract and decision; they must not be inferred from this architecture document. No implementation claim is made for those later possibilities.
+
+## Decision records
+
+Each record is intentionally short but complete. Reversibility describes what can change without silently changing the v1 contract.
+
+### ADR-001: WebSocket instead of polling
+
+- **Problem:** The plugin must deliver key/lifecycle events and receive appearance changes promptly without a background polling loop or an extra daemon.
+- **Choice:** Use one authenticated WebSocket from the TypeScript plugin to Hammerspoon's `hs.httpserver:websocket` on loopback.
+- **Alternatives:** HTTP polling; a separate local daemon; direct Stream Deck hardware access from Hammerspoon.
+- **Tradeoffs / consequences:** WebSocket gives event delivery and a single bidirectional channel, but `hs.httpserver` exposes message callbacks rather than upgrade headers/rich connection lifecycle. Authentication therefore occurs in the first protocol message, and the server is effectively single-client. Loopback and fixed port simplify discovery but exclude remote clients.
+- **Reversibility:** The transport boundary can be replaced only by a new protocol/transport decision. The message types, identities, and auth semantics should remain the migration contract; v1 does not support polling as a fallback.
+
+### ADR-002: One shared token for the loopback bridge
+
+- **Problem:** A local port must reject unrelated clients while the transport lacks a usable authenticated upgrade-header hook.
+- **Choice:** Share one runtime token through `~/.hammerspoon/streamdeck-token`; Lua creates it from two UUIDs with mode `0600`, and the plugin sends it only in `hello`.
+- **Alternatives:** No authentication; a token in Stream Deck settings; an HTTP/WebSocket header; OS-specific credential/keychain integration.
+- **Tradeoffs / consequences:** The file is simple, inspectable, and shared by both processes, but plugin sandbox/file permissions may vary. A missing, unreadable, or invalid token produces an actionable disconnected state. The token is never logged or persisted in per-instance settings, and unauthenticated fallback is prohibited.
+- **Reversibility:** Token storage or rotation can be changed behind the `hello` authentication contract. Removing authentication or exposing the token in settings would be a breaking security decision, not a compatible tweak.
+
+### ADR-003: Declarative presentation from Lua
+
+- **Problem:** Lua actions need to control key presentation without coupling Hammerspoon code to Stream Deck APIs or device details.
+- **Choice:** Lua returns declarative `appearance` data; the plugin renders v1 `title` and `state`, with `showOk`/`showAlert` feedback only when warranted.
+- **Alternatives:** Imperative device commands in Lua; plugin-owned polling of Lua state; a presentation DSL or dynamic form system in v1.
+- **Tradeoffs / consequences:** The boundary is small, testable, and preserves official plugin ownership. It limits v1 to title and binary state and requires malformed appearances to be rejected. Rendering and action behavior remain separate, so appearance can be refreshed without pressing a key.
+- **Reversibility:** New appearance fields can be added as a versioned schema extension. Changing existing field meaning or moving rendering responsibility to Lua requires a protocol and ownership decision.
+
+### ADR-004: One generic action UUID
+
+- **Problem:** Lua users can register many actions without rebuilding or publishing a new Stream Deck action for each one.
+- **Choice:** Ship one keypad action UUID, `com.brettinternet.hammerspoon.action`; the selected stable Lua `actionId` is stored in per-instance settings.
+- **Alternatives:** One Stream Deck UUID per Lua action; a generated action manifest; hard-coded action names inferred from titles.
+- **Tradeoffs / consequences:** The plugin and manifest stay stable and the Lua registry remains extensible, but the property inspector must present the action registry and report unavailable IDs. Explicit IDs are required; titles and positions cannot identify behavior.
+- **Reversibility:** Additional Stream Deck action UUIDs can coexist in a later manifest, but changing the existing UUID or settings identity requires migration and is not reversible within v1.
+
+### ADR-005: Bun monorepo with separated source and artifact trees
+
+- **Problem:** Plugin TypeScript, compiled Stream Deck files, reusable Lua, protocol schema, and documentation need one reproducible repository boundary without mixing process-owned files.
+- **Choice:** Use a root Bun workspace/package. Keep source under `plugin/`, the compiled artifact under `plugin/com.brettinternet.hammerspoon.sdPlugin/`, Lua under `hammerspoon/streamdeck/`, schema under `protocol/schema/`, docs under `docs/`, and Backlog.md data under `backlog/` only when supported.
+- **Alternatives:** Separate repositories; a plugin-only repository with Lua elsewhere; putting compiled files beside source; a Node package manager instead of Bun.
+- **Tradeoffs / consequences:** One repository makes protocol and cross-process changes reviewable together and preserves an exact packaging boundary. It requires contributors to respect source-versus-artifact ownership and the pinned mise runtimes (Bun 1.3.14, Node 24.18.0, Lua 5.4.8).
+- **Reversibility:** Directory ownership can be split later through a deliberate repository migration. Moving files ad hoc would break build/package boundaries and is not a v1-compatible change.
+
+### ADR-006: JSON Schema owns the protocol contract
+
+- **Problem:** TypeScript and Lua must agree on message shape while only TypeScript can directly use a JSON Schema validator.
+- **Choice:** Make `protocol/schema/` the canonical protocol source of truth. TypeScript validates with Ajv; Lua mirrors strict required/type checks. Conformance examples/tests detect drift.
+- **Alternatives:** TypeScript types as the sole source; Lua validation as the sole source; handwritten prose only; generated code with no canonical schema.
+- **Tradeoffs / consequences:** A machine-readable contract enables consistent rejection of malformed/unknown messages and supports independent implementations, but Lua's mirror checks must be kept aligned. Unknown fields remain ignored, while malformed messages and unknown types are rejected.
+- **Reversibility:** Validator libraries or generated bindings can change without changing the wire contract. Moving schema ownership or changing required fields requires a protocol version/decision and coordinated plugin/Lua migration.
+
+### ADR-007: Explicit reconnect synchronization
+
+- **Problem:** Hammerspoon reloads can discard registries and instance contexts, while the Stream Deck plugin still knows which keys are visible; reconnect must restore a coherent state without polling.
+- **Choice:** Retain visible instance metadata in the plugin, show `Hammerspoon Offline`, reconnect with bounded jittered backoff, authenticate again, request actions, resend every visible `instanceAppeared`, and request every visible appearance.
+- **Alternatives:** Recreate only the last pressed key; wait for a future key press; continuously poll; let Lua persist stale instances across reloads.
+- **Tradeoffs / consequences:** Replay is deterministic and repairs a fresh Lua registry, and separating `instanceAppeared` from `requestAppearance` avoids conflating registration with refresh. It can generate a burst of replay traffic for many visible keys and depends on explicit stable IDs; stale IDs become safe errors rather than guessed actions.
+- **Reversibility:** Backoff parameters and synchronization batching can change without changing identity semantics. Removing replay, retaining stale Lua state, or making polling a fallback would change the lifecycle contract and requires a new decision.
