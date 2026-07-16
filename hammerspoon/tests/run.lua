@@ -463,7 +463,11 @@ test("session rotation rejects stale and missing clients before invocation", fun
     name = "Sessions",
     appearance = function() return { title = "Session", state = "active" } end,
     press = function() pressed = pressed + 1 end,
-    disappear = function() disappeared = disappeared + 1 end,
+    disappear = function(context)
+      disappeared = disappeared + 1
+      context:refresh()
+      error("expected teardown failure")
+    end,
   })
 
   withTokenPath(function(path)
@@ -480,6 +484,7 @@ test("session rotation rejects stale and missing clients before invocation", fun
       pluginVersion = "restarted-plugin",
     }))
     assertEqual(restarted[1].type, "helloAck")
+    assertEqual(#restarted, 1, "old-context teardown must not emit into the new session")
     assertTrue(restarted[1].sessionId ~= oldSession, "plugin restart must rotate the session")
     assertEqual(disappeared, 1, "rotating a session must clear old contexts")
 

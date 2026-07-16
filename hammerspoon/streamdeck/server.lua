@@ -197,6 +197,8 @@ function server.new(registry, protocol, contextFactory)
         self:_queueError("INTERNAL")
         return
       end
+      self:_clearInstances()
+      self.responseQueue = {}
       self.sessionId = sessionId
       self.authenticated = true
       self:_queue({
@@ -204,7 +206,6 @@ function server.new(registry, protocol, contextFactory)
         type = "helloAck",
         sessionId = sessionId,
       })
-      self:_clearInstances()
       return
     end
 
