@@ -1,0 +1,349 @@
+import { describe, expect, test } from "bun:test";
+import { BridgeClient } from "../src/bridge";
+
+type Listener = (event?: unknown) => void;
+
+class FakeSocket {
+  static readonly OPEN = 1;
+  static readonly CLOSED = 3;
+  readyState = 0;
+  sent: string[] = [];
+  closeCalls = 0;
+  onopen?: Listener;
+  onmessage?: Listener;
+  onclose?: Listener;
+  onerror?: Listener;
+  private listeners = new Map<string, Set<Listener>>();
+
+  on(event: string, listener: Listener): this {
+    let listeners = this.listeners.get(event);
+    if (!listeners) {
+      listeners = new Set();
+      this.listeners.set(event, listeners);
+    }
+    listeners.add(listener);
+    return this;
+  }
+
+  once(event: string, listener: Listener): this {
+    const wrapped: Listener = (value) => {
+      this.off(event, wrapped);
+      listener(value);
+    };
+    return this.on(event, wrapped);
+  }
+
+  off(event: string, listener: Listener): this {
+    this.listeners.get(event)?.delete(listener);
+    return this;
+  }
+
+  addEventListener(event: string, listener: Listener): void {
+    this.on(event, listener);
+  }
+
+  removeEventListener(event: string, listener: Listener): void {
+    this.off(event, listener);
+  }
+
+  send(frame: string): void {
+    this.sent.push(frame);
+  }
+
+  open(): void {
+    this.readyState = FakeSocket.OPEN;
+    this.emit("open");
+  }
+
+  receive(frame: string): void {
+    this.emit("message", frame);
+  }
+
+  peerClose(): void {
+    this.readyState = FakeSocket.CLOSED;
+    this.emit("close", { code: 1000 });
+  }
+
+  close(): void {
+    this.closeCalls += 1;
+    this.readyState = FakeSocket.CLOSED;
+    this.emit("close", { code: 1000 });
+  }
+
+  private emit(event: string, value?: unknown): void {
+    const property = {
+      open: this.onopen,
+      message: this.onmessage,
+      close: this.onclose,
+      error: this.onerror,
+    }[event];
+    property?.(value);
+    for (const listener of this.listeners.get(event) ?? []) listener(value);
+  }
+}
+
+class ManualTimers {
+  private nextId = 1;
+  private callbacks = new Map<number, { delay: number; callback: () => void }>();
+
+  readonly setTimeout = (callback: () => void, delay: number): number => {
+    const id = this.nextId++;
+    this.callbacks.set(id, { callback, delay });
+    return id;
+  };
+
+  readonly clearTimeout = (id: number): void => {
+    this.callbacks.delete(id);
+  };
+
+  delays(): number[] {
+    return [...this.callbacks.values()].map(({ delay }) => delay);
+  }
+
+  runNext(): void {
+    const entry = this.callbacks.entries().next().value as
+      | [number, { callback: () => void; delay: number }]
+      | undefined;
+    if (!entry) return;
+    this.callbacks.delete(entry[0]);
+    entry[1].callback();
+  }
+  runAll(): void {
+    while (this.callbacks.size > 0) this.runNext();
+  }
+}
+
+async function flush(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+function makeClient(
+  sockets: FakeSocket[],
+  timers = new ManualTimers(),
+  token = "shared-token",
+) {
+  const client = new BridgeClient({
+    url: "ws://127.0.0.1:17321/stream",
+    tokenPath: "/tmp/streamdeck-token",
+    pluginVersion: "1.0.0",
+    createSocket: () => {
+      const socket = new FakeSocket();
+      sockets.push(socket);
+      return socket;
+    },
+    readToken: async () => token,
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+    random: () => 0.5,
+  });
+  return { client, timers };
+}
+
+function frames(socket: FakeSocket): Array<Record<string, unknown>> {
+  return socket.sent.map((frame) => JSON.parse(frame) as Record<string, unknown>);
+}
+
+
+async function authenticate(socket: FakeSocket): Promise<string> {
+  await flush();
+  socket.open();
+  expect(frames(socket).at(-1)).toMatchObject({ type: "hello", token: "shared-token" });
+  socket.receive(JSON.stringify({ protocolVersion: 1, type: "helloAck" }));
+  const request = frames(socket).find((frame) => frame.type === "listActions");
+  expect(request).toBeDefined();
+  return request!.requestId as string;
+}
+
+function completeActions(socket: FakeSocket, requestId: string, actionId = "com.example.action"): void {
+  socket.receive(
+    JSON.stringify({
+      protocolVersion: 1,
+      type: "actions",
+      requestId,
+      actions: [{ actionId, name: "Example action" }],
+    }),
+  );
+}
+
+describe("BridgeClient authentication and transport", () => {
+  test("authenticates before requesting actions and publishes the registry", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets);
+    const statuses: string[] = [];
+    const registries: unknown[] = [];
+    client.on("status", (status) => statuses.push(status as string));
+    client.on("actions", (actions) => registries.push(actions));
+
+    client.start();
+    expect(client.status).toBe("connecting");
+    await flush();
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0].sent).toHaveLength(0);
+
+    const requestId = await authenticate(sockets[0]);
+    expect(client.status).toBe("connected");
+    completeActions(sockets[0], requestId);
+
+    expect(client.status).toBe("connected");
+    expect(client.actions).toEqual([{ actionId: "com.example.action", name: "Example action" }]);
+    expect(registries).toEqual([[{ actionId: "com.example.action", name: "Example action" }]]);
+    expect(statuses).toContain("authenticating");
+    expect(statuses).toContain("connected");
+  });
+
+  test("rejects application responses before authentication and invalid server frames", async () => {
+    const preAuthSockets: FakeSocket[] = [];
+    const preAuth = makeClient(preAuthSockets);
+    const preAuthErrors: unknown[] = [];
+    preAuth.client.on("protocolError", (error) => preAuthErrors.push(error));
+
+    preAuth.client.start();
+    await flush();
+    preAuthSockets[0].open();
+    preAuthSockets[0].receive(JSON.stringify({ protocolVersion: 1, type: "actions", requestId: "early", actions: [] }));
+    expect(preAuthErrors).toHaveLength(1);
+    expect(preAuth.client.status).not.toBe("connected");
+    preAuth.client.stop();
+
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets);
+    const errors: unknown[] = [];
+    client.on("protocolError", (error) => errors.push(error));
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+    sockets[0].receive(JSON.stringify({ protocolVersion: 1, type: "appearance", instanceId: "", actionId: "a", title: "bad", state: 0 }));
+    sockets[0].receive("{");
+    expect(errors).toHaveLength(2);
+  });
+
+  test("fails closed when the token is missing", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets, new ManualTimers(), "");
+
+    client.start();
+    await flush();
+
+    expect(client.status).toBe("disconnected");
+    expect(sockets).toHaveLength(0);
+  });
+});
+
+describe("BridgeClient reconnect and synchronization", () => {
+  test("uses bounded exponential reconnect delays and resets after helloAck", async () => {
+    const sockets: FakeSocket[] = [];
+    const timers = new ManualTimers();
+    const { client } = makeClient(sockets, timers);
+    client.start();
+    await flush();
+
+    const delays: number[] = [];
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      sockets.at(-1)!.peerClose();
+      delays.push(timers.delays()[0]);
+      timers.runNext();
+      await flush();
+      expect(sockets.at(-1)).toBeDefined();
+    }
+
+    expect(delays).toEqual([...delays].sort((a, b) => a - b));
+    expect(Math.max(...delays)).toBeLessThanOrEqual(10_000);
+
+    const requestId = await authenticate(sockets.at(-1)!);
+    completeActions(sockets.at(-1)!, requestId);
+    sockets.at(-1)!.peerClose();
+    expect(timers.delays()[0]).toBe(delays[0]);
+  });
+
+  test("requests a fresh registry and replays every visible instance after reconnect", async () => {
+    const sockets: FakeSocket[] = [];
+    const timers = new ManualTimers();
+    const { client } = makeClient(sockets, timers);
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+
+    client.upsertInstance({ instanceId: "instance-1", actionId: "com.example.action", settings: { actionId: "com.example.action" } });
+    const firstConnectedFrames = frames(sockets[0]);
+    expect(firstConnectedFrames.at(-1)).toMatchObject({ type: "instanceAppeared", instanceId: "instance-1" });
+
+    sockets[0].peerClose();
+    timers.runNext();
+    await flush();
+    const reconnect = sockets[1];
+    const reconnectRequestId = await authenticate(reconnect);
+    completeActions(reconnect, reconnectRequestId);
+
+    const replay = frames(reconnect).filter((frame) => ["instanceAppeared", "requestAppearance"].includes(frame.type as string));
+    expect(replay).toEqual([
+      expect.objectContaining({ type: "instanceAppeared", instanceId: "instance-1", actionId: "com.example.action" }),
+      expect.objectContaining({ type: "requestAppearance", instanceId: "instance-1", actionId: "com.example.action" }),
+    ]);
+  });
+});
+
+describe("BridgeClient instance lifecycle", () => {
+  test("keeps two instances independent and drops stale input and appearance", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets);
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+
+    client.upsertInstance({ instanceId: "instance-1", actionId: "com.example.action", settings: { actionId: "com.example.action" } });
+    client.upsertInstance({ instanceId: "instance-2", actionId: "com.example.action", settings: { actionId: "com.example.action" } });
+    client.removeInstance("instance-1", "com.example.action");
+    client.keyDown("instance-1", "com.example.action");
+    client.keyDown("instance-2", "com.example.action");
+
+    const lifecycle = frames(sockets[0]).filter((frame) => ["instanceAppeared", "instanceDisappeared", "keyDown"].includes(frame.type as string));
+    expect(lifecycle).toEqual([
+      expect.objectContaining({ type: "instanceAppeared", instanceId: "instance-1" }),
+      expect.objectContaining({ type: "instanceAppeared", instanceId: "instance-2" }),
+      expect.objectContaining({ type: "instanceDisappeared", instanceId: "instance-1" }),
+      expect.objectContaining({ type: "keyDown", instanceId: "instance-2" }),
+    ]);
+
+    const appearances: unknown[] = [];
+    client.on("appearance", (value) => appearances.push(value));
+    sockets[0].receive(JSON.stringify({ protocolVersion: 1, type: "appearance", instanceId: "instance-1", actionId: "com.example.action", title: "stale", state: 1 }));
+    sockets[0].receive(JSON.stringify({ protocolVersion: 1, type: "appearance", instanceId: "instance-2", actionId: "com.example.action", title: "live", state: 1 }));
+    expect(appearances).toEqual([
+      expect.objectContaining({ instanceId: "instance-2", title: "live" }),
+    ]);
+  });
+
+  test("ignores empty frames but reports malformed non-empty frames", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets);
+    const errors: unknown[] = [];
+    client.on("protocolError", (error) => errors.push(error));
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+
+    sockets[0].receive("");
+    expect(errors).toHaveLength(0);
+    sockets[0].receive("not json");
+    expect(errors).toHaveLength(1);
+  });
+
+  test("stop cancels pending reconnect and prevents a new socket", async () => {
+    const sockets: FakeSocket[] = [];
+    const timers = new ManualTimers();
+    const { client } = makeClient(sockets, timers);
+    client.start();
+    await flush();
+    sockets[0].peerClose();
+    expect(sockets).toHaveLength(1);
+    client.stop();
+    timers.runAll();
+
+    expect(sockets).toHaveLength(1);
+    expect(client.status).toBe("disconnected");
+  });
+});

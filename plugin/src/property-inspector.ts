@@ -3,6 +3,7 @@ type JsonObject = Record<string, unknown>;
 type ElementLike = {
   value: string;
   textContent: string | null;
+  disabled?: boolean;
   addEventListener(type: string, listener: () => void): void;
   replaceChildren(...children: ElementLike[]): void;
 };
@@ -41,6 +42,13 @@ type StreamDeckMessage = {
   payload?: unknown;
 };
 
+type BridgeStatus = "disconnected" | "connecting" | "authenticating" | "connected";
+
+type BridgeAction = {
+  actionId: string;
+  name: string;
+};
+
 const browserGlobal = globalThis as unknown as BrowserGlobal;
 const documentLike = browserGlobal.document;
 const actionSelect = documentLike?.getElementById("action-id");
@@ -48,6 +56,9 @@ const connectionStatus = documentLike?.getElementById("connection-status");
 
 let streamDeckSocket: StreamDeckSocket | undefined;
 let actionContext = "";
+let savedActionId = "";
+let bridgeStatus: BridgeStatus = "connecting";
+let bridgeActions: BridgeAction[] = [];
 
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null;
@@ -68,6 +79,17 @@ function setStatus(message: string): void {
   }
 }
 
+function setBridgeStatus(status: BridgeStatus): void {
+  bridgeStatus = status;
+  if (status === "connected") {
+    setStatus("Connected");
+  } else if (status === "connecting" || status === "authenticating") {
+    setStatus("Connecting");
+  } else {
+    setStatus("Offline");
+  }
+}
+
 function actionIdFromSettings(value: unknown): string {
   if (!isJsonObject(value)) {
     return "";
@@ -81,26 +103,62 @@ function actionIdFromSettings(value: unknown): string {
   return settings.actionId;
 }
 
-function renderActionId(actionId: string): void {
+function createOption(value: string, text: string, disabled = false): ElementLike {
+  if (!documentLike) {
+    throw new Error("Property inspector document is unavailable");
+  }
+
+  const option = documentLike.createElement("option");
+  option.value = value;
+  option.textContent = text;
+  option.disabled = disabled;
+  return option;
+}
+
+function renderActionSelect(): void {
   if (!actionSelect || !documentLike) {
     return;
   }
 
-  const emptyOption = documentLike.createElement("option");
-  emptyOption.value = "";
-  emptyOption.textContent = "No action selected";
+  const unavailable = bridgeActions.length === 0 || bridgeStatus !== "connected";
+  if (unavailable) {
+    actionSelect.replaceChildren(createOption("", bridgeActions.length === 0 ? "No actions available" : "Offline"));
+    actionSelect.value = "";
+    actionSelect.disabled = true;
+    return;
+  }
 
-  const options: ElementLike[] = [emptyOption];
-  const normalizedActionId = actionId.trim();
-  if (normalizedActionId) {
-    const actionOption = documentLike.createElement("option");
-    actionOption.value = normalizedActionId;
-    actionOption.textContent = normalizedActionId;
-    options.push(actionOption);
+  const options: ElementLike[] = [createOption("", "No action selected")];
+  let savedActionAvailable = savedActionId.length === 0;
+
+  for (const action of bridgeActions) {
+    options.push(createOption(action.actionId, action.name));
+    if (action.actionId === savedActionId) {
+      savedActionAvailable = true;
+    }
+  }
+
+  if (savedActionId && !savedActionAvailable) {
+    options.push(createOption(savedActionId, `Unavailable: ${savedActionId}`, true));
   }
 
   actionSelect.replaceChildren(...options);
-  actionSelect.value = normalizedActionId;
+  actionSelect.value = savedActionId;
+  actionSelect.disabled = false;
+}
+
+function sendRequestState(): void {
+  if (!streamDeckSocket || !actionContext) {
+    return;
+  }
+
+  streamDeckSocket.send(
+    JSON.stringify({
+      event: "sendToPlugin",
+      context: actionContext,
+      payload: { type: "requestState" },
+    }),
+  );
 }
 
 function saveActionId(): void {
@@ -108,20 +166,65 @@ function saveActionId(): void {
     return;
   }
 
-  if (!streamDeckSocket || !actionContext) {
-    setStatus("Not connected to Stream Deck");
+  if (!streamDeckSocket || !actionContext || bridgeStatus !== "connected") {
     return;
   }
 
-  const actionId = actionSelect.value;
+  savedActionId = actionSelect.value;
   streamDeckSocket.send(
     JSON.stringify({
       event: "setSettings",
       context: actionContext,
-      payload: { actionId },
+      payload: { actionId: savedActionId },
     }),
   );
-  setStatus("Settings saved");
+  sendRequestState();
+}
+
+function parseBridgeState(value: unknown): {
+  status: BridgeStatus;
+  actions: BridgeAction[];
+} | undefined {
+  if (!isJsonObject(value) || value.type !== "bridgeState") {
+    return undefined;
+  }
+
+  const status = value.status;
+  if (
+    status !== "disconnected" &&
+    status !== "connecting" &&
+    status !== "authenticating" &&
+    status !== "connected"
+  ) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value.actions)) {
+    return undefined;
+  }
+
+  const actionIds = new Set<string>();
+  const actions: BridgeAction[] = [];
+  for (const item of value.actions) {
+    if (
+      !isJsonObject(item) ||
+      typeof item.actionId !== "string" ||
+      item.actionId.trim().length === 0 ||
+      typeof item.name !== "string" ||
+      item.name.trim().length === 0 ||
+      ("settingsSchema" in item && !Array.isArray(item.settingsSchema))
+    ) {
+      return undefined;
+    }
+
+    if (actionIds.has(item.actionId)) {
+      return undefined;
+    }
+    actionIds.add(item.actionId);
+    actions.push({ actionId: item.actionId, name: item.name });
+  }
+
+  return { status, actions };
 }
 
 function handleStreamDeckMessage(message: { data: unknown }): void {
@@ -130,12 +233,24 @@ function handleStreamDeckMessage(message: { data: unknown }): void {
   }
 
   const parsedMessage = parseJsonObject(message.data) as StreamDeckMessage;
-  if (parsedMessage.event !== "didReceiveSettings") {
+  if (parsedMessage.event === "didReceiveSettings") {
+    savedActionId = actionIdFromSettings(parsedMessage.payload);
+    renderActionSelect();
     return;
   }
 
-  renderActionId(actionIdFromSettings(parsedMessage.payload));
-  setStatus("Connected to Stream Deck");
+  if (parsedMessage.event !== "sendToPropertyInspector") {
+    return;
+  }
+
+  const bridgeState = parseBridgeState(parsedMessage.payload);
+  if (!bridgeState) {
+    return;
+  }
+
+  bridgeActions = bridgeState.actions;
+  setBridgeStatus(bridgeState.status);
+  renderActionSelect();
 }
 
 function connectElgatoStreamDeckSocket(
@@ -148,27 +263,40 @@ function connectElgatoStreamDeckSocket(
   const parsedActionInfo = parseJsonObject(actionInfo);
   actionContext =
     typeof parsedActionInfo.context === "string" ? parsedActionInfo.context : uuid;
-  renderActionId(actionIdFromSettings(parsedActionInfo.settings));
+  savedActionId = actionIdFromSettings(parsedActionInfo.settings);
+  bridgeActions = [];
+  setBridgeStatus("connecting");
+  renderActionSelect();
 
   const Socket = browserGlobal.WebSocket;
   if (!Socket) {
-    setStatus("Stream Deck websocket is unavailable");
+    setBridgeStatus("disconnected");
+    renderActionSelect();
     return;
   }
 
   const socket = new Socket(`ws://127.0.0.1:${port}`);
   streamDeckSocket = socket;
   socket.onopen = () => {
+    setBridgeStatus("connecting");
     socket.send(JSON.stringify({ event: registerEvent, uuid }));
-    setStatus("Connected to Stream Deck");
+    sendRequestState();
   };
   socket.onmessage = handleStreamDeckMessage;
-  socket.onerror = () => setStatus("Stream Deck connection error");
+  socket.onerror = () => {
+    if (streamDeckSocket === socket) {
+      setBridgeStatus("disconnected");
+      bridgeActions = [];
+      renderActionSelect();
+    }
+  };
   socket.onclose = () => {
     if (streamDeckSocket === socket) {
       streamDeckSocket = undefined;
+      setBridgeStatus("disconnected");
+      bridgeActions = [];
+      renderActionSelect();
     }
-    setStatus("Disconnected from Stream Deck");
   };
 }
 

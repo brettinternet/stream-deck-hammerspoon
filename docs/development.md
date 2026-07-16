@@ -52,14 +52,14 @@ From the repository root:
 ```sh
 bun run build       # compile the plugin into plugin/com.brettinternet.hammerspoon.sdPlugin/
 bun run watch       # rebuild while TypeScript/UI sources change
-bun test            # JavaScript and protocol tests
+bun run test        # full cross-language gate: plugin Bun tests, then Lua tests
 bun run check       # repository checks, including type and static checks
 ```
 
 Run the Lua load check after changing `hammerspoon/streamdeck/`:
 
 ```sh
-lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
+mise exec -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
 ```
 
 This is a syntax/load check only; it does not start Hammerspoon or exercise the bridge. The normal development loop is: edit, run the smallest relevant check, then run `bun run build` before packaging.
@@ -116,7 +116,7 @@ Load/reload the module from Hammerspoon's configuration using its normal Lua `re
 
 The complete hardware-facing slice cannot be automated without a connected Stream Deck and an active property inspector. Exercise it manually as follows:
 
-1. Install the pinned runtimes with `mise install`, then run `bun install`, `bun run check`, `bun test`, and `bun run build`.
+1. Install the pinned runtimes with `mise install`, then run `bun install`, `bun run check`, `bun run test`, and `bun run build`.
 2. Run the Lua load check and link or copy `hammerspoon/streamdeck/` into `~/.hammerspoon/`.
 3. Ensure `~/.hammerspoon/streamdeck-token` exists with mode `0600`; start/reload Hammerspoon and start the bridge with its configured action registration, using the default endpoint `ws://localhost:17321/streamdeck` when checking the bridge connection.
 4. Validate, pack, install, and restart the plugin with the official CLI commands above. Leave the official Stream Deck application running.

@@ -31,8 +31,8 @@ Run the focused checks for the files you changed, then the normal repository che
 ```sh
 bun run build
 bun run check
-bun test
-lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
+bun run test
+mise exec -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
 ```
 
 Use `bun run watch` while iterating on TypeScript/UI changes. Before a manual plugin check, use the official CLI to validate, pack, install, and restart the compiled plugin as documented in [Development](docs/development.md). Hardware and active property-inspector behavior require an actual Stream Deck; do not replace that check with direct USB/HID control.

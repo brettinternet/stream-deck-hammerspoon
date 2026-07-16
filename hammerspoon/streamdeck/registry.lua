@@ -14,6 +14,68 @@ local function nonEmptyString(value)
   return type(value) == "string" and value ~= ""
 end
 
+local function validateJsonValue(value, seen)
+  local valueType = type(value)
+  if valueType == "nil" or valueType == "boolean" or valueType == "string" then
+    return
+  end
+  if valueType == "number" then
+    if value ~= value or value == math.huge or value == -math.huge then
+      error("Stream Deck action settingsSchema contains a non-finite number", 4)
+    end
+    return
+  end
+  if valueType ~= "table" then
+    error("Stream Deck action settingsSchema must contain only JSON values", 4)
+  end
+  if seen[value] then
+    error("Stream Deck action settingsSchema must not contain cycles", 4)
+  end
+  seen[value] = true
+
+  local stringKeys = 0
+  local numericKeys = 0
+  local maximumIndex = 0
+  for key, nested in pairs(value) do
+    if type(key) == "string" then
+      stringKeys = stringKeys + 1
+    elseif type(key) == "number" and key >= 1 and key % 1 == 0 then
+      numericKeys = numericKeys + 1
+      maximumIndex = math.max(maximumIndex, key)
+    else
+      error("Stream Deck action settingsSchema contains an invalid JSON key", 4)
+    end
+    validateJsonValue(nested, seen)
+  end
+  if stringKeys > 0 and numericKeys > 0 then
+    error("Stream Deck action settingsSchema must not mix object and array keys", 4)
+  end
+  if numericKeys > 0 and maximumIndex ~= numericKeys then
+    error("Stream Deck action settingsSchema arrays must be dense", 4)
+  end
+  seen[value] = nil
+end
+
+local function validateSettingsSchema(settingsSchema)
+  if type(settingsSchema) ~= "table" then
+    error("Stream Deck action settingsSchema must be an array", 4)
+  end
+  local count = 0
+  local maximumIndex = 0
+  for key in pairs(settingsSchema) do
+    if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then
+      error("Stream Deck action settingsSchema must be an array", 4)
+    end
+    count = count + 1
+    maximumIndex = math.max(maximumIndex, key)
+  end
+  if maximumIndex ~= count then
+    error("Stream Deck action settingsSchema arrays must be dense", 4)
+  end
+  validateJsonValue(settingsSchema, {})
+end
+
+
 local function validateDefinition(definition)
   if type(definition) ~= "table" then
     error("Stream Deck action definition must be a table", 3)
@@ -31,8 +93,8 @@ local function validateDefinition(definition)
   if not nonEmptyString(definition.name) then
     error("Stream Deck action definition name must be a non-empty string", 3)
   end
-  if definition.settingsSchema ~= nil and type(definition.settingsSchema) ~= "table" then
-    error("Stream Deck action settingsSchema must be a table", 3)
+  if definition.settingsSchema ~= nil then
+    validateSettingsSchema(definition.settingsSchema)
   end
   if type(definition.appearance) ~= "function" then
     error("Stream Deck action appearance must be a function", 3)

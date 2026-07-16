@@ -4,7 +4,7 @@ An official Elgato Stream Deck plugin bridge for Hammerspoon. The plugin uses an
 
 The official Stream Deck application remains the owner of plugin lifecycle, property inspectors, rendering, and hardware access. Keep it running during development and manual checks. Direct USB/HID or other hardware control is forbidden. This project does **not** replace the official application.
 
-## What this is—and is not
+## What this is and is not
 
 - One generic action, `com.brettinternet.hammerspoon.action`, points a Stream Deck instance at a registered Hammerspoon action.
 - `hammerspoon/streamdeck/` is the reusable Lua API (`register`, `start`, `stop`, `refresh`, and context helpers).
@@ -12,7 +12,7 @@ The official Stream Deck application remains the owner of plugin lifecycle, prop
 - `plugin/` contains TypeScript and the compiled official plugin layout.
 - `hs.streamdeck` is not used. This bridge is a separate `streamdeck` Lua module and does not depend on or modify a Hammerspoon `hs.streamdeck` extension.
 
-Non-goals are direct hardware access, an unauthenticated mode, Bonjour/discovery, multiple simultaneous plugin clients, and dynamic property-inspector forms in protocol v1.
+Non-goals are direct hardware access, an unauthenticated mode, Bonjour/discovery, multiple simultaneous plugin clients, and dynamic property-inspector forms in protocol v1. This is distinct from [Hammerspoon's streamdeck extension](https://github.com/Hammerspoon/hammerspoon/tree/master/extensions/streamdeck).
 
 ## Quick start
 
@@ -22,7 +22,7 @@ Requirements: macOS, Hammerspoon, the official Stream Deck application, Stream D
 mise install
 bun install
 bun run check
-bun test
+bun run test
 bun run build
 ```
 
@@ -31,7 +31,7 @@ Make the Lua module available to Hammerspoon, then start/reload the bridge:
 ```sh
 mkdir -p ~/.hammerspoon
 ln -sfn "$PWD/hammerspoon/streamdeck" ~/.hammerspoon/streamdeck
-lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
+mise exec -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
 ```
 
 Create/use `~/.hammerspoon/streamdeck-token` through the Lua bridge; it contains two UUIDs and must remain mode `0600`. Never commit or log it. Follow [the development guide](docs/development.md) for the official CLI validate/pack/install/restart flow and the manual vertical slice.
