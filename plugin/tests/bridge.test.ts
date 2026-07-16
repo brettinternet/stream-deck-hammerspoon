@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { BridgeClient } from "../src/bridge";
 
 type Listener = (event?: unknown) => void;
@@ -285,6 +287,26 @@ describe("BridgeClient reconnect and synchronization", () => {
 });
 
 describe("BridgeClient instance lifecycle", () => {
+  test("uses the homedir-based default token path", async () => {
+    let capturedPath: string | undefined;
+    const timers = new ManualTimers();
+    const client = new BridgeClient({
+      pluginVersion: "1.0.0",
+      createSocket: () => new FakeSocket(),
+      readToken: async (tokenPath) => {
+        capturedPath = tokenPath;
+        return "shared-token";
+      },
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+    });
+
+    client.start();
+    await flush();
+
+    expect(capturedPath).toBe(join(homedir(), ".hammerspoon", "streamdeck-token"));
+    client.stop();
+  });
   test("keeps two instances independent and drops stale input and appearance", async () => {
     const sockets: FakeSocket[] = [];
     const { client } = makeClient(sockets);

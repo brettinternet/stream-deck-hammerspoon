@@ -18386,7 +18386,6 @@ const PLUGIN_VERSION = "0.1.0";
 streamDeck.logger.info(`Starting Hammerspoon Stream Deck plugin v${PLUGIN_VERSION}`);
 const bridge = new BridgeClient({
     url: "ws://localhost:17321/streamdeck",
-    tokenPath: "~/.hammerspoon/streamdeck-token",
     pluginVersion: PLUGIN_VERSION,
 });
 const hammerspoonAction = new HammerspoonAction(bridge);

@@ -18,7 +18,7 @@
     "format": "bunx --no-install prettier --write .",
     "lua:check": "mise exec -- lua -e \"for _, path in ipairs({...}) do assert(loadfile(path), path); end\" hammerspoon/streamdeck/*.lua hammerspoon/tests/*.lua hammerspoon/examples/*.lua",
     "validate": "bun run build && bunx --no-install streamdeck validate plugin/com.brettinternet.hammerspoon.sdPlugin",
-    "pack": "bun run build && bunx --no-install streamdeck pack plugin/com.brettinternet.hammerspoon.sdPlugin"
+    "pack": "bun run build && bunx --no-install streamdeck pack --force plugin/com.brettinternet.hammerspoon.sdPlugin"
   },
   "devDependencies": {
     "@elgato/cli": "1.7.4",
