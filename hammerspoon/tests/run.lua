@@ -161,6 +161,9 @@ local function newServer(registry, tokenPath)
 end
 
 local function exchange(server, request)
+  if request.type ~= "hello" and request.sessionId == nil and server.authenticated then
+    request.sessionId = server.sessionId
+  end
   local sentAtStart = #fakeHttp.sent
   local first = server:_onMessage(fakeEncode(request))
   local responses = {}
@@ -179,6 +182,9 @@ local function authenticate(server, tokenPath)
     pluginVersion = "test-plugin",
   }))
   assertEqual(responses[1].type, "helloAck", "hello must be acknowledged")
+  assertTrue(type(responses[1].sessionId) == "string" and responses[1].sessionId ~= "", "hello must return a session ID")
+  assertEqual(responses[1].sessionId, server.sessionId, "server must retain the acknowledged session ID")
+  return responses[1].sessionId
 end
 
 local function withTokenPath(callback)
@@ -290,7 +296,7 @@ test("protocol validation and authentication failures are explicit", function()
   })
   withTokenPath(function(path)
     local server = newServer(registry, path)
-    assertError("AUTH_REQUIRED", exchange(server, message("listActions", { requestId = "unauth" })))
+    assertError("INVALID_FIELD", exchange(server, message("listActions", { requestId = "unauth" })))
     assertError("AUTH_FAILED", exchange(server, message("hello", {
       token = "wrong-token",
       pluginVersion = "test-plugin",
@@ -391,6 +397,107 @@ test("stale instance IDs are rejected", function()
   end)
 end)
 
+test("repeated appearance refreshes settings without repeating lifecycle callbacks", function()
+  local appeared = 0
+  local disappeared = 0
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.idempotent",
+    name = "Idempotent",
+    appearance = function(context)
+      return { title = context:getSettings().label, state = "active" }
+    end,
+    press = function() end,
+    appear = function() appeared = appeared + 1 end,
+    disappear = function() disappeared = disappeared + 1 end,
+  })
+
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    authenticate(server, path)
+    local first = exchange(server, message("instanceAppeared", {
+      instanceId = "same-instance",
+      actionId = "com.test.idempotent",
+      settings = { label = "first" },
+    }))
+    assertEqual(first[1].title, "first")
+    assertEqual(appeared, 1)
+
+    local refreshed = exchange(server, message("instanceAppeared", {
+      instanceId = "same-instance",
+      actionId = "com.test.idempotent",
+      settings = { label = "updated" },
+    }))
+    assertEqual(refreshed[1].title, "updated")
+    assertEqual(appeared, 1, "settings refresh must not invoke appear again")
+    assertEqual(disappeared, 0)
+
+    exchange(server, message("instanceAppeared", {
+      instanceId = "new-instance",
+      actionId = "com.test.idempotent",
+      settings = { label = "new" },
+    }))
+    assertEqual(appeared, 2)
+
+    exchange(server, message("instanceDisappeared", {
+      instanceId = "same-instance",
+      actionId = "com.test.idempotent",
+    }))
+    exchange(server, message("instanceDisappeared", {
+      instanceId = "same-instance",
+      actionId = "com.test.idempotent",
+    }))
+    assertEqual(disappeared, 1, "repeated removal must invoke disappear once")
+
+    server:stop()
+    assertEqual(disappeared, 2, "stop must disappear each remaining instance once")
+  end)
+end)
+
+test("session rotation rejects stale and missing clients before invocation", function()
+  local pressed = 0
+  local disappeared = 0
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.sessions",
+    name = "Sessions",
+    appearance = function() return { title = "Session", state = "active" } end,
+    press = function() pressed = pressed + 1 end,
+    disappear = function() disappeared = disappeared + 1 end,
+  })
+
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    local oldSession = authenticate(server, path)
+    exchange(server, message("instanceAppeared", {
+      instanceId = "session-instance",
+      actionId = "com.test.sessions",
+      settings = {},
+    }))
+
+    local restarted = exchange(server, message("hello", {
+      token = tokenAt(path),
+      pluginVersion = "restarted-plugin",
+    }))
+    assertEqual(restarted[1].type, "helloAck")
+    assertTrue(restarted[1].sessionId ~= oldSession, "plugin restart must rotate the session")
+    assertEqual(disappeared, 1, "rotating a session must clear old contexts")
+
+    assertError("AUTH_REQUIRED", exchange(server, message("keyDown", {
+      sessionId = oldSession,
+      instanceId = "session-instance",
+      actionId = "com.test.sessions",
+    })))
+    assertError("INVALID_FIELD", exchange(server, message("keyDown", {
+      sessionId = false,
+      instanceId = "session-instance",
+      actionId = "com.test.sessions",
+    })))
+    assertEqual(pressed, 0, "stale and missing sessions must not invoke callbacks")
+    server:stop()
+  end)
+end)
+
 test("callback exceptions are protected and reported", function()
   local registry = Registry.new()
   registry:register({
@@ -443,12 +550,13 @@ end)
 test("reconnect resets authentication and instance state", function()
   local appeared = 0
   local disappeared = 0
+  local pressed = 0
   local registry = Registry.new()
   registry:register({
     id = "com.test.reconnect",
     name = "Reconnect",
     appearance = function() return { title = "Online", state = "active" } end,
-    press = function() end,
+    press = function() pressed = pressed + 1 end,
     appear = function() appeared = appeared + 1 end,
     disappear = function() disappeared = disappeared + 1 end,
   })
@@ -470,7 +578,13 @@ test("reconnect resets authentication and instance state", function()
     assertFalse(server.authenticated, "stop must clear authentication")
 
     server:start({ port = 17321, tokenPath = path })
-    assertError("AUTH_REQUIRED", exchange(server, message("listActions", { requestId = "after-reload" })))
+    assertError("INVALID_FIELD", exchange(server, message("keyDown", {
+      sessionId = false,
+      instanceId = "visible-before-reload",
+      actionId = "com.test.reconnect",
+    })))
+    assertEqual(pressed, 0, "tokenless commands after disconnect must not invoke callbacks")
+    assertError("INVALID_FIELD", exchange(server, message("listActions", { requestId = "after-reload" })))
     authenticate(server, path)
     assertError("STALE_INSTANCE", exchange(server, message("keyDown", {
       instanceId = "visible-before-reload",

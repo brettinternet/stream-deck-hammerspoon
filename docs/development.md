@@ -25,6 +25,8 @@ ws://localhost:17321/streamdeck
 
 Hammerspoon binds this endpoint to localhost/loopback with Bonjour disabled. The `hs.httpserver:websocket` message callback must return a string, so lifecycle events with no response can produce a zero-length transport frame. The TypeScript transport ignores only zero-length frames before JSON/protocol validation; every non-empty frame remains strict. Empty frames are transport artifacts, not protocol messages or an unauthenticated fallback, and this is a reversible transport-specific limitation.
 
+Authentication starts with the shared token in the plugin's first `hello`. Hammerspoon then creates a fresh non-empty opaque in-memory `sessionId` with `hs.host.uuid()` and returns it in `helloAck.sessionId`. The plugin stores that ID only in memory and includes the exact ID in every later application message (`listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, and `requestAppearance`). Missing or stale IDs are rejected before dispatch. Since `hs.httpserver` does not provide a reliable close callback, the bridge clears the ID and prior instance contexts on close, stop, or failure; a valid reconnect hello is still accepted, safely clears any old contexts, and rotates the ID. A process-global authenticated boolean is not used as the binding.
+
 Install the project runtimes with [mise](https://mise.jdx.dev/):
 
 ```sh
@@ -87,9 +89,9 @@ Authentication is required; there is no unauthenticated fallback. On first start
 ~/.hammerspoon/streamdeck-token
 ```
 
-The file must be readable only by the current user (`chmod 0600`). The plugin reads this runtime file when it connects. Never put the token in Stream Deck settings, source control, command-line arguments, screenshots, or logs. Never paste it into an issue or chat transcript.
+The file must be readable only by the current user (`chmod 0600`). The plugin reads this runtime file when it connects. Never put the token in Stream Deck settings, source control, command-line arguments, screenshots, or logs. Never paste it into an issue or chat transcript. Session IDs are separate fresh opaque values: they are generated per accepted hello, kept only in memory, rotated on reconnect/plugin restart, and never logged or persisted.
 
-To rotate credentials, stop the bridge, remove `~/.hammerspoon/streamdeck-token`, reload Hammerspoon so the Lua bridge generates a new pair of UUIDs, then restart the plugin. If permissions or token contents are wrong, fix the file; do not disable authentication. Verify locally with:
+To rotate credentials, stop the bridge, remove `~/.hammerspoon/streamdeck-token`, reload Hammerspoon so the Lua bridge generates a new pair of UUIDs, then restart the plugin. Token rotation invalidates old authenticated sessions; normal reconnect also invalidates the old in-memory session ID even when the token file is unchanged. If permissions or token contents are wrong, fix the file; do not disable authentication. Verify locally with:
 ```sh
 stat -f '%Sp %N' ~/.hammerspoon/streamdeck-token
 ```
@@ -120,9 +122,9 @@ The complete hardware-facing slice cannot be automated without a connected Strea
 2. Run the Lua load check and link or copy `hammerspoon/streamdeck/` into `~/.hammerspoon/`.
 3. Ensure `~/.hammerspoon/streamdeck-token` exists with mode `0600`; start/reload Hammerspoon and start the bridge with its configured action registration, using the default endpoint `ws://localhost:17321/streamdeck` when checking the bridge connection.
 4. Validate, pack, install, and restart the plugin with the official CLI commands above. Leave the official Stream Deck application running.
-5. On the official Stream Deck, add the generic action `com.brettinternet.hammerspoon.action` to a key. In its property inspector, select a registered action ID and save it to that instance's settings.
+5. On the official Stream Deck, add the generic action `com.brettinternet.hammerspoon.action` to a key. For the initial action event, confirm the plugin reads settings from Stream Deck's `actionInfo.payload.settings`; select a registered action ID in its property inspector and save it to that instance's settings.
 6. Press and release the key. Confirm the registered Hammerspoon callback runs and that the key renders the configured title and state (`0` or `1`).
-7. Confirm the offline/reconnect path by reloading Hammerspoon: the key should temporarily show `Hammerspoon Offline`, then reconnect, refresh the action list, resend visible instances, and restore appearance.
+7. Confirm the offline/reconnect path by reloading Hammerspoon: the key should temporarily show `Hammerspoon Offline`, then reconnect, receive a fresh `helloAck.sessionId`, refresh the action list, resend visible instances with that ID, and restore appearance.
 8. Stop and restart only the bridge/plugin as needed; do not use direct hardware APIs or a second hardware controller.
 
 ## Troubleshooting
@@ -137,7 +139,19 @@ The complete hardware-facing slice cannot be automated without a connected Strea
 
 ### Authentication fails
 
-The first WebSocket message must be the protocol-v1 `hello` containing the shared token and `pluginVersion`. An unauthenticated or malformed message is rejected. Check the token file and permissions on both sides; never turn authentication off. Do not expect a WebSocket upgrade-header token: Hammerspoon's `hs.httpserver:websocket` exposes message callbacks rather than upgrade headers.
+The first WebSocket message must be the protocol-v1 `hello` containing the shared token and `pluginVersion`. A valid hello always establishes a fresh session ID and invalidates any old one. Every later plugin-to-Lua application message must echo the exact current ID; an unauthenticated, malformed, missing-ID, or stale-ID message is rejected. Check the token file and permissions on both sides; never turn authentication off. Do not expect a WebSocket upgrade-header token: Hammerspoon's `hs.httpserver:websocket` exposes message callbacks rather than upgrade headers.
+
+### Reconnect and session troubleshooting
+
+If the plugin reconnects but actions do not run, treat the session as stale rather than trying to reuse a previous ID:
+
+1. Reload or restart Hammerspoon so the bridge clears its in-memory session ID and instance contexts.
+2. Restart the plugin (or use the official Stream Deck CLI `restart`) so it rereads the token and sends a new token-bearing `hello`.
+3. Confirm the plugin receives `helloAck.sessionId`, keeps it only in memory, and includes it on `listActions`, each lifecycle event, `keyDown`, and `requestAppearance`.
+4. Confirm the Lua bridge rejects missing/old IDs without invoking `appear`, `press`, or `disappear`; do not log or print the ID while diagnosing.
+5. Wait for synchronization: the plugin requests actions, re-announces visible instances, and requests appearance. A repeated `instanceAppeared` for the same instance/action refreshes settings and must not run `appear` again.
+
+If Hammerspoon cannot report the old socket's close, this sequence is still safe: the next valid hello clears prior contexts and rotates the session ID, so the abandoned client cannot send tokenless application messages.
 
 ### Empty frames or transport parse errors
 
@@ -145,7 +159,7 @@ The first WebSocket message must be the protocol-v1 `hello` containing the share
 
 ### Actions or appearance are stale
 
-Reloading Lua intentionally drops the instance registry. Wait for the plugin's bounded reconnect, then confirm the plugin re-authenticates, requests actions, resends visible instances, and requests appearance. An unknown/stale instance or action ID should be corrected by selecting a current registered action in the property inspector, not by editing protocol messages manually.
+Reloading Lua intentionally drops the instance registry, session ID, and instance contexts. Wait for the plugin's bounded reconnect, then confirm it re-authenticates, receives a fresh session ID, requests actions, resends visible instances, and requests appearance. A repeated `instanceAppeared` for an unchanged instance/action only refreshes settings; it must not rerun `appear`. An unknown/stale instance, action, or session ID should be corrected by restarting/reconnecting the two endpoints and selecting a current registered action in the property inspector, not by editing protocol messages manually.
 
 ### Module cannot be loaded
 
@@ -153,7 +167,7 @@ Check that `~/.hammerspoon/streamdeck/` is a link or copy of the repository's `h
 
 ## Logs and diagnostics
 
-Use the official Stream Deck application/plugin logs and Hammerspoon Console for diagnostics. Safe protocol error codes/messages and connection state may be logged; shared tokens must never be logged. Capture timestamps, plugin version, protocol version, port, and the safe error code when reporting a problem, but redact token paths if they reveal sensitive environment details. The server is loopback-only, Bonjour is disabled, and `hs.httpserver` effectively permits one WebSocket client; a second client is not a supported development setup.
+Use the official Stream Deck application/plugin logs and Hammerspoon Console for diagnostics. Safe protocol error codes/messages and connection state may be logged; shared tokens, hello payloads, and session IDs must never be logged. Capture timestamps, plugin version, protocol version, port, and the safe error code when reporting a problem, but redact token paths if they reveal sensitive environment details. The server is loopback-only, Bonjour is disabled, and `hs.httpserver` effectively permits one WebSocket client; a second client is not a supported development setup.
 
 ## Hardware-free development
 

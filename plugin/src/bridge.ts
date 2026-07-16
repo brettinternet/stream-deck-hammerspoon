@@ -71,6 +71,17 @@ type TimerHandle = unknown;
 type ServerErrorMessage = Extract<ServerMessage, { type: "error" }>;
 type ActionsMessage = Extract<ServerMessage, { type: "actions" }>;
 type AppearanceMessage = Extract<ServerMessage, { type: "appearance" }>;
+type BridgeMessage =
+  | Pick<Extract<ClientMessage, { type: "hello" }>, "protocolVersion" | "type" | "token" | "pluginVersion">
+  | Pick<Extract<ClientMessage, { type: "listActions" }>, "protocolVersion" | "type" | "requestId">
+  | Pick<
+      Extract<ClientMessage, { type: "instanceAppeared" }>,
+      "protocolVersion" | "type" | "instanceId" | "actionId" | "settings"
+    >
+  | Pick<
+      Extract<ClientMessage, { type: "instanceDisappeared" | "keyDown" | "requestAppearance" }>,
+      "protocolVersion" | "type" | "instanceId" | "actionId"
+    >;
 
 const DEFAULT_URL = "ws://localhost:17321/streamdeck";
 const DEFAULT_TOKEN_PATH = join(homedir(), ".hammerspoon", "streamdeck-token");
@@ -151,6 +162,7 @@ export class BridgeClient extends EventEmitter {
   private reconnectAttempt = 0;
   private started = false;
   private authenticated = false;
+  private sessionId: string | undefined;
   private nextRequestId = 0;
   private readonly pendingActions = new Set<string>();
 
@@ -183,6 +195,7 @@ export class BridgeClient extends EventEmitter {
   stop(): void {
     this.started = false;
     this.authenticated = false;
+    this.sessionId = undefined;
     this.pendingActions.clear();
     this.clearReconnectTimer();
     this.socketGeneration += 1;
@@ -260,6 +273,7 @@ export class BridgeClient extends EventEmitter {
     if (!this.started) return;
     this.clearReconnectTimer();
     this.authenticated = false;
+    this.sessionId = undefined;
     this.setStatus("connecting");
     const generation = ++this.socketGeneration;
     void this.openSocket(generation);
@@ -332,6 +346,7 @@ export class BridgeClient extends EventEmitter {
         this.emitProtocolError({ code: "INVALID_STATE", message: "Unexpected authentication acknowledgement." });
         return;
       }
+      this.sessionId = message.sessionId;
       this.authenticated = true;
       this.reconnectAttempt = 0;
       this.setStatus("connected");
@@ -427,10 +442,18 @@ export class BridgeClient extends EventEmitter {
     });
   }
 
-  private send(message: ClientMessage): boolean {
+  private send(message: BridgeMessage): boolean {
     if (!this.socket) return false;
+    let outbound: ClientMessage;
+    if (message.type === "hello") {
+      outbound = message;
+    } else {
+      const sessionId = this.sessionId;
+      if (!isNonEmptyString(sessionId)) return false;
+      outbound = { ...message, sessionId } as ClientMessage;
+    }
     try {
-      this.socket.send(serializeClientMessage(message));
+      this.socket.send(serializeClientMessage(outbound));
       return true;
     } catch {
       this.connectionFailed(this.socketGeneration);
@@ -442,6 +465,7 @@ export class BridgeClient extends EventEmitter {
     if (!this.isCurrent(generation)) return;
     if (this.socket === undefined && this._status === "disconnected") return;
     this.authenticated = false;
+    this.sessionId = undefined;
     this.pendingActions.clear();
     this.socket = undefined;
     this.setStatus("disconnected");
@@ -477,6 +501,7 @@ export class BridgeClient extends EventEmitter {
     const socket = this.socket;
     this.socket = undefined;
     this.authenticated = false;
+    this.sessionId = undefined;
     if (socket) {
       try {
         socket.close();

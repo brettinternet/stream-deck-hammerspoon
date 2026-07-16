@@ -2,6 +2,7 @@
   {
     "protocolVersion": 1,
     "type": "instanceAppeared",
+    "sessionId": "opaque-session-01",
     "instanceId": "deck-instance-01",
     "actionId": "com.example.volumeUp",
     "settings": {
@@ -20,6 +21,7 @@
     "protocolVersion": 1,
     "type": "requestAppearance",
     "instanceId": "deck-instance-01",
+    "sessionId": "opaque-session-01",
     "actionId": "com.example.volumeUp"
   },
   {
@@ -34,11 +36,13 @@
     "protocolVersion": 1,
     "type": "keyDown",
     "instanceId": "deck-instance-01",
+    "sessionId": "opaque-session-01",
     "actionId": "com.example.volumeUp"
   },
   {
     "protocolVersion": 1,
     "type": "instanceDisappeared",
+    "sessionId": "opaque-session-01",
     "instanceId": "deck-instance-01",
     "actionId": "com.example.volumeUp"
   }

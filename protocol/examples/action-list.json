@@ -2,6 +2,7 @@
   {
     "protocolVersion": 1,
     "type": "listActions",
+    "sessionId": "opaque-session-01",
     "requestId": "req-01"
   },
   {

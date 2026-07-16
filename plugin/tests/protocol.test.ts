@@ -6,6 +6,8 @@ import {
   type ServerMessage,
 } from "../src/protocol";
 
+const sessionId = "session-01";
+
 const hello: ClientMessage = {
   protocolVersion: 1,
   type: "hello",
@@ -16,11 +18,13 @@ const hello: ClientMessage = {
 const helloAck: ServerMessage = {
   protocolVersion: 1,
   type: "helloAck",
+  sessionId,
 };
 
 const listActions: ClientMessage = {
   protocolVersion: 1,
   type: "listActions",
+  sessionId,
   requestId: "req-01",
 };
 
@@ -37,6 +41,7 @@ const actions: ServerMessage = {
 const instanceAppeared: ClientMessage = {
   protocolVersion: 1,
   type: "instanceAppeared",
+  sessionId,
   instanceId: "deck-instance-01",
   actionId: "com.example.volumeUp",
   settings: { actionId: "com.example.volumeUp" },
@@ -54,6 +59,7 @@ const appearance: ServerMessage = {
 const requestAppearance: ClientMessage = {
   protocolVersion: 1,
   type: "requestAppearance",
+  sessionId,
   instanceId: "deck-instance-01",
   actionId: "com.example.volumeUp",
 };
@@ -61,6 +67,7 @@ const requestAppearance: ClientMessage = {
 const keyDown: ClientMessage = {
   protocolVersion: 1,
   type: "keyDown",
+  sessionId,
   instanceId: "deck-instance-01",
   actionId: "com.example.volumeUp",
 };
@@ -68,6 +75,7 @@ const keyDown: ClientMessage = {
 const instanceDisappeared: ClientMessage = {
   protocolVersion: 1,
   type: "instanceDisappeared",
+  sessionId,
   instanceId: "deck-instance-01",
   actionId: "com.example.volumeUp",
 };

@@ -81,13 +81,13 @@ The runtime flow is:
 1. Hammerspoon starts the `hs.httpserver` WebSocket endpoint at the default URL `ws://localhost:17321/streamdeck`; it binds loopback (`localhost`) and disables Bonjour.
 2. The plugin reads the runtime token file and opens one WebSocket connection.
 3. The plugin's first protocol message is `hello`, containing the shared token and `pluginVersion`.
-4. Hammerspoon rejects every other message until a valid `hello` is acknowledged with `helloAck`.
-5. The plugin requests the action registry with `listActions`; the response is the correlated `actions` message.
-6. Stream Deck instance lifecycle events become `instanceAppeared` and `instanceDisappeared`; key presses become `keyDown` events. Appearance refreshes become `requestAppearance`.
+4. Hammerspoon validates the hello and, even when an earlier session was marked authenticated, accepts it by clearing prior instance contexts, generates a fresh non-empty in-memory opaque `sessionId`, and returns it in the required `helloAck.sessionId`.
+5. The plugin sends that exact `sessionId` on every subsequent application message: `listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, and `requestAppearance`. Missing or stale IDs are rejected before any action or callback is invoked.
+6. Stream Deck instance lifecycle events become `instanceAppeared` and `instanceDisappeared`; key presses become `keyDown` events. Appearance refreshes become `requestAppearance`. A repeated `instanceAppeared` for the same instance/action is a settings refresh and does not run `appear` again.
 7. Lua computes presentation and sends `appearance`, or sends an asynchronous `error` with a safe code/message.
 8. The plugin applies the v1 `title` and `state` to the Stream Deck key. `showOk`/`showAlert` are feedback only when the callback result warrants them.
 
-Every protocol message has `protocolVersion: 1` and a `type`. Unknown fields are ignored. Malformed messages and unknown types are rejected. TypeScript validates against the canonical JSON Schema with Ajv; Lua mirrors strict required/type checks because it cannot execute that JSON Schema directly.
+Every protocol message has `protocolVersion: 1` and a `type`. After `helloAck`, every plugin-to-Lua application message carries the current `sessionId`; `hello` carries the token but no session ID, and `helloAck` returns the newly generated ID. Unknown fields are ignored. Malformed messages and unknown types are rejected. TypeScript validates against the canonical JSON Schema with Ajv; Lua mirrors strict required/type checks because it cannot execute that JSON Schema directly.
 
 ## Identity and state ownership
 
@@ -95,8 +95,8 @@ Every protocol message has `protocolVersion: 1` and a `type`. Unknown fields are
 - **Action identity:** `com.brettinternet.hammerspoon.action` is the single generic keypad action UUID. It is not one UUID per Lua action.
 - **Lua action identity:** each registered Lua definition has an explicit, stable `actionId`. Duplicate IDs are rejected. Titles, key positions, and array order are never identifiers.
 - **Instance identity:** each configured Stream Deck key is represented by its Stream Deck-provided `instanceId`. The plugin retains visible instance metadata; the Lua registry keeps independent contexts keyed by instance identity. Multiple instances may select the same or different stable Lua `actionId`s.
-- **Settings:** the property inspector stores the selected `actionId` in Stream Deck per-instance settings. The plugin uses that setting when sending lifecycle and key events.
-- **Context:** a Lua action context is per instance. `context:refresh()` and `context:getSettings()` operate on that instance's state; one instance cannot silently mutate another instance's context.
+- **Settings:** the property inspector stores the selected `actionId` in Stream Deck per-instance settings. For initial action events, the plugin reads real Stream Deck settings from `actionInfo.payload.settings`; it uses that setting when sending lifecycle and key events. A repeated `instanceAppeared` updates the existing context's settings instead of creating a second appearance lifecycle.
+- **Context:** a Lua action context is per instance. `context:refresh()` and `context:getSettings()` operate on that instance's state; one instance cannot silently mutate another instance's context. Contexts are discarded when the authenticated session is cleared.
 
 Identity is explicit across the boundary: an instance identifies a configured key, while an `actionId` identifies registered Lua behavior. Reconnect resends instance identity; it does not create new action IDs or infer identity from presentation.
 
@@ -119,9 +119,9 @@ The v1 appearance contract is only `title` and `state`. The property inspector h
 
 ### Startup and shutdown
 
-`register(definition)` adds a stable Lua action definition and rejects duplicate IDs. `start(options)` binds the server to loopback, disables Bonjour, applies the default port when no port is supplied, and begins accepting the plugin connection. `stop()` closes the server. `refresh(actionId)` refreshes all relevant appearances for an action, while `context:refresh()` refreshes one instance context. Callbacks are protected with `xpcall`; callback failure becomes a safe asynchronous protocol error rather than an uncaught bridge failure.
+`register(definition)` adds a stable Lua action definition and rejects duplicate IDs. `start(options)` binds the server to loopback, disables Bonjour, applies the default port when no port is supplied, and begins accepting the plugin connection. `stop()` closes the server, clears the current in-memory session ID, and discards active instance contexts. `refresh(actionId)` refreshes all relevant appearances for an action, while `context:refresh()` refreshes one instance context. Callbacks are protected with `xpcall`; callback failure becomes a safe asynchronous protocol error rather than an uncaught bridge failure.
 
-The Hammerspoon server accepts one WebSocket client because of `hs.httpserver` limitations. That is sufficient for one local Stream Deck plugin process and is an explicit v1 limit. Because `hs.httpserver:websocket` exposes message callbacks rather than HTTP upgrade headers or a rich connection lifecycle, authentication is a first-message protocol exchange, not a WebSocket header. Unauthenticated messages are rejected.
+The Hammerspoon server accepts one WebSocket client because of `hs.httpserver` limitations. That is sufficient for one local Stream Deck plugin process and is an explicit v1 limit. Because `hs.httpserver:websocket` exposes message callbacks rather than HTTP upgrade headers or a connection-close callback, authentication is a first-message protocol exchange plus an in-memory session capability, not a process-global hello boolean. A valid hello is accepted again when a plugin reconnects or restarts: it safely clears any prior contexts, rotates to a fresh non-empty opaque `sessionId` generated with `hs.host.uuid()`, and returns that ID in `helloAck`. Every post-hello plugin message must echo the exact current ID; missing, stale, or invalid IDs are rejected without invoking any callback. The ID is cleared on close, stop, or failure, so a later client cannot inherit tokenless authorization merely because the prior connection was never reported closed.
 
 ### `hs.httpserver` callback transport behavior
 
@@ -129,19 +129,19 @@ The Hammerspoon server accepts one WebSocket client because of `hs.httpserver` l
 
 ### Reconnect synchronization
 
-The plugin uses bounded exponential backoff with jitter: 250 ms initially, doubling to a 10 s maximum. A successful authenticated `helloAck` resets the backoff. While disconnected, the plugin retains visible instance metadata in TypeScript and marks titles `Hammerspoon Offline`.
+The plugin uses bounded exponential backoff with jitter: 250 ms initially, doubling to a 10 s maximum. A successful authenticated `helloAck` resets the backoff and installs the returned session ID only in memory. While disconnected, the plugin retains visible instance metadata in TypeScript and marks titles `Hammerspoon Offline`; it clears the session ID on close, stop, or connection failure.
 
 After a new authenticated connection, the plugin performs synchronization in this order:
 
-1. request the current action registry (`listActions`);
-2. resend `instanceAppeared` for every visible instance;
-3. request appearance for every visible instance (`requestAppearance`).
+1. request the current action registry (`listActions`) with the new session ID;
+2. resend `instanceAppeared` with the new session ID for every visible instance;
+3. request appearance with the new session ID for every visible instance (`requestAppearance`).
 
-`instanceAppeared` computes normal initial appearance. `requestAppearance` exists separately for refresh and reconnect resynchronization. A Hammerspoon reload drops its registry and instance contexts and starts a new server; the plugin's reconnect path repopulates the server from the visible Stream Deck instances. Stale or unknown instance/action IDs are reported as safe asynchronous errors and do not authorize a fallback action.
+`instanceAppeared` computes normal initial appearance for a new instance/action. If the same instance/action is announced again, Lua refreshes its settings and does not invoke `appear` a second time; `requestAppearance` exists separately for appearance-only refresh and reconnect resynchronization. A Hammerspoon reload drops its registry, session ID, and instance contexts and starts a new server; the plugin's reconnect path repopulates the server from the visible Stream Deck instances. Stale or unknown instance/action/session IDs are reported as safe asynchronous errors and do not authorize a fallback action.
 
 ### Token lifecycle
 
-The default token path is `~/.hammerspoon/streamdeck-token`. Lua creates it from two UUIDs and applies file mode `0600`; the plugin reads this runtime file. The token is sent only in `hello`, is never logged, and is never included in Stream Deck settings. If the token cannot be read or accepted, the plugin remains disconnected with actionable status; it never falls back to unauthenticated operation.
+The default token path is `~/.hammerspoon/streamdeck-token`. Lua creates it from two UUIDs and applies file mode `0600`; the plugin reads this runtime file. The token is sent only in `hello`, is never logged, and is never included in Stream Deck settings. Session IDs are fresh opaque values held only in memory, never persisted or logged, and rotated on every accepted hello. If the token cannot be read or accepted, or if the session ID is missing/stale, the plugin remains disconnected with actionable status; it never falls back to unauthenticated operation.
 
 ## Current limitations and roadmap boundary
 
@@ -166,16 +166,16 @@ Each record is intentionally short but complete. Reversibility describes what ca
 - **Problem:** The plugin must deliver key/lifecycle events and receive appearance changes promptly without a background polling loop or an extra daemon.
 - **Choice:** Use one authenticated WebSocket from the TypeScript plugin to Hammerspoon's `hs.httpserver:websocket` on loopback.
 - **Alternatives:** HTTP polling; a separate local daemon; direct Stream Deck hardware access from Hammerspoon.
-- **Tradeoffs / consequences:** WebSocket gives event delivery and a single bidirectional channel, but `hs.httpserver` exposes message callbacks rather than upgrade headers/rich connection lifecycle and requires callbacks to return a string. No-response lifecycle events can consequently appear as zero-length transport frames; the TypeScript transport ignores only those empty frames before validation, while every non-empty frame remains strict. Authentication therefore occurs in the first protocol message, and the server is effectively single-client. Loopback and the fixed default URL simplify discovery but exclude remote clients.
+- **Tradeoffs / consequences:** WebSocket gives event delivery and a single bidirectional channel, but `hs.httpserver` exposes message callbacks rather than upgrade headers or a rich connection lifecycle and requires callbacks to return a string. No-response lifecycle events can consequently appear as zero-length transport frames; the TypeScript transport ignores only those empty frames before validation, while every non-empty frame remains strict. Authentication therefore uses the shared token in `hello` plus a fresh in-memory session ID echoed on every later plugin message; missing or stale IDs cannot dispatch actions, and a valid reconnect hello rotates the ID and clears prior contexts. Loopback and the fixed default URL simplify discovery but exclude remote clients.
 - **Reversibility:** The transport-specific empty-frame accommodation can be removed when the transport changes without changing protocol messages or authentication. Replacing the transport boundary otherwise requires a new protocol/transport decision. The message types, identities, and auth semantics should remain the migration contract; v1 does not support polling as a fallback.
 
 ### ADR-002: One shared token for the loopback bridge
 
 - **Problem:** A local port must reject unrelated clients while the transport lacks a usable authenticated upgrade-header hook.
-- **Choice:** Share one runtime token through `~/.hammerspoon/streamdeck-token`; Lua creates it from two UUIDs with mode `0600`, and the plugin sends it only in `hello`.
+- **Choice:** Share one runtime token through `~/.hammerspoon/streamdeck-token`; Lua creates it from two UUIDs with mode `0600`, and the plugin sends it only in `hello`. Each accepted hello additionally establishes a fresh opaque in-memory session ID.
 - **Alternatives:** No authentication; a token in Stream Deck settings; an HTTP/WebSocket header; OS-specific credential/keychain integration.
-- **Tradeoffs / consequences:** The file is simple, inspectable, and shared by both processes, but plugin sandbox/file permissions may vary. A missing, unreadable, or invalid token produces an actionable disconnected state. The token is never logged or persisted in per-instance settings, and unauthenticated fallback is prohibited.
-- **Reversibility:** Token storage or rotation can be changed behind the `hello` authentication contract. Removing authentication or exposing the token in settings would be a breaking security decision, not a compatible tweak.
+- **Tradeoffs / consequences:** The file is simple, inspectable, and shared by both processes, but plugin sandbox/file permissions may vary. A missing, unreadable, or invalid token produces an actionable disconnected state. The token is never logged or persisted in per-instance settings. Session IDs are never logged or persisted, are required on all post-hello plugin messages, and rotate on reconnect; old IDs cannot invoke callbacks. Unauthenticated fallback is prohibited.
+- **Reversibility:** Token storage or rotation can be changed behind the `hello` authentication contract. Removing session binding, accepting old session IDs, removing authentication, or exposing the token in settings would be a breaking security decision, not a compatible tweak.
 
 ### ADR-003: Declarative presentation from Lua
 
@@ -212,7 +212,7 @@ Each record is intentionally short but complete. Reversibility describes what ca
 ### ADR-007: Explicit reconnect synchronization
 
 - **Problem:** Hammerspoon reloads can discard registries and instance contexts, while the Stream Deck plugin still knows which keys are visible; reconnect must restore a coherent state without polling.
-- **Choice:** Retain visible instance metadata in the plugin, show `Hammerspoon Offline`, reconnect with bounded jittered backoff, authenticate again, request actions, resend every visible `instanceAppeared`, and request every visible appearance.
+- **Choice:** Retain visible instance metadata in the plugin, show `Hammerspoon Offline`, reconnect with bounded jittered backoff, authenticate again, accept a fresh session ID, request actions, resend every visible `instanceAppeared`, and request every visible appearance.
 - **Alternatives:** Recreate only the last pressed key; wait for a future key press; continuously poll; let Lua persist stale instances across reloads.
-- **Tradeoffs / consequences:** Replay is deterministic and repairs a fresh Lua registry, and separating `instanceAppeared` from `requestAppearance` avoids conflating registration with refresh. It can generate a burst of replay traffic for many visible keys and depends on explicit stable IDs; stale IDs become safe errors rather than guessed actions.
+- **Tradeoffs / consequences:** Replay is deterministic and repairs a fresh Lua registry and context set, and separating `instanceAppeared` from `requestAppearance` avoids conflating registration with refresh. Repeated `instanceAppeared` for an unchanged instance/action only refreshes settings and does not rerun `appear`. It can generate a burst of replay traffic for many visible keys and depends on explicit stable IDs; stale IDs become safe errors rather than guessed actions.
 - **Reversibility:** Backoff parameters and synchronization batching can change without changing identity semantics. Removing replay, retaining stale Lua state, or making polling a fallback would change the lifecycle contract and requires a new decision.

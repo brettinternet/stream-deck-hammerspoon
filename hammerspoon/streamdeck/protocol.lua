@@ -188,20 +188,23 @@ function protocol.validate(message)
     ok, code = required(message, "token", isNonEmptyString)
     if ok then ok, code = required(message, "pluginVersion", isNonEmptyString) end
   elseif messageType == "helloAck" then
-    ok = true
+    ok, code = required(message, "sessionId", isNonEmptyString)
   elseif messageType == "listActions" then
-    ok, code = required(message, "requestId", isNonEmptyString)
+    ok, code = required(message, "sessionId", isNonEmptyString)
+    if ok then ok, code = required(message, "requestId", isNonEmptyString) end
   elseif messageType == "actions" then
     ok, code = required(message, "requestId", isNonEmptyString)
     if ok then ok, code = validateActions(rawget(message, "actions")) end
   elseif messageType == "instanceAppeared" then
-    ok, code = required(message, "instanceId", isNonEmptyString)
+    ok, code = required(message, "sessionId", isNonEmptyString)
+    if ok then ok, code = required(message, "instanceId", isNonEmptyString) end
     if ok then ok, code = required(message, "actionId", isNonEmptyString) end
     if ok then ok, code = required(message, "settings", isObject) end
   elseif messageType == "instanceDisappeared"
       or messageType == "keyDown"
       or messageType == "requestAppearance" then
-    ok, code = required(message, "instanceId", isNonEmptyString)
+    ok, code = required(message, "sessionId", isNonEmptyString)
+    if ok then ok, code = required(message, "instanceId", isNonEmptyString) end
     if ok then ok, code = required(message, "actionId", isNonEmptyString) end
   elseif messageType == "appearance" then
     ok, code = required(message, "instanceId", isNonEmptyString)

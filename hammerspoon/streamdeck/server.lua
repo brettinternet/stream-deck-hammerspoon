@@ -100,6 +100,8 @@ function server.new(registry, protocol, contextFactory)
     instances = {},
     http = nil,
     token = nil,
+    sessionId = nil,
+    sessionGeneration = 0,
     started = false,
     authenticated = false,
     dispatching = false,
@@ -159,24 +161,60 @@ function server.new(registry, protocol, contextFactory)
       end,
     })
   end
+  function object:_clearInstances()
+    local instances = self.instances
+    self.instances = {}
+    for _, instance in pairs(instances) do
+      instance:invoke("disappear")
+    end
+  end
+
+  function object:_newSessionId()
+    local hsapi = rawget(_G, "hs")
+    if not hsapi or not hsapi.host or type(hsapi.host.uuid) ~= "function" then
+      return nil
+    end
+    local ok, sessionId = pcall(hsapi.host.uuid)
+    if not ok or type(sessionId) ~= "string" or sessionId == "" then
+      return nil
+    end
+    self.sessionGeneration = self.sessionGeneration + 1
+    if self.sessionGeneration > 1 then
+      sessionId = sessionId .. "-" .. tostring(self.sessionGeneration)
+    end
+    return sessionId
+  end
+
 
   function object:_handle(message)
-    if not self.authenticated then
-      if message.type ~= "hello" then
-        self:_queueError("AUTH_REQUIRED", message.requestId, message.instanceId)
-        return
-      end
+    if message.type == "hello" then
       if message.token ~= self.token then
         self:_queueError("AUTH_FAILED")
         return
       end
+      local sessionId = self:_newSessionId()
+      if not sessionId then
+        self:_queueError("INTERNAL")
+        return
+      end
+      self.sessionId = sessionId
       self.authenticated = true
-      self:_queue({ protocolVersion = self.protocol.VERSION, type = "helloAck" })
+      self:_queue({
+        protocolVersion = self.protocol.VERSION,
+        type = "helloAck",
+        sessionId = sessionId,
+      })
+      self:_clearInstances()
       return
     end
 
-    if message.type == "hello" then
-      self:_queueError("INVALID_STATE")
+    if not self.authenticated then
+      self:_queueError("AUTH_REQUIRED", message.requestId, message.instanceId)
+      return
+    end
+
+    if message.sessionId ~= self.sessionId then
+      self:_queueError("AUTH_REQUIRED", message.requestId, message.instanceId)
       return
     end
 
@@ -203,7 +241,6 @@ function server.new(registry, protocol, contextFactory)
       end
       if existing then
         existing:updateSettings(message.settings)
-        existing:invoke("appear")
         existing:refresh()
       else
         local instance = self:_context(message.instanceId, message.actionId, message.settings, definition)
@@ -323,26 +360,20 @@ function server.new(registry, protocol, contextFactory)
     self.http = http
     self.token = token
     self.authenticated = false
+    self.sessionId = nil
     self.started = true
     return self
   end
 
   function object:stop()
-    if not self.started then
-      self.instances = {}
-      self.authenticated = false
-      return self
-    end
     self.started = false
-    for instanceId, instance in pairs(self.instances) do
-      instance:invoke("disappear")
-      self.instances[instanceId] = nil
-    end
+    self:_clearInstances()
     if self.http and type(self.http.stop) == "function" then
       pcall(self.http.stop, self.http)
     end
     self.http = nil
     self.token = nil
+    self.sessionId = nil
     self.authenticated = false
     self.responseQueue = nil
     return self

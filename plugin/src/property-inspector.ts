@@ -1,3 +1,5 @@
+import { parseInitialActionInfo } from "./property-inspector-state";
+
 type JsonObject = Record<string, unknown>;
 
 type ElementLike = {
@@ -263,7 +265,10 @@ function connectElgatoStreamDeckSocket(
   const parsedActionInfo = parseJsonObject(actionInfo);
   actionContext =
     typeof parsedActionInfo.context === "string" ? parsedActionInfo.context : uuid;
-  savedActionId = actionIdFromSettings(parsedActionInfo.settings);
+  const initialActionId = parseInitialActionInfo(actionInfo);
+  if (initialActionId) {
+    savedActionId = initialActionId;
+  }
   bridgeActions = [];
   setBridgeStatus("connecting");
   renderActionSelect();

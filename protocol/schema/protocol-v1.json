@@ -20,6 +20,11 @@
       "type": "string",
       "minLength": 1
     },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Opaque, non-empty server-generated identity for the current authenticated WebSocket session."
+    },
     "text": {
       "type": "string",
       "minLength": 1
@@ -65,9 +70,10 @@
         {
           "type": "object",
           "properties": {
-            "type": { "const": "helloAck" }
+            "type": { "const": "helloAck" },
+            "sessionId": { "$ref": "#/$defs/sessionId" }
           },
-          "required": [],
+          "required": ["sessionId"],
           "additionalProperties": true
         }
       ]
@@ -79,9 +85,10 @@
           "type": "object",
           "properties": {
             "type": { "const": "listActions" },
+            "sessionId": { "$ref": "#/$defs/sessionId" },
             "requestId": { "$ref": "#/$defs/id" }
           },
-          "required": ["requestId"],
+          "required": ["sessionId", "requestId"],
           "additionalProperties": true
         }
       ]
@@ -124,11 +131,12 @@
           "type": "object",
           "properties": {
             "type": { "const": "instanceAppeared" },
+            "sessionId": { "$ref": "#/$defs/sessionId" },
             "instanceId": { "$ref": "#/$defs/id" },
             "actionId": { "$ref": "#/$defs/id" },
             "settings": { "$ref": "#/$defs/settings" }
           },
-          "required": ["instanceId", "actionId", "settings"],
+          "required": ["sessionId", "instanceId", "actionId", "settings"],
           "additionalProperties": true
         }
       ]
@@ -140,10 +148,11 @@
           "type": "object",
           "properties": {
             "type": { "const": "instanceDisappeared" },
+            "sessionId": { "$ref": "#/$defs/sessionId" },
             "instanceId": { "$ref": "#/$defs/id" },
             "actionId": { "$ref": "#/$defs/id" }
           },
-          "required": ["instanceId", "actionId"],
+          "required": ["sessionId", "instanceId", "actionId"],
           "additionalProperties": true
         }
       ]
@@ -155,10 +164,11 @@
           "type": "object",
           "properties": {
             "type": { "const": "keyDown" },
+            "sessionId": { "$ref": "#/$defs/sessionId" },
             "instanceId": { "$ref": "#/$defs/id" },
             "actionId": { "$ref": "#/$defs/id" }
           },
-          "required": ["instanceId", "actionId"],
+          "required": ["sessionId", "instanceId", "actionId"],
           "additionalProperties": true
         }
       ]
@@ -170,10 +180,11 @@
           "type": "object",
           "properties": {
             "type": { "const": "requestAppearance" },
+            "sessionId": { "$ref": "#/$defs/sessionId" },
             "instanceId": { "$ref": "#/$defs/id" },
             "actionId": { "$ref": "#/$defs/id" }
           },
-          "required": ["instanceId", "actionId"],
+          "required": ["sessionId", "instanceId", "actionId"],
           "additionalProperties": true
         }
       ]

@@ -146,13 +146,16 @@ function frames(socket: FakeSocket): Array<Record<string, unknown>> {
 }
 
 
-async function authenticate(socket: FakeSocket): Promise<string> {
+let nextSessionId = 1;
+
+async function authenticate(socket: FakeSocket, sessionId = `session-${nextSessionId++}`): Promise<string> {
   await flush();
   socket.open();
   expect(frames(socket).at(-1)).toMatchObject({ type: "hello", token: "shared-token" });
-  socket.receive(JSON.stringify({ protocolVersion: 1, type: "helloAck" }));
+  socket.receive(JSON.stringify({ protocolVersion: 1, type: "helloAck", sessionId }));
   const request = frames(socket).find((frame) => frame.type === "listActions");
   expect(request).toBeDefined();
+  expect(request?.sessionId).toBe(sessionId);
   return request!.requestId as string;
 }
 
@@ -264,21 +267,28 @@ describe("BridgeClient reconnect and synchronization", () => {
     const { client } = makeClient(sockets, timers);
     client.start();
     await flush();
-    const requestId = await authenticate(sockets[0]);
+    const requestId = await authenticate(sockets[0], "session-first");
     completeActions(sockets[0], requestId);
 
     client.upsertInstance({ instanceId: "instance-1", actionId: "com.example.action", settings: { actionId: "com.example.action" } });
     const firstConnectedFrames = frames(sockets[0]);
-    expect(firstConnectedFrames.at(-1)).toMatchObject({ type: "instanceAppeared", instanceId: "instance-1" });
+    expect(firstConnectedFrames.at(-1)).toMatchObject({
+      type: "instanceAppeared",
+      instanceId: "instance-1",
+      sessionId: "session-first",
+    });
 
     sockets[0].peerClose();
     timers.runNext();
     await flush();
     const reconnect = sockets[1];
-    const reconnectRequestId = await authenticate(reconnect);
+    const reconnectRequestId = await authenticate(reconnect, "session-reconnect");
     completeActions(reconnect, reconnectRequestId);
 
-    const replay = frames(reconnect).filter((frame) => ["instanceAppeared", "requestAppearance"].includes(frame.type as string));
+    const postHello = frames(reconnect).filter((frame) => frame.type !== "hello");
+    expect(postHello.length).toBeGreaterThan(0);
+    expect(postHello.every((frame) => frame.sessionId === "session-reconnect")).toBe(true);
+    const replay = postHello.filter((frame) => ["instanceAppeared", "requestAppearance"].includes(frame.type as string));
     expect(replay).toEqual([
       expect.objectContaining({ type: "instanceAppeared", instanceId: "instance-1", actionId: "com.example.action" }),
       expect.objectContaining({ type: "requestAppearance", instanceId: "instance-1", actionId: "com.example.action" }),

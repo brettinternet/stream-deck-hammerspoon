@@ -1,6 +1,26 @@
 (function () {
     'use strict';
 
+    function isJsonObject$1(value) {
+        return typeof value === "object" && value !== null && !Array.isArray(value);
+    }
+    function parseInitialActionInfo(actionInfo) {
+        try {
+            const parsed = JSON.parse(actionInfo);
+            if (!isJsonObject$1(parsed) || !isJsonObject$1(parsed.payload)) {
+                return "";
+            }
+            const settings = parsed.payload.settings;
+            if (!isJsonObject$1(settings) || typeof settings.actionId !== "string") {
+                return "";
+            }
+            return settings.actionId.trim().length > 0 ? settings.actionId : "";
+        }
+        catch {
+            return "";
+        }
+    }
+
     const browserGlobal = globalThis;
     const documentLike = browserGlobal.document;
     const actionSelect = documentLike?.getElementById("action-id");
@@ -168,7 +188,10 @@
         const parsedActionInfo = parseJsonObject(actionInfo);
         actionContext =
             typeof parsedActionInfo.context === "string" ? parsedActionInfo.context : uuid;
-        savedActionId = actionIdFromSettings(parsedActionInfo.settings);
+        const initialActionId = parseInitialActionInfo(actionInfo);
+        if (initialActionId) {
+            savedActionId = initialActionId;
+        }
         bridgeActions = [];
         setBridgeStatus("connecting");
         renderActionSelect();

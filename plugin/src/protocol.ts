@@ -25,9 +25,14 @@ export interface HelloMessage extends WireMessage {
 
 export interface HelloAckMessage extends WireMessage {
   type: "helloAck";
+  sessionId: string;
 }
 
-export interface ListActionsMessage extends WireMessage {
+export interface AuthenticatedClientMessage extends WireMessage {
+  sessionId: string;
+}
+
+export interface ListActionsMessage extends AuthenticatedClientMessage {
   type: "listActions";
   requestId: string;
 }
@@ -45,26 +50,26 @@ export interface ActionsMessage extends WireMessage {
   actions: ActionDefinition[];
 }
 
-export interface InstanceAppearedMessage extends WireMessage {
+export interface InstanceAppearedMessage extends AuthenticatedClientMessage {
   type: "instanceAppeared";
   instanceId: string;
   actionId: string;
   settings: JsonSettings;
 }
 
-export interface InstanceDisappearedMessage extends WireMessage {
+export interface InstanceDisappearedMessage extends AuthenticatedClientMessage {
   type: "instanceDisappeared";
   instanceId: string;
   actionId: string;
 }
 
-export interface KeyDownMessage extends WireMessage {
+export interface KeyDownMessage extends AuthenticatedClientMessage {
   type: "keyDown";
   instanceId: string;
   actionId: string;
 }
 
-export interface RequestAppearanceMessage extends WireMessage {
+export interface RequestAppearanceMessage extends AuthenticatedClientMessage {
   type: "requestAppearance";
   instanceId: string;
   actionId: string;
@@ -77,6 +82,7 @@ export interface AppearanceMessage extends WireMessage {
   title: string;
   state: WireState;
 }
+
 
 export type ProtocolErrorCode =
   | "AUTH_REQUIRED"

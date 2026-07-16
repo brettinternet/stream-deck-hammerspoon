@@ -2,7 +2,7 @@
 
 This module is the Hammerspoon side of the local Stream Deck bridge. It is a normal Lua module loaded by the Hammerspoon configuration. It does not evaluate Lua received from the plugin, and it does not expose a direct hardware API.
 
-The bridge protocol is authenticated and loopback-only. The Stream Deck plugin is the client; Hammerspoon accepts one local plugin connection.
+The bridge protocol is authenticated and loopback-only. The Stream Deck plugin is the client; Hammerspoon accepts one local plugin connection. The shared token authenticates `hello`, then each accepted hello creates a fresh opaque in-memory `sessionId`. The plugin must echo that exact ID on every later application message.
 
 ## Installation and loading
 
@@ -19,7 +19,7 @@ The bridge protocol is authenticated and loopback-only. The Stream Deck plugin i
    local streamdeck = require("streamdeck")
    ```
 
-`start()` creates the token file when necessary. The default is `~/.hammerspoon/streamdeck-token`; it contains a generated shared token and is created with owner-only permissions (`0600`). Do not put the token in Stream Deck settings, action settings, source control, or logs. If the token cannot be read or written, the bridge remains disconnected; it never falls back to unauthenticated operation.
+`start()` creates the token file when necessary. The default is `~/.hammerspoon/streamdeck-token`; it contains a generated shared token and is created with owner-only permissions (`0600`). Do not put the token in Stream Deck settings, action settings, source control, or logs. If the token cannot be read or written, the bridge remains disconnected; it never falls back to unauthenticated operation. Session IDs are not tokens: each accepted hello receives a fresh non-empty ID generated with `hs.host.uuid()`, held only in memory, rotated on reconnect/plugin restart, and never logged or persisted.
 
 A normal configuration calls `register` once for each action and then calls `start` once:
 
@@ -30,7 +30,7 @@ local streamdeck = require("streamdeck")
 streamdeck.start()
 ```
 
-The module keeps its registry and connection state in memory. A Hammerspoon reload therefore requires the configuration to load the module, register all actions again, and start it again.
+The module keeps its registry and connection/session state in memory. A Hammerspoon reload therefore requires the configuration to load the module, register all actions again, and start it again.
 
 ## Minimal API
 
@@ -51,7 +51,7 @@ end
 
 ### `streamdeck.start(options)`
 
-Starts the authenticated loopback WebSocket server and publishes the registered action list to the plugin. With no options it uses the protocol defaults: loopback binding, Bonjour disabled, port `17321`, and token path `~/.hammerspoon/streamdeck-token`.
+Starts the authenticated loopback WebSocket server and publishes the registered action list to the plugin after a valid hello establishes a fresh session. With no options it uses the protocol defaults: loopback binding, Bonjour disabled, port `17321`, and token path `~/.hammerspoon/streamdeck-token`.
 
 The supported options are:
 
@@ -64,7 +64,13 @@ The server is never exposed on a non-loopback interface. `start` validates its o
 
 ### `streamdeck.stop()`
 
-Stops the server, closes the plugin connection, and discards active instance contexts. It does not delete the token file or the registered definitions. After `stop`, call `start` to open a new bridge using the same in-memory registry.
+Stops the server, closes the plugin connection, clears the current in-memory session ID, and discards active instance contexts. It does not delete the token file or the registered definitions. After `stop`, call `start` to open a new bridge using the same in-memory registry; the next hello creates a new session ID.
+
+### Authentication session lifecycle
+
+The shared token is accepted only in `hello`. A valid hello is accepted even if a prior session was still marked authenticated: the bridge safely clears prior instance contexts, generates a fresh non-empty opaque `sessionId` with `hs.host.uuid()`, and returns it in the required `helloAck.sessionId`. This session ID is an in-memory capability, not a replacement for the token.
+
+After `helloAck`, every plugin-to-Lua application message (`listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, and `requestAppearance`) must include the exact current `sessionId`. Missing, stale, or invalid IDs are rejected before action dispatch and invoke no callback. The bridge clears the ID and contexts on close, `stop()`, or failure. Because `hs.httpserver` does not provide a reliable connection-close callback, this explicit ID check prevents a later client from inheriting tokenless authorization from a prior process-global hello flag. Reconnect or plugin restart sends a new token-bearing hello and rotates the ID; old-session messages remain invalid. Session IDs are never logged.
 
 ### `streamdeck.refresh(actionId)`
 
@@ -93,7 +99,7 @@ An action definition is a table with these fields:
 | `settingsSchema` | no | table | Optional settings schema supplied to the plugin's property inspector. |
 | `appearance` | yes | function | Computes the current title and binary state for a context. |
 | `press` | yes | function | Handles a key-down event for a context. |
-| `appear` | no | function | Runs when a visible instance appears or is restored after reconnect. |
+| `appear` | no | function | Runs when a new visible instance appears or a restored context is rebuilt after reconnect. |
 | `disappear` | no | function | Runs when a visible instance disappears or the connection is torn down. |
 
 Registration rejects a non-table definition, missing required fields, wrong field types, an empty ID or name, duplicate IDs, and unknown fields. `settingsSchema`, when supplied, must be a table; it is not a Lua program and cannot request remote evaluation. IDs are not generated by the module. Use a stable, namespaced ID such as `com.example.microphone-toggle`; changing an ID creates a new action from the plugin's perspective and strands existing per-key assignments.
@@ -115,14 +121,14 @@ Callbacks run asynchronously in response to bridge events and are protected with
 
 - `press(context)` runs only for a key-down event. Its return value is ignored. It should perform the requested operation, then call `context:refresh()` if the operation changes the key's appearance.
 - `appearance(context)` runs when an instance appears, after `context:refresh()`, and after `streamdeck.refresh(actionId)`. It should read current state and return the `{ title, state }` table; it should not perform the press operation.
-- `appear(context)` runs when the plugin announces an instance. Use it for instance setup, not for returning appearance data.
+- `appear(context)` runs once when a new instance/action context is created or when a fresh reconnect rebuilds a previously cleared context. A repeated `instanceAppeared` for the same instance/action is a settings refresh; it updates `context:getSettings()` and does not invoke `appear` again.
 - `disappear(context)` runs when the plugin removes an instance. Use it to release instance-scoped resources. It is not a substitute for `stop()`.
-- A callback failure is logged locally and sent to the plugin as a safe protocol `error`. If the error is associated with an instance, the plugin also shows alert feedback on that instance. Error details never include the shared token. A failed callback leaves the current presentation unchanged.
+- A callback failure is logged locally and sent to the plugin as a safe protocol `error`. If the error is associated with an instance, the plugin also shows alert feedback on that instance. Error details never include the shared token or session ID. A failed callback leaves the current presentation unchanged.
 - A malformed appearance result is handled like a callback failure: no malformed fields are sent to Stream Deck, and the previous presentation remains in place.
 
 Registration and startup failures are synchronous Lua errors. Callback failures are runtime errors handled by the bridge. This distinction makes a typo in the action table visible during configuration load while keeping a device callback failure from taking down the bridge.
 
-When the plugin is not connected, refresh requests cannot be delivered. The plugin displays its disconnected/offline presentation and retries with bounded backoff. Once authentication succeeds again, it requests the action list, re-announces visible instances, invokes `appear`, and requests appearance.
+When the plugin is not connected, refresh requests cannot be delivered. The plugin displays its disconnected/offline presentation and retries with bounded backoff. Once authentication succeeds again, it receives a fresh session ID, requests the action list, re-announces visible instances with that ID, and requests appearance. Re-announcing an unchanged instance/action refreshes settings but does not invoke `appear` again.
 
 ## Complete example: microphone mute
 
@@ -184,15 +190,15 @@ The lifecycle is intentionally explicit:
 1. Hammerspoon loads the module.
 2. The configuration registers every action definition.
 3. `start()` creates/opens the authenticated loopback server.
-4. The plugin authenticates with the shared token and requests the action list.
-5. Each visible key announces its instance; the bridge invokes `appear` and computes its initial `appearance`.
+4. The plugin authenticates with the shared token; Hammerspoon returns a fresh `helloAck.sessionId`, and the plugin echoes it on every subsequent application message.
+5. Each visible key announces its instance. For a new instance/action context, the bridge invokes `appear` and computes its initial `appearance`; a repeated announcement for the same instance/action only refreshes settings and does not invoke `appear`.
 6. `press` and appearance callbacks run for their corresponding contexts.
 7. The plugin removes an instance; the bridge invokes `disappear`.
-8. `stop()` or a Hammerspoon reload closes the connection and drops active contexts.
+8. `stop()` or a Hammerspoon reload closes the connection, clears the session ID, and drops active contexts.
 
-A reload does not preserve the Lua registry or contexts. Register definitions on every reload before starting. The plugin reconnects after a reload, re-authenticates, receives the action list, and restores visible instances and appearances. The token file is retained across reloads unless an administrator intentionally rotates it; changing or removing it requires restarting both sides so they read the same token.
+A reload does not preserve the Lua registry, session ID, or contexts. Register definitions on every reload before starting. The plugin reconnects after a reload, re-authenticates, receives a fresh session ID, receives the action list, and restores visible instances and appearances. Stream Deck's initial settings arrive to the plugin under `actionInfo.payload.settings`; the plugin forwards the decoded settings in `instanceAppeared`. Repeated `instanceAppeared` for the same instance/action is a settings refresh, not a second `appear` lifecycle. The token file is retained across reloads unless an administrator intentionally rotates it; changing or removing it requires restarting both sides so they read the same token.
 
-The bridge accepts one WebSocket client because of the Hammerspoon HTTP server limitation. This is sufficient for the one local Stream Deck plugin process; a second client is not a supported multi-user or multi-plugin deployment.
+The bridge accepts one WebSocket client because of the Hammerspoon HTTP server limitation. Because `hs.httpserver` lacks a reliable close callback, a client is never authorized merely because a process-global hello flag remains true: the next valid hello must carry the token, rotates the session ID, and clears prior contexts. This is sufficient for the one local Stream Deck plugin process; a second client is not a supported multi-user or multi-plugin deployment.
 
 ## Excluded APIs in v1
 

@@ -17195,6 +17195,11 @@ var $defs = {
 		type: "string",
 		minLength: 1
 	},
+	sessionId: {
+		type: "string",
+		minLength: 1,
+		description: "Opaque, non-empty server-generated identity for the current authenticated WebSocket session."
+	},
 	text: {
 		type: "string",
 		minLength: 1
@@ -17258,9 +17263,13 @@ var $defs = {
 				properties: {
 					type: {
 						"const": "helloAck"
+					},
+					sessionId: {
+						$ref: "#/$defs/sessionId"
 					}
 				},
 				required: [
+					"sessionId"
 				],
 				additionalProperties: true
 			}
@@ -17277,11 +17286,15 @@ var $defs = {
 					type: {
 						"const": "listActions"
 					},
+					sessionId: {
+						$ref: "#/$defs/sessionId"
+					},
 					requestId: {
 						$ref: "#/$defs/id"
 					}
 				},
 				required: [
+					"sessionId",
 					"requestId"
 				],
 				additionalProperties: true
@@ -17348,6 +17361,9 @@ var $defs = {
 					type: {
 						"const": "instanceAppeared"
 					},
+					sessionId: {
+						$ref: "#/$defs/sessionId"
+					},
 					instanceId: {
 						$ref: "#/$defs/id"
 					},
@@ -17359,6 +17375,7 @@ var $defs = {
 					}
 				},
 				required: [
+					"sessionId",
 					"instanceId",
 					"actionId",
 					"settings"
@@ -17378,6 +17395,9 @@ var $defs = {
 					type: {
 						"const": "instanceDisappeared"
 					},
+					sessionId: {
+						$ref: "#/$defs/sessionId"
+					},
 					instanceId: {
 						$ref: "#/$defs/id"
 					},
@@ -17386,6 +17406,7 @@ var $defs = {
 					}
 				},
 				required: [
+					"sessionId",
 					"instanceId",
 					"actionId"
 				],
@@ -17404,6 +17425,9 @@ var $defs = {
 					type: {
 						"const": "keyDown"
 					},
+					sessionId: {
+						$ref: "#/$defs/sessionId"
+					},
 					instanceId: {
 						$ref: "#/$defs/id"
 					},
@@ -17412,6 +17436,7 @@ var $defs = {
 					}
 				},
 				required: [
+					"sessionId",
 					"instanceId",
 					"actionId"
 				],
@@ -17430,6 +17455,9 @@ var $defs = {
 					type: {
 						"const": "requestAppearance"
 					},
+					sessionId: {
+						$ref: "#/$defs/sessionId"
+					},
 					instanceId: {
 						$ref: "#/$defs/id"
 					},
@@ -17438,6 +17466,7 @@ var $defs = {
 					}
 				},
 				required: [
+					"sessionId",
 					"instanceId",
 					"actionId"
 				],
@@ -17825,6 +17854,7 @@ class BridgeClient extends EventEmitter$1 {
     reconnectAttempt = 0;
     started = false;
     authenticated = false;
+    sessionId;
     nextRequestId = 0;
     pendingActions = new Set();
     constructor(options) {
@@ -17853,6 +17883,7 @@ class BridgeClient extends EventEmitter$1 {
     stop() {
         this.started = false;
         this.authenticated = false;
+        this.sessionId = undefined;
         this.pendingActions.clear();
         this.clearReconnectTimer();
         this.socketGeneration += 1;
@@ -17935,6 +17966,7 @@ class BridgeClient extends EventEmitter$1 {
             return;
         this.clearReconnectTimer();
         this.authenticated = false;
+        this.sessionId = undefined;
         this.setStatus("connecting");
         const generation = ++this.socketGeneration;
         void this.openSocket(generation);
@@ -18012,6 +18044,7 @@ class BridgeClient extends EventEmitter$1 {
                 this.emitProtocolError({ code: "INVALID_STATE", message: "Unexpected authentication acknowledgement." });
                 return;
             }
+            this.sessionId = message.sessionId;
             this.authenticated = true;
             this.reconnectAttempt = 0;
             this.setStatus("connected");
@@ -18108,8 +18141,18 @@ class BridgeClient extends EventEmitter$1 {
     send(message) {
         if (!this.socket)
             return false;
+        let outbound;
+        if (message.type === "hello") {
+            outbound = message;
+        }
+        else {
+            const sessionId = this.sessionId;
+            if (!isNonEmptyString(sessionId))
+                return false;
+            outbound = { ...message, sessionId };
+        }
         try {
-            this.socket.send(serializeClientMessage(message));
+            this.socket.send(serializeClientMessage(outbound));
             return true;
         }
         catch {
@@ -18123,6 +18166,7 @@ class BridgeClient extends EventEmitter$1 {
         if (this.socket === undefined && this._status === "disconnected")
             return;
         this.authenticated = false;
+        this.sessionId = undefined;
         this.pendingActions.clear();
         this.socket = undefined;
         this.setStatus("disconnected");
@@ -18158,6 +18202,7 @@ class BridgeClient extends EventEmitter$1 {
         const socket = this.socket;
         this.socket = undefined;
         this.authenticated = false;
+        this.sessionId = undefined;
         if (socket) {
             try {
                 socket.close();
