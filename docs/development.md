@@ -15,6 +15,16 @@ Current development targets are:
 - A macOS installation of Hammerspoon
 - The official Stream Deck application for install and hardware/UI checks
 
+## Default bridge endpoint and transport behavior
+
+The default Hammerspoon endpoint is the concrete WebSocket URL:
+
+```text
+ws://localhost:17321/streamdeck
+```
+
+Hammerspoon binds this endpoint to localhost/loopback with Bonjour disabled. The `hs.httpserver:websocket` message callback must return a string, so lifecycle events with no response can produce a zero-length transport frame. The TypeScript transport ignores only zero-length frames before JSON/protocol validation; every non-empty frame remains strict. Empty frames are transport artifacts, not protocol messages or an unauthenticated fallback, and this is a reversible transport-specific limitation.
+
 Install the project runtimes with [mise](https://mise.jdx.dev/):
 
 ```sh
@@ -108,7 +118,7 @@ The complete hardware-facing slice cannot be automated without a connected Strea
 
 1. Install the pinned runtimes with `mise install`, then run `bun install`, `bun run check`, `bun test`, and `bun run build`.
 2. Run the Lua load check and link or copy `hammerspoon/streamdeck/` into `~/.hammerspoon/`.
-3. Ensure `~/.hammerspoon/streamdeck-token` exists with mode `0600`; start/reload Hammerspoon and start the bridge with its configured action registration.
+3. Ensure `~/.hammerspoon/streamdeck-token` exists with mode `0600`; start/reload Hammerspoon and start the bridge with its configured action registration, using the default endpoint `ws://localhost:17321/streamdeck` when checking the bridge connection.
 4. Validate, pack, install, and restart the plugin with the official CLI commands above. Leave the official Stream Deck application running.
 5. On the official Stream Deck, add the generic action `com.brettinternet.hammerspoon.action` to a key. In its property inspector, select a registered action ID and save it to that instance's settings.
 6. Press and release the key. Confirm the registered Hammerspoon callback runs and that the key renders the configured title and state (`0` or `1`).
@@ -120,7 +130,7 @@ The complete hardware-facing slice cannot be automated without a connected Strea
 ### The plugin stays offline
 
 - Confirm Hammerspoon is running and the bridge is started.
-- Confirm both ends use the default loopback port `17321` and that the server binds localhost/loopback only.
+- Confirm both ends use the default endpoint `ws://localhost:17321/streamdeck` and that the server binds localhost/loopback only.
 - Check `~/.hammerspoon/streamdeck-token` exists, is readable by the relevant user, contains the current two-UUID token, and has mode `0600`.
 - Reload Hammerspoon after changing the module or token, then restart the plugin.
 - Verify the official Stream Deck application is still running; the bridge expects one local plugin client, not an independent hardware connection.
@@ -128,6 +138,10 @@ The complete hardware-facing slice cannot be automated without a connected Strea
 ### Authentication fails
 
 The first WebSocket message must be the protocol-v1 `hello` containing the shared token and `pluginVersion`. An unauthenticated or malformed message is rejected. Check the token file and permissions on both sides; never turn authentication off. Do not expect a WebSocket upgrade-header token: Hammerspoon's `hs.httpserver:websocket` exposes message callbacks rather than upgrade headers.
+
+### Empty frames or transport parse errors
+
+`hs.httpserver:websocket` callbacks must return a string, so a lifecycle event with no response may appear as a zero-length frame. The TypeScript transport is expected to ignore only that zero-length frame before JSON/protocol validation. Do not treat it as an additional protocol message or an authentication failure. If a frame contains any bytes, it is not an empty-frame artifact: malformed JSON, an unsupported version, an unknown type, or any other invalid non-empty frame must remain a strict validation error. Check the sender/transport framing before changing protocol or authentication behavior.
 
 ### Actions or appearance are stale
 

@@ -1,0 +1,20 @@
+[
+  {
+    "protocolVersion": 1,
+    "type": "listActions",
+    "requestId": "req-01"
+  },
+  {
+    "protocolVersion": 1,
+    "type": "actions",
+    "requestId": "req-01",
+    "actions": [
+      { "actionId": "com.example.volumeUp", "name": "Volume Up" },
+      {
+        "actionId": "com.example.mute",
+        "name": "Mute",
+        "settingsSchema": []
+      }
+    ]
+  }
+]

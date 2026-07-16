@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brettinternet/stream-deck-hammerspoon/protocol/schema/protocol-v1.json",
+  "title": "Stream Deck–Hammerspoon protocol v1",
+  "description": "Canonical wire schema for authenticated Stream Deck–Hammerspoon messages.",
+  "oneOf": [
+    { "$ref": "#/$defs/hello" },
+    { "$ref": "#/$defs/helloAck" },
+    { "$ref": "#/$defs/listActions" },
+    { "$ref": "#/$defs/actions" },
+    { "$ref": "#/$defs/instanceAppeared" },
+    { "$ref": "#/$defs/instanceDisappeared" },
+    { "$ref": "#/$defs/keyDown" },
+    { "$ref": "#/$defs/requestAppearance" },
+    { "$ref": "#/$defs/appearance" },
+    { "$ref": "#/$defs/error" }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "settings": {
+      "type": "object",
+      "description": "Application-owned JSON object. Keys and values are opaque to protocol v1.",
+      "additionalProperties": true
+    },
+    "message": {
+      "type": "object",
+      "required": ["protocolVersion", "type"],
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "const": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "hello": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "hello" },
+            "token": { "$ref": "#/$defs/text" },
+            "pluginVersion": { "$ref": "#/$defs/text" }
+          },
+          "required": ["token", "pluginVersion"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "helloAck": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "helloAck" }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "listActions": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "listActions" },
+            "requestId": { "$ref": "#/$defs/id" }
+          },
+          "required": ["requestId"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "actionDefinition": {
+      "type": "object",
+      "properties": {
+        "actionId": { "$ref": "#/$defs/id" },
+        "name": { "$ref": "#/$defs/text" },
+        "settingsSchema": {
+          "type": "array",
+          "description": "Optional extension reserved for future property-inspector controls."
+        }
+      },
+      "required": ["actionId", "name"],
+      "additionalProperties": true
+    },
+    "actions": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "actions" },
+            "requestId": { "$ref": "#/$defs/id" },
+            "actions": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/actionDefinition" }
+            }
+          },
+          "required": ["requestId", "actions"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "instanceAppeared": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "instanceAppeared" },
+            "instanceId": { "$ref": "#/$defs/id" },
+            "actionId": { "$ref": "#/$defs/id" },
+            "settings": { "$ref": "#/$defs/settings" }
+          },
+          "required": ["instanceId", "actionId", "settings"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "instanceDisappeared": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "instanceDisappeared" },
+            "instanceId": { "$ref": "#/$defs/id" },
+            "actionId": { "$ref": "#/$defs/id" }
+          },
+          "required": ["instanceId", "actionId"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "keyDown": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "keyDown" },
+            "instanceId": { "$ref": "#/$defs/id" },
+            "actionId": { "$ref": "#/$defs/id" }
+          },
+          "required": ["instanceId", "actionId"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "requestAppearance": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "requestAppearance" },
+            "instanceId": { "$ref": "#/$defs/id" },
+            "actionId": { "$ref": "#/$defs/id" }
+          },
+          "required": ["instanceId", "actionId"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "appearance": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "appearance" },
+            "instanceId": { "$ref": "#/$defs/id" },
+            "actionId": { "$ref": "#/$defs/id" },
+            "title": { "type": "string" },
+            "state": { "type": "integer", "enum": [0, 1] }
+          },
+          "required": ["instanceId", "actionId", "title", "state"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "error": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "error" },
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_REQUIRED",
+                "AUTH_FAILED",
+                "VERSION_MISMATCH",
+                "MALFORMED_MESSAGE",
+                "UNKNOWN_TYPE",
+                "INVALID_FIELD",
+                "INVALID_STATE",
+                "UNKNOWN_ACTION",
+                "STALE_INSTANCE",
+                "CALLBACK_FAILED",
+                "INTERNAL"
+              ]
+            },
+            "message": { "$ref": "#/$defs/text" },
+            "requestId": { "$ref": "#/$defs/id" },
+            "instanceId": { "$ref": "#/$defs/id" }
+          },
+          "required": ["code", "message"],
+          "additionalProperties": true
+        }
+      ]
+    }
+  }
+}

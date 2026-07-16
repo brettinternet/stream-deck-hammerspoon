@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build, test, and package outputs
+coverage/
+**/coverage/
+dist/
+**/dist/
+build/
+**/build/
+*.streamDeckPlugin
+*.zip
+*.tar
+*.tar.gz
+
+# Logs and local diagnostics
+*.log
+logs/
+
+# Local and editor files
+.DS_Store
+
+# Secrets and runtime credentials
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+*.token
+streamdeck-token
+**/streamdeck-token
+*.pem
+*.key

@@ -63,9 +63,9 @@ Stream Deck application
         │ official plugin lifecycle / plugin WebSocket
         ▼
 TypeScript plugin process (plugin/)
-        │ authenticated protocol-v1 WebSocket, localhost:17321 by default
+        │ authenticated protocol-v1 WebSocket to ws://localhost:17321/streamdeck
         ▼
-Hammerspoon hs.httpserver endpoint
+Hammerspoon hs.httpserver `/streamdeck` endpoint
         │ strict protocol validation and instance registry
         ▼
 Lua bridge (hammerspoon/streamdeck/)
@@ -78,7 +78,7 @@ The property inspector is a separate official Stream Deck UI surface. It communi
 
 The runtime flow is:
 
-1. Hammerspoon starts a server on loopback (`localhost`) and the fixed default port `17321`; Bonjour is disabled.
+1. Hammerspoon starts the `hs.httpserver` WebSocket endpoint at the default URL `ws://localhost:17321/streamdeck`; it binds loopback (`localhost`) and disables Bonjour.
 2. The plugin reads the runtime token file and opens one WebSocket connection.
 3. The plugin's first protocol message is `hello`, containing the shared token and `pluginVersion`.
 4. Hammerspoon rejects every other message until a valid `hello` is acknowledged with `helloAck`.
@@ -123,6 +123,10 @@ The v1 appearance contract is only `title` and `state`. The property inspector h
 
 The Hammerspoon server accepts one WebSocket client because of `hs.httpserver` limitations. That is sufficient for one local Stream Deck plugin process and is an explicit v1 limit. Because `hs.httpserver:websocket` exposes message callbacks rather than HTTP upgrade headers or a rich connection lifecycle, authentication is a first-message protocol exchange, not a WebSocket header. Unauthenticated messages are rejected.
 
+### `hs.httpserver` callback transport behavior
+
+`hs.httpserver:websocket` callbacks must return a string. A lifecycle event with no response therefore produces a zero-length transport frame. The TypeScript transport ignores only zero-length frames before JSON/protocol validation; every non-empty frame still goes through strict JSON Schema/protocol validation. A zero-length frame is not a protocol message, an eleventh protocol type, or an unauthenticated fallback. This is a reversible, transport-specific limitation: replacing the transport can remove the accommodation without changing the v1 message contract or authentication rules.
+
 ### Reconnect synchronization
 
 The plugin uses bounded exponential backoff with jitter: 250 ms initially, doubling to a 10 s maximum. A successful authenticated `helloAck` resets the backoff. While disconnected, the plugin retains visible instance metadata in TypeScript and marks titles `Hammerspoon Offline`.
@@ -143,7 +147,7 @@ The default token path is `~/.hammerspoon/streamdeck-token`. Lua creates it from
 
 Current v1 limitations are intentional:
 
-- one local plugin client, one fixed default port, and first-message authentication;
+- one local plugin client, the fixed default URL `ws://localhost:17321/streamdeck`, and first-message authentication;
 - loopback transport only; no remote clients, Bonjour discovery, or unauthenticated mode;
 - raw token file permissions may interact with Stream Deck plugin sandbox/file-permission behavior;
 - title and binary state are the only appearance fields;
@@ -162,8 +166,8 @@ Each record is intentionally short but complete. Reversibility describes what ca
 - **Problem:** The plugin must deliver key/lifecycle events and receive appearance changes promptly without a background polling loop or an extra daemon.
 - **Choice:** Use one authenticated WebSocket from the TypeScript plugin to Hammerspoon's `hs.httpserver:websocket` on loopback.
 - **Alternatives:** HTTP polling; a separate local daemon; direct Stream Deck hardware access from Hammerspoon.
-- **Tradeoffs / consequences:** WebSocket gives event delivery and a single bidirectional channel, but `hs.httpserver` exposes message callbacks rather than upgrade headers/rich connection lifecycle. Authentication therefore occurs in the first protocol message, and the server is effectively single-client. Loopback and fixed port simplify discovery but exclude remote clients.
-- **Reversibility:** The transport boundary can be replaced only by a new protocol/transport decision. The message types, identities, and auth semantics should remain the migration contract; v1 does not support polling as a fallback.
+- **Tradeoffs / consequences:** WebSocket gives event delivery and a single bidirectional channel, but `hs.httpserver` exposes message callbacks rather than upgrade headers/rich connection lifecycle and requires callbacks to return a string. No-response lifecycle events can consequently appear as zero-length transport frames; the TypeScript transport ignores only those empty frames before validation, while every non-empty frame remains strict. Authentication therefore occurs in the first protocol message, and the server is effectively single-client. Loopback and the fixed default URL simplify discovery but exclude remote clients.
+- **Reversibility:** The transport-specific empty-frame accommodation can be removed when the transport changes without changing protocol messages or authentication. Replacing the transport boundary otherwise requires a new protocol/transport decision. The message types, identities, and auth semantics should remain the migration contract; v1 does not support polling as a fallback.
 
 ### ADR-002: One shared token for the loopback bridge
 

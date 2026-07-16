@@ -1,0 +1,12 @@
+[
+  {
+    "protocolVersion": 1,
+    "type": "hello",
+    "token": "example-token",
+    "pluginVersion": "1.0.0"
+  },
+  {
+    "protocolVersion": 1,
+    "type": "helloAck"
+  }
+]

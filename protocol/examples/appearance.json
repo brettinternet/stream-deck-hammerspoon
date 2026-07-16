@@ -1,0 +1,45 @@
+[
+  {
+    "protocolVersion": 1,
+    "type": "instanceAppeared",
+    "instanceId": "deck-instance-01",
+    "actionId": "com.example.volumeUp",
+    "settings": {
+      "actionId": "com.example.volumeUp"
+    }
+  },
+  {
+    "protocolVersion": 1,
+    "type": "appearance",
+    "instanceId": "deck-instance-01",
+    "actionId": "com.example.volumeUp",
+    "title": "Volume +",
+    "state": 0
+  },
+  {
+    "protocolVersion": 1,
+    "type": "requestAppearance",
+    "instanceId": "deck-instance-01",
+    "actionId": "com.example.volumeUp"
+  },
+  {
+    "protocolVersion": 1,
+    "type": "appearance",
+    "instanceId": "deck-instance-01",
+    "actionId": "com.example.volumeUp",
+    "title": "Volume +",
+    "state": 0
+  },
+  {
+    "protocolVersion": 1,
+    "type": "keyDown",
+    "instanceId": "deck-instance-01",
+    "actionId": "com.example.volumeUp"
+  },
+  {
+    "protocolVersion": 1,
+    "type": "instanceDisappeared",
+    "instanceId": "deck-instance-01",
+    "actionId": "com.example.volumeUp"
+  }
+]

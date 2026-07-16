@@ -120,7 +120,7 @@ Required fields: `protocolVersion`, `type: "listActions"`, `requestId`. Lua eval
 
 ### `actions` (Lua → plugin)
 
-Required fields: `protocolVersion`, `type: "actions"`, `requestId`, `actions`. `requestId` must equal the outstanding `listActions.requestId`. `actions` is an array, including an empty array when no actions are registered. Each item has required non-empty `actionId`; action IDs are unique within the response. Unknown extension fields in an item are ignored.
+Required fields: `protocolVersion`, `type: "actions"`, `requestId`, `actions`. `requestId` must equal the outstanding `listActions.requestId`. `actions` is an array, including an empty array when no actions are registered. Each item requires a non-empty `actionId` and a non-empty, human-readable `name` for rendering a labeled action selector. An item may include an optional `settingsSchema` array reserved for future property-inspector controls; v1 does not interpret or render those controls. Action IDs are unique within the response. Unknown extension fields in an item are ignored.
 
 ```json
 {
@@ -128,8 +128,12 @@ Required fields: `protocolVersion`, `type: "actions"`, `requestId`, `actions`. `
   "type": "actions",
   "requestId": "req-01",
   "actions": [
-    { "actionId": "com.example.volumeUp" },
-    { "actionId": "com.example.mute" }
+    { "actionId": "com.example.volumeUp", "name": "Volume Up" },
+    {
+      "actionId": "com.example.mute",
+      "name": "Mute",
+      "settingsSchema": []
+    }
   ]
 }
 ```

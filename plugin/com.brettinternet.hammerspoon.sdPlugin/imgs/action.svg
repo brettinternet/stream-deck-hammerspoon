@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" role="img" aria-labelledby="title">
+  <title id="title">Hammerspoon action</title>
+  <circle cx="10" cy="10" r="7" fill="none" stroke="#fff" stroke-width="2"/>
+  <path d="M10 6v8M6 10h8" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="2"/>
+</svg>

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "Actions": [
+    {
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "Icon": "imgs/action",
+      "Name": "Hammerspoon Action",
+      "PropertyInspectorPath": "ui/property-inspector.html",
+      "States": [
+        {
+          "FontSize": 14,
+          "Image": "imgs/key",
+          "Name": "Inactive",
+          "ShowTitle": true,
+          "Title": "Hammerspoon Action",
+          "TitleAlignment": "middle"
+        },
+        {
+          "FontSize": 14,
+          "Image": "imgs/key",
+          "Name": "Active",
+          "ShowTitle": true,
+          "Title": "Hammerspoon Action",
+          "TitleAlignment": "middle"
+        }
+      ],
+      "UUID": "com.brettinternet.hammerspoon.action"
+    }
+  ],
+  "Author": "Brett",
+  "Category": "Hammerspoon",
+  "CodePath": "bin/plugin.js",
+  "Description": "Control Hammerspoon actions from Stream Deck.",
+  "Icon": "imgs/plugin",
+  "Name": "Hammerspoon",
+  "Nodejs": {
+    "Debug": "enabled",
+    "Version": "24"
+  },
+  "OS": [
+    {
+      "MinimumVersion": "13",
+      "Platform": "mac"
+    }
+  ],
+  "SDKVersion": 2,
+  "Software": {
+    "MinimumVersion": "7.1"
+  },
+  "UUID": "com.brettinternet.hammerspoon",
+  "Version": "0.1.0.0"
+}

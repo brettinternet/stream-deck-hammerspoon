@@ -10,7 +10,7 @@ This bridge is a local, authenticated control channel between the official Strea
 | Plugin process and its runtime settings | The plugin reads the token at runtime. The token is not stored in Stream Deck per-instance settings or sent through the property inspector. |
 | Hammerspoon process and `hammerspoon/streamdeck/` Lua module | The Lua module owns the server, token file, connection authentication, action registry, and callback dispatch. Registered callbacks are trusted code running in the user's Hammerspoon process. |
 | Token file (`~/.hammerspoon/streamdeck-token`) | This is the bearer credential shared by the plugin and Lua bridge. Its confidentiality depends on the local operating system and file permissions. |
-| Loopback WebSocket on default port `17321` | The transport is reachable only through localhost/loopback. It is not a remote service and does not provide encryption. |
+| Loopback WebSocket at the default URL `ws://localhost:17321/streamdeck` | The transport is reachable only through localhost/loopback. It is not a remote service and does not provide encryption. |
 | Protocol schema and validators | The JSON Schema is the protocol source of truth. TypeScript uses Ajv; Lua mirrors the required and type checks. |
 
 The trust boundary is crossed only after a valid `hello` message authenticates the WebSocket. Before that point, the peer is untrusted input. The Stream Deck app, property inspector, plugin UI, local filesystem, and any other process on the host are not automatically trusted merely because they are local. Hammerspoon callbacks and the explicitly registered action definitions are trusted application code; message data is not code.
@@ -25,7 +25,7 @@ The token is a bearer credential. Anyone who obtains it can authenticate until i
 
 ## Binding and connection authentication
 
-Hammerspoon starts `hs.httpserver` on localhost/loopback only, with Bonjour disabled and default port `17321`. Binding failure is a startup failure; the bridge does not retry by opening a non-loopback listener and does not fall back to an unauthenticated server.
+Hammerspoon starts `hs.httpserver` at the default URL `ws://localhost:17321/streamdeck`, on localhost/loopback only, with Bonjour disabled. Binding failure is a startup failure; the bridge does not retry by opening a non-loopback listener and does not fall back to an unauthenticated server.
 
 `hs.httpserver:websocket` exposes message callbacks, but **websocket upgrade headers are unavailable to the Lua callback**. Consequently, the token cannot be placed in or checked from an HTTP upgrade header in v1. Authentication is a protocol-level first message:
 
@@ -36,6 +36,10 @@ Hammerspoon starts `hs.httpserver` on localhost/loopback only, with Bonjour disa
 5. Rejected clients receive only a safe protocol error where a response is possible; they are not given token-comparison details or a reason that reveals secret material.
 
 First-message authentication is a limitation as well as a design choice. The connection exists before the credential is presented, so a local peer can consume a connection slot or send repeated invalid attempts. It also provides no transport encryption and does not prove that the peer is the expected plugin beyond possession of the token. The plugin must display the disconnected/offline state when authentication cannot complete; it must never continue through an unauthenticated fallback.
+
+### Callback return constraint and empty frames
+
+`hs.httpserver:websocket` requires its message callback to return a string. A lifecycle event with no response therefore produces a zero-length transport frame. The TypeScript transport ignores only zero-length frames before JSON/protocol validation; every non-empty frame remains subject to strict JSON Schema/protocol validation. A zero-length frame is a transport artifact, not a protocol message or an eleventh type, and it does not bypass first-message authentication or authorize any client. This is a reversible, transport-specific limitation rather than an unauthenticated fallback.
 
 ## Token lifecycle
 
