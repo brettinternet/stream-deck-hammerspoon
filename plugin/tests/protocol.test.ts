@@ -184,6 +184,7 @@ describe("protocol direction and validation", () => {
     const svg = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA3MiA3MiI+PHJlY3QgeD0iLjUiIHk9IjAiIHdpZHRoPSI3MS41IiBoZWlnaHQ9IjcyIi8+PC9zdmc+";
     expect(parseServerMessage(JSON.stringify({ ...appearance, appearanceVersion: 1, icon: { kind: "bundled", name: "hammerspoon" } }))).toBeDefined();
     const png = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAujBRSAAB/UYCuQAAAABJRU5ErkJggg==";
+    const trailingPng = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAALElEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAujBRSAABAGBCoqcAAAAASUVORK5CYII=";
     const corruptPng = Buffer.from(png, "base64");
     corruptPng[29] ^= 1;
     expect(parseServerMessage(JSON.stringify({
@@ -201,6 +202,7 @@ describe("protocol direction and validation", () => {
       { kind: "bundled", name: "bad_name" },
       { kind: "custom", mediaType: "image/png", dataBase64: "not-base64" },
       { kind: "custom", mediaType: "image/png", dataBase64: corruptPng.toString("base64") },
+      { kind: "custom", mediaType: "image/png", dataBase64: trailingPng },
       { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from("<svg><script/></svg>").toString("base64") },
       { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" style="fill:#fff"></svg>').toString("base64") },
       { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" xmlns:foreign="urn:x" viewBox="0 0 72 72"></svg>').toString("base64") },

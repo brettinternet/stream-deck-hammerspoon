@@ -520,7 +520,15 @@ function isValidPng(bytes: Buffer): boolean {
         return false;
       }
       try {
-        const raw = inflateSync(Buffer.concat(idatParts), { maxOutputLength: expectedRawLength });
+        const compressed = Buffer.concat(idatParts);
+        const inflated = inflateSync(compressed, { info: true, maxOutputLength: expectedRawLength }) as unknown as {
+          buffer: Buffer;
+          engine: { bytesWritten: number };
+        };
+        if (inflated.engine.bytesWritten !== compressed.length) {
+          return false;
+        }
+        const raw = inflated.buffer;
         if (raw.length !== expectedRawLength) {
           return false;
         }

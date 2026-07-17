@@ -566,6 +566,7 @@ test("versioned appearance fields validate and render safely", function()
     { appearanceVersion = 1, icon = { kind = "bundled", name = "bad_name" } },
     { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/svg+xml", dataBase64 = "bad!" } },
     { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/png", dataBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABU7bNHAAAAHElEQVR4nO3BMQEAAADCoPVPbQo/oAAAAAAAuhoUiAABdg1dRQAAAABJRU5ErkJggg==" } },
+    { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/png", dataBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAALElEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAujBRSAABAGBCoqcAAAAASUVORK5CYII=" } },
     { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/svg+xml", dataBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA3MiA3MiIgc3R5bGU9ImZpbGw6I2ZmZiI+PC9zdmc+" } },
     { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/svg+xml", dataBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOmZvcmVpZ249InVybjp4IiB2aWV3Qm94PSIwIDAgNzIgNzIiPjwvc3ZnPg==" } },
     { progress = 0.5 },

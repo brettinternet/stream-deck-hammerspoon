@@ -517,7 +517,7 @@ local function isSvgNumber(value)
  local number = tonumber(value)
  return number ~= nil and number == number and number ~= math.huge and number ~= -math.huge
    and number >= 0 and math.abs(number) <= 1000000
-   and (value:match("^%d+%.?%d*$") ~= nil or value:match("^%.%d+$") ~= nil)
+   and (value:match("^-?%d+%.?%d*$") ~= nil or value:match("^-?%.%d+$") ~= nil)
 end
 local function isSafeSvgAttribute(name, value, rootSize)
  if #value > 4096 or value:find("[<&%z\1-\31\127-\159]") then return false end
