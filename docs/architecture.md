@@ -125,7 +125,7 @@ The Hammerspoon server accepts one WebSocket client because of `hs.httpserver` l
 
 ### `hs.httpserver` callback transport behavior
 
-`hs.httpserver:websocket` callbacks must return a string. A lifecycle event with no response therefore produces a zero-length transport frame. The TypeScript transport ignores only zero-length frames before JSON/protocol validation; every non-empty frame still goes through strict JSON Schema/protocol validation. A zero-length frame is not a protocol message, a twelfth protocol type, or an unauthenticated fallback. This is a reversible, transport-specific limitation: replacing the transport can remove the accommodation without changing the v1 message contract or authentication rules.
+`hs.httpserver:websocket` callbacks must return a string. A lifecycle or encoder event with no response therefore produces a zero-length transport frame. The TypeScript transport ignores only zero-length frames before JSON/protocol validation; every non-empty frame still goes through strict JSON Schema/protocol validation. A zero-length frame is not a protocol message, a fifteenth protocol type, or an unauthenticated fallback. This is a reversible, transport-specific limitation: replacing the transport can remove the accommodation without changing the v1 message contract or authentication rules.
 
 ### Reconnect synchronization
 
