@@ -33,6 +33,7 @@ function helpers.perInstanceState(initializer)
     local instanceId = validateContext(context)
     if entries[instanceId] == nil then
       entries[instanceId] = {
+        context = context,
         value = initializer(context),
       }
     end
@@ -41,14 +42,17 @@ function helpers.perInstanceState(initializer)
   function component.disappear(first, second)
     local context = methodContext(first, second)
     local instanceId = validateContext(context)
-    entries[instanceId] = nil
+    local entry = entries[instanceId]
+    if entry ~= nil and entry.context == context then
+      entries[instanceId] = nil
+    end
   end
 
   function component.get(first, second)
     local context = methodContext(first, second)
     local instanceId = validateContext(context)
     local entry = entries[instanceId]
-    if entry == nil then
+    if entry == nil or entry.context ~= context then
       return nil
     end
     return entry.value
@@ -58,7 +62,7 @@ function helpers.perInstanceState(initializer)
     local context, value = methodArguments(first, second, third)
     local instanceId = validateContext(context)
     local entry = entries[instanceId]
-    if entry == nil then
+    if entry == nil or entry.context ~= context then
       error("Stream Deck per-instance state is not initialized", 2)
     end
     entry.value = value

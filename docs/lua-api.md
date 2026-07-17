@@ -101,7 +101,7 @@ The optional `streamdeck.helpers` module provides small components for common pe
 
 ### `helpers.perInstanceState(initializer)`
 
-Returns a state component with `appear`, `disappear`, `get`, and `set` functions. The initializer runs once for each instance on its first `appear(context)`. Repeated appearances preserve that instance's value, `disappear(context)` removes only that instance, and `get`/`set` can be used from the other action callbacks. The initializer and every component context must be valid, and initializer errors remain callback errors.
+Returns a state component with `appear`, `disappear`, `get`, and `set` functions. The initializer runs once for each context on its first `appear(context)`. Repeated appearances preserve that context's value, `disappear(context)` removes only that active context, and `get`/`set` can be used from the other action callbacks. Entries are bound to the context table as well as its instance ID, so stale callbacks cannot read, write, or remove a replacement lifecycle that reuses an ID. The initializer and every component context must be valid, and initializer errors remain callback errors.
 
 ### `helpers.refreshAfter(callback)`
 

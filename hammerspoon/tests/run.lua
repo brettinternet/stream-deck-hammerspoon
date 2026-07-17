@@ -1310,6 +1310,18 @@ test("helper components isolate state and refresh only after success", function(
   assertEqual(state:get(b).count, 0, "disappear must preserve other instances")
   state.appear(a)
   assertEqual(#initialized, 3, "reappearing after disappear must initialize")
+  local stale = { instanceId = "helper-reused" }
+  local replacement = { instanceId = "helper-reused" }
+  state.appear(stale)
+  state:set(stale, { count = 7 })
+  state.disappear(stale)
+  state.appear(replacement)
+  state:set(replacement, { count = 2 })
+  assertEqual(state:get(stale), nil, "stale contexts must not read replacement state")
+  assertFalse(pcall(state.set, stale, { count = 9 }), "stale contexts must not write replacement state")
+  state.disappear(stale)
+  assertEqual(state:get(replacement).count, 2, "stale disappear must preserve replacement state")
+
 
   assertFalse(pcall(Helpers.perInstanceState, "not a function"))
   assertFalse(pcall(state.appear, {}))
