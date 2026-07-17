@@ -411,6 +411,12 @@ test("repeated appearance refreshes settings without repeating lifecycle callbac
     appear = function() appeared = appeared + 1 end,
     disappear = function() disappeared = disappeared + 1 end,
   })
+  registry:register({
+    id = "com.test.other-action",
+    name = "Other action",
+    appearance = function() return { title = "Other", state = "inactive" } end,
+    press = function() end,
+  })
 
   withTokenPath(function(path)
     local server = newServer(registry, path)
@@ -431,6 +437,12 @@ test("repeated appearance refreshes settings without repeating lifecycle callbac
     assertEqual(refreshed[1].title, "updated")
     assertEqual(appeared, 1, "settings refresh must not invoke appear again")
     assertEqual(disappeared, 0)
+    local conflicting = exchange(server, message("instanceAppeared", {
+      instanceId = "same-instance",
+      actionId = "com.test.other-action",
+      settings = {},
+    }))
+    assertError("INVALID_STATE", conflicting)
 
     exchange(server, message("instanceAppeared", {
       instanceId = "new-instance",
@@ -451,6 +463,108 @@ test("repeated appearance refreshes settings without repeating lifecycle callbac
 
     server:stop()
     assertEqual(disappeared, 2, "stop must disappear each remaining instance once")
+  end)
+end)
+
+test("requestAppearance refreshes an instance without pressing it", function()
+  local pressed = 0
+  local appearances = 0
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.request-appearance",
+    name = "Request appearance",
+    appearance = function()
+      appearances = appearances + 1
+      return { title = "Render " .. tostring(appearances), state = "active" }
+    end,
+    press = function() pressed = pressed + 1 end,
+  })
+
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    authenticate(server, path)
+    local first = exchange(server, message("instanceAppeared", {
+      instanceId = "request-instance",
+      actionId = "com.test.request-appearance",
+      settings = {},
+    }))
+    assertEqual(first[1].type, "appearance")
+    assertEqual(first[1].title, "Render 1")
+
+    local refreshed = exchange(server, message("requestAppearance", {
+      instanceId = "request-instance",
+      actionId = "com.test.request-appearance",
+    }))
+    assertEqual(refreshed[1].type, "appearance")
+    assertEqual(refreshed[1].title, "Render 2")
+    assertEqual(appearances, 2)
+    assertEqual(pressed, 0, "requestAppearance must not invoke press")
+    server:stop()
+  end)
+end)
+
+test("server refreshes every matching instance and rejects unknown actions", function()
+  local appearances = {}
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.refresh-all",
+    name = "Refresh all",
+    appearance = function(context)
+      local instanceId = context.instanceId
+      appearances[instanceId] = (appearances[instanceId] or 0) + 1
+      return {
+        title = context:getSettings().label .. "-" .. tostring(appearances[instanceId]),
+        state = "active",
+      }
+    end,
+    press = function() end,
+  })
+  registry:register({
+    id = "com.test.refresh-other",
+    name = "Refresh other",
+    appearance = function(context)
+      local instanceId = context.instanceId
+      appearances[instanceId] = (appearances[instanceId] or 0) + 1
+      return { title = context:getSettings().label, state = "inactive" }
+    end,
+    press = function() end,
+  })
+
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    authenticate(server, path)
+    exchange(server, message("instanceAppeared", {
+      instanceId = "refresh-first",
+      actionId = "com.test.refresh-all",
+      settings = { label = "First" },
+    }))
+    exchange(server, message("instanceAppeared", {
+      instanceId = "refresh-second",
+      actionId = "com.test.refresh-all",
+      settings = { label = "Second" },
+    }))
+    exchange(server, message("instanceAppeared", {
+      instanceId = "refresh-other-instance",
+      actionId = "com.test.refresh-other",
+      settings = { label = "Other" },
+    }))
+
+    local sentAtStart = #fakeHttp.sent
+    assertEqual(server:refresh("com.test.refresh-all"), server)
+    assertEqual(#fakeHttp.sent, sentAtStart + 2)
+    local refreshed = {}
+    for index = sentAtStart + 1, #fakeHttp.sent do
+      local response = fakeDecode(fakeHttp.sent[index])
+      assertEqual(response.type, "appearance")
+      refreshed[response.instanceId] = response
+    end
+    assertEqual(refreshed["refresh-first"].title, "First-2")
+    assertEqual(refreshed["refresh-second"].title, "Second-2")
+    assertEqual(appearances["refresh-first"], 2)
+    assertEqual(appearances["refresh-second"], 2)
+    assertEqual(appearances["refresh-other-instance"], 1)
+    assertFalse(pcall(server.refresh, server, "com.test.missing-refresh"), "unknown action refresh must fail")
+    server:stop()
   end)
 end)
 
@@ -526,6 +640,53 @@ test("callback exceptions are protected and reported", function()
     assertError("CALLBACK_FAILED", responses)
     server:stop()
   end)
+end)
+
+test("context lifecycle callbacks and appearance emitter failures are reported", function()
+  local errors = {}
+  local context = Context.new({
+    instanceId = "context-instance",
+    actionId = "com.test.context",
+    settings = {},
+    definition = {
+      appearance = function() return { title = "Ready", state = "active" } end,
+    },
+    emitAppearance = function()
+      error("appearance emitter failed")
+    end,
+    emitError = function(code, instanceId)
+      errors[#errors + 1] = { code = code, instanceId = instanceId }
+    end,
+  })
+
+  assertTrue(context:invoke("appear"), "missing appear callback must be a no-op")
+  assertTrue(context:invoke("disappear"), "missing disappear callback must be a no-op")
+  assertEqual(#errors, 0)
+  assertFalse(context:refresh(), "appearance emitter failure must fail refresh")
+  assertEqual(errors[1].code, "INTERNAL")
+  assertEqual(errors[1].instanceId, "context-instance")
+
+  errors = {}
+  local failing = Context.new({
+    instanceId = "failing-context",
+    actionId = "com.test.context",
+    settings = {},
+    definition = {
+      appearance = function() return { title = "Ready", state = "active" } end,
+      appear = function() error("appear callback failed") end,
+      disappear = function() error("disappear callback failed") end,
+    },
+    emitAppearance = function() end,
+    emitError = function(code, instanceId)
+      errors[#errors + 1] = { code = code, instanceId = instanceId }
+    end,
+  })
+  assertFalse(failing:invoke("appear"))
+  assertFalse(failing:invoke("disappear"))
+  assertEqual(errors[1].code, "CALLBACK_FAILED")
+  assertEqual(errors[1].instanceId, "failing-context")
+  assertEqual(errors[2].code, "CALLBACK_FAILED")
+  assertEqual(errors[2].instanceId, "failing-context")
 end)
 
 test("malformed appearance never reaches the wire", function()

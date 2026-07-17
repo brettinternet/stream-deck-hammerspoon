@@ -1,0 +1,333 @@
+import { EventEmitter } from "node:events";
+import { describe, expect, mock, test } from "bun:test";
+import type {
+  BridgeAction,
+  BridgeClient,
+  BridgeProtocolError,
+} from "../src/bridge";
+import type { HammerspoonActionSettings } from "../src/actions/hammerspoon-action";
+
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+
+type ActionCalls = {
+  titles: string[];
+  states: Array<0 | 1>;
+  alerts: number;
+};
+
+class FakeAction {
+  readonly calls: ActionCalls = { titles: [], states: [], alerts: 0 };
+  rejectTitle = false;
+  rejectState = false;
+  rejectAlert = false;
+
+  constructor(
+    readonly id: string,
+    private readonly key = true,
+  ) {}
+
+  isKey(): boolean {
+    return this.key;
+  }
+
+  async setTitle(title: string): Promise<void> {
+    this.calls.titles.push(title);
+    if (this.rejectTitle) {
+      throw new Error("setTitle failed");
+    }
+  }
+
+  async setState(state: 0 | 1): Promise<void> {
+    this.calls.states.push(state);
+    if (this.rejectState) {
+      throw new Error("setState failed");
+    }
+  }
+
+  async showAlert(): Promise<void> {
+    this.calls.alerts += 1;
+    if (this.rejectAlert) {
+      throw new Error("showAlert failed");
+    }
+  }
+}
+
+class FakeBridge extends EventEmitter {
+  status: "disconnected" | "connecting" | "authenticating" | "connected" = "disconnected";
+  actions: BridgeAction[] = [];
+  readonly upserts: Array<Record<string, unknown>> = [];
+  readonly removals: Array<[string, string]> = [];
+  readonly keyDowns: Array<[string, string, HammerspoonActionSettings]> = [];
+
+  upsertInstance(input: Record<string, unknown>): void {
+    this.upserts.push(input);
+  }
+
+  removeInstance(instanceId: string, actionId: string): void {
+    this.removals.push([instanceId, actionId]);
+  }
+
+  keyDown(instanceId: string, actionId: string, settings: HammerspoonActionSettings): void {
+    this.keyDowns.push([instanceId, actionId, settings]);
+  }
+}
+
+const propertyInspectorMessages: unknown[] = [];
+const streamDeckMock = {
+  ui: {
+    sendToPropertyInspector: async (message: unknown): Promise<void> => {
+      propertyInspectorMessages.push(message);
+    },
+  },
+};
+
+mock.module("@elgato/streamdeck", () => ({
+  default: streamDeckMock,
+  SingletonAction: class {},
+}));
+
+const { HammerspoonAction } = await import("../src/actions/hammerspoon-action");
+
+function makeAction(bridge: FakeBridge): HammerspoonAction {
+  return new HammerspoonAction(bridge as unknown as BridgeClient);
+}
+
+function appear(action: FakeAction, settings: HammerspoonActionSettings = {}) {
+  return {
+    action,
+    payload: { settings },
+  } as never;
+}
+
+function disappear(action: FakeAction) {
+  return { action } as never;
+}
+
+function settings(action: FakeAction, value: HammerspoonActionSettings) {
+  return { action, payload: { settings: value } } as never;
+}
+
+function keyDown(action: FakeAction) {
+  return { action } as never;
+}
+
+async function flush(): Promise<void> {
+  await Promise.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await Promise.resolve();
+}
+
+describe("HammerspoonAction", () => {
+  test("subscribe is idempotent and listens for status and actions", async () => {
+    propertyInspectorMessages.length = 0;
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+
+    adapter.subscribe();
+    adapter.subscribe();
+    bridge.status = "connected";
+    bridge.emit("status", "connected");
+    await flush();
+    bridge.emit("actions");
+    await flush();
+
+    expect(propertyInspectorMessages).toEqual([
+      { type: "bridgeState", status: "connected", actions: [] },
+      { type: "bridgeState", status: "connected", actions: [] },
+    ]);
+  });
+
+  test("renders missing settings, offline, unsynchronized, and synchronized appearances", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const missing = new FakeAction("missing");
+    const configured = new FakeAction("configured");
+
+    await adapter.onWillAppear(appear(missing));
+    expect(missing.calls).toEqual({ titles: ["Select action"], states: [0], alerts: 0 });
+
+    await adapter.onWillAppear(appear(configured, { actionId: "action.offline" }));
+    expect(configured.calls).toEqual({
+      titles: ["Hammerspoon\nOffline"],
+      states: [0],
+      alerts: 0,
+    });
+    expect(bridge.upserts).toEqual([
+      { instanceId: "configured", actionId: "action.offline", settings: { actionId: "action.offline" } },
+    ]);
+    const unsynchronized = new FakeAction("unsynchronized");
+    bridge.status = "connected";
+    await adapter.onWillAppear(appear(unsynchronized, { actionId: "action.unsynchronized" }));
+    expect(unsynchronized.calls).toEqual({
+      titles: ["Hammerspoon\nOffline"],
+      states: [0],
+      alerts: 0,
+    });
+    expect(bridge.upserts).toEqual([
+      { instanceId: "configured", actionId: "action.offline", settings: { actionId: "action.offline" } },
+      {
+        instanceId: "unsynchronized",
+        actionId: "action.unsynchronized",
+        settings: { actionId: "action.unsynchronized" },
+      },
+    ]);
+
+
+    adapter.subscribe();
+    bridge.status = "connected";
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "configured",
+      actionId: "action.offline",
+      title: "Playing",
+      state: 1,
+    });
+    await flush();
+    expect(configured.calls).toEqual({
+      titles: ["Hammerspoon\nOffline", "Playing"],
+      states: [0, 1],
+      alerts: 0,
+    });
+  });
+
+  test("handles appearance, settings, and disappearance transitions without stale actions", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const action = new FakeAction("instance");
+
+    await adapter.onWillAppear(appear(action, { actionId: "first", extra: "ignored" } as never));
+    await adapter.onDidReceiveSettings(settings(action, { actionId: "second" }));
+    expect(bridge.removals).toEqual([["instance", "first"]]);
+    expect(bridge.upserts).toHaveLength(2);
+
+    const callsBeforeStaleAppearance = structuredClone(action.calls);
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "instance",
+      actionId: "first",
+      title: "Stale",
+      state: 1,
+    });
+    await flush();
+    expect(action.calls).toEqual(callsBeforeStaleAppearance);
+
+    await adapter.onDidReceiveSettings(settings(action, {}));
+    expect(bridge.removals).toEqual([
+      ["instance", "first"],
+      ["instance", "second"],
+    ]);
+    await adapter.onWillDisappear(disappear(action));
+    expect(bridge.removals).toEqual([
+      ["instance", "first"],
+      ["instance", "second"],
+    ]);
+
+    await adapter.onWillAppear({ action: new FakeAction("dial", false), payload: { settings: {} } } as never);
+    expect(bridge.upserts).toHaveLength(2);
+  });
+
+  test("keyDown renders an unconfigured key and forwards configured settings", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const unconfigured = new FakeAction("unconfigured");
+    const configured = new FakeAction("configured");
+
+    await adapter.onWillAppear(appear(unconfigured));
+    await adapter.onKeyDown(keyDown(unconfigured));
+    expect(unconfigured.calls).toEqual({
+      titles: ["Select action", "Select action"],
+      states: [0, 0],
+      alerts: 0,
+    });
+
+    const configuredSettings = { actionId: "action.id" };
+    await adapter.onWillAppear(appear(configured, configuredSettings));
+    await adapter.onKeyDown(keyDown(configured));
+    expect(bridge.keyDowns).toEqual([["configured", "action.id", configuredSettings]]);
+  });
+
+  test("sends requestState and deep-cloned bridgeState payloads", async () => {
+    propertyInspectorMessages.length = 0;
+    const bridge = new FakeBridge();
+    const schema: JsonValue[] = [
+      { label: "Mode", options: ["one", { value: 2 }] },
+    ];
+    bridge.status = "connected";
+    bridge.actions = [{ actionId: "action.id", name: "Action", settingsSchema: schema }];
+    const adapter = makeAction(bridge);
+    adapter.subscribe();
+
+    await adapter.onSendToPlugin({ payload: { type: "requestState" } } as never);
+    expect(propertyInspectorMessages).toHaveLength(1);
+    expect(propertyInspectorMessages[0]).toEqual({
+      type: "bridgeState",
+      status: "connected",
+      actions: [{ actionId: "action.id", name: "Action", settingsSchema: schema }],
+    });
+
+    schema[0] = { label: "mutated" };
+    expect(propertyInspectorMessages[0]).toEqual({
+      type: "bridgeState",
+      status: "connected",
+      actions: [{
+        actionId: "action.id",
+        name: "Action",
+        settingsSchema: [{ label: "Mode", options: ["one", { value: 2 }] }],
+      }],
+    });
+
+    await adapter.onSendToPlugin({ payload: { type: "other" } } as never);
+    expect(propertyInspectorMessages).toHaveLength(1);
+  });
+
+  test("listens for appearances and protocol errors", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const action = new FakeAction("instance");
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "instance",
+      actionId: "action.id",
+      title: "Ready",
+      state: 0,
+    });
+    await flush();
+    bridge.emit("protocolError", {
+      code: "bad_request",
+      message: "nope",
+      instanceId: "instance",
+    } satisfies BridgeProtocolError);
+    await flush();
+    bridge.emit("protocolError", {
+      code: "bad_request",
+      message: "no instance",
+    } satisfies BridgeProtocolError);
+    await flush();
+
+    expect(action.calls.titles).toEqual(["Hammerspoon\nOffline", "Ready"]);
+    expect(action.calls.states).toEqual([0, 0]);
+    expect(action.calls.alerts).toBe(1);
+  });
+
+  test("best-effort rendering alerts swallow setTitle, setState, and showAlert failures", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const titleFailure = new FakeAction("title-failure");
+    titleFailure.rejectTitle = true;
+    titleFailure.rejectAlert = true;
+    const stateFailure = new FakeAction("state-failure");
+    stateFailure.rejectState = true;
+    stateFailure.rejectAlert = true;
+
+    await adapter.onWillAppear(appear(titleFailure));
+    await adapter.onWillAppear(appear(stateFailure));
+    expect(titleFailure.calls).toEqual({ titles: ["Select action"], states: [0], alerts: 1 });
+    expect(stateFailure.calls).toEqual({ titles: ["Select action"], states: [0], alerts: 1 });
+  });
+});
