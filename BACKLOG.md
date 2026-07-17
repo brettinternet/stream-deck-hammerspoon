@@ -174,9 +174,12 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Acceptance: Tested examples cover common Hammerspoon watchers, application state, audio, and multi-instance patterns.
 
 ### ECO-003 — Packaging and installation
-- Status: ready
+- Status: done
 - Depends on: FND-004, VSL-007
 - Acceptance: Reproducible release artifacts install plugin and Lua library with version/checksum documentation and uninstall steps.
+- Commits: e89bd74be2129651db62354d5277d3f9ca9f40d2, 621c336c9b4a43763a05c0ef3b13fe1bb62a8c16
+- Verification: `bun run release` twice produced identical SHA256SUMS and preserved pre-existing generated-file hashes; SHA-256 verification, plugin archive test, and Lua archive inspection passed; `bun run check`, `bun run test`, and ESLint passed; independent verifier PASS on all 5 criteria.
+- Outcome: Added a Bun release command that builds and validates the pinned Stream Deck package, normalizes plugin and Lua archive metadata for repeatable bytes without leaving tracked build output changed, writes versioned artifacts and SHA256SUMS/RELEASE.json, and documents verified installation and uninstall flows.
 
 ### ECO-004 — Diagnostics
 - Status: waiting
