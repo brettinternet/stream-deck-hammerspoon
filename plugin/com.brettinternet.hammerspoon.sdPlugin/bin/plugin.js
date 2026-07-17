@@ -17182,6 +17182,9 @@ var oneOf = [
 		$ref: "#/$defs/keyDown"
 	},
 	{
+		$ref: "#/$defs/keyUp"
+	},
+	{
 		$ref: "#/$defs/requestAppearance"
 	},
 	{
@@ -17671,6 +17674,36 @@ var $defs = {
 			}
 		]
 	},
+	keyUp: {
+		allOf: [
+			{
+				$ref: "#/$defs/message"
+			},
+			{
+				type: "object",
+				properties: {
+					type: {
+						"const": "keyUp"
+					},
+					sessionId: {
+						$ref: "#/$defs/sessionId"
+					},
+					instanceId: {
+						$ref: "#/$defs/id"
+					},
+					actionId: {
+						$ref: "#/$defs/id"
+					}
+				},
+				required: [
+					"sessionId",
+					"instanceId",
+					"actionId"
+				],
+				additionalProperties: true
+			}
+		]
+	},
 	requestAppearance: {
 		allOf: [
 			{
@@ -17965,6 +17998,7 @@ const CLIENT_MESSAGE_TYPES = {
     instanceAppeared: true,
     instanceDisappeared: true,
     keyDown: true,
+    keyUp: true,
     requestAppearance: true,
 };
 const SERVER_MESSAGE_TYPES = {
@@ -18759,6 +18793,27 @@ class BridgeClient extends EventEmitter$1 {
             actionId: effectiveActionId,
         });
     }
+    keyUp(instanceId, actionId, settings) {
+        if (!isNonEmptyString(instanceId))
+            return;
+        const snapshot = this.instances.get(instanceId);
+        if (snapshot && settings) {
+            snapshot.settings = copySettings(settings);
+            if (snapshot.actionId)
+                snapshot.settings.actionId = snapshot.actionId;
+        }
+        if (!this.authenticated || !snapshot)
+            return;
+        const effectiveActionId = isNonEmptyString(actionId) ? actionId : snapshot.actionId;
+        if (!effectiveActionId || effectiveActionId !== snapshot.actionId || !this.isKnownAction(effectiveActionId))
+            return;
+        this.send({
+            protocolVersion: PROTOCOL_VERSION,
+            type: "keyUp",
+            instanceId,
+            actionId: effectiveActionId,
+        });
+    }
     requestActions() {
         if (!this.authenticated || this.pendingActions.size > 0)
             return;
@@ -19296,6 +19351,14 @@ class HammerspoonAction extends SingletonAction {
             return;
         }
         this.bridge.keyDown(ev.action.id, instance.actionId, instance.settings);
+    }
+    async onKeyUp(ev) {
+        const instance = this.instances.get(ev.action.id);
+        if (!instance?.actionId) {
+            await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+            return;
+        }
+        this.bridge.keyUp(ev.action.id, instance.actionId, instance.settings);
     }
     async onSendToPlugin(ev) {
         if (isRequestStateMessage(ev.payload)) {
