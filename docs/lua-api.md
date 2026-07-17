@@ -143,10 +143,12 @@ The repository includes complete configuration snippets in `hammerspoon/examples
 - `keyboard-layout.lua` (`com.brettinternet.hammerspoon.keyboard-layout`) toggles between two keyboard layouts using `hs.keycodes`, defaults to `U.S.` and `Dvorak` when settings are absent, and refreshes the pressed key after a successful switch.
 - `url-launcher.lua` (`com.brettinternet.hammerspoon.url-launcher`) opens a configured URL with `hs.urlevent`, defaults to a Hammerspoon documentation URL when settings are absent, and reports invalid or unavailable URL launches as protected errors.
 - `window-snap.lua` (`com.brettinternet.hammerspoon.window-snap`) cycles each focused window through left-half, right-half, and full-work-area layouts with per-instance lifecycle state and refreshes after successful moves.
+- `keep-awake.lua` (`com.brettinternet.hammerspoon.keep-awake`) toggles display-idle sleep prevention with `hs.caffeinate`, updates every visible instance after the global state changes, and reports unavailable or failed power APIs as protected errors.
+- `app-launcher.lua` (`com.brettinternet.hammerspoon.app-launcher`) launches or focuses a configured application with safe per-key app/label defaults, shows when the target is frontmost, and refreshes after a successful launch or focus.
 
-Copy any of the nine files into `~/.hammerspoon` or adapt its registration into an existing configuration. Each file registers a namespaced action for the generic Stream Deck action; select that registered action ID in the property inspector. The official bridge owns the connection, so the examples use `require("streamdeck")`, never `hs.streamdeck` or direct hardware access. The current v1 inspector edits `actionId` only, so settings-based examples use their documented defaults unless their settings are supplied by an adapted configuration.
+Copy any of the eleven files into `~/.hammerspoon` or adapt its registration into an existing configuration. Each file registers a namespaced action for the generic Stream Deck action; select that registered action ID in the property inspector. The official bridge owns the connection, so the examples use `require("streamdeck")`, never `hs.streamdeck` or direct hardware access. The current v1 inspector edits `actionId` only, so settings-based examples use their documented defaults unless their settings are supplied by an adapted configuration.
 
-All nine examples are hardware-free and use ordinary Hammerspoon APIs; they can be copied or adapted without a connected Stream Deck. They run without Hammerspoon or hardware in the repository's Lua test harness.
+All eleven examples are hardware-free and use ordinary Hammerspoon APIs; they can be copied or adapted without a connected Stream Deck. They run without Hammerspoon or hardware in the repository's Lua test harness.
 
 ## Complete example: microphone mute
 

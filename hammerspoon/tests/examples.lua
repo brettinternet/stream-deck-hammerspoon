@@ -542,5 +542,9 @@ dofile("hammerspoon/tests/url-launcher-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/window-snap-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
+dofile("hammerspoon/tests/keep-awake-example.lua")(
+  test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
+dofile("hammerspoon/tests/app-launcher-example.lua")(
+  test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 
 return passed
