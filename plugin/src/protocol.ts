@@ -556,7 +556,7 @@ function isSvgAttributeValue(name: string, value: string, rootSize?: 72 | 144): 
     return value === `0 0 ${rootSize ?? 0} ${rootSize ?? 0}`;
   }
   if (name === "width" || name === "height") {
-    return rootSize !== undefined ? value === String(rootSize) : isSvgNumber(value);
+    return rootSize !== undefined ? value === String(rootSize) : isSvgNumber(value) && Number(value) >= 0;
   }
   if (name === "fill" || name === "stroke") {
     return value === "none" || /^#[0-9A-Fa-f]{6}$/.test(value);

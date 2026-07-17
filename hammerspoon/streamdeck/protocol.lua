@@ -465,7 +465,7 @@ end
 
 local SVG_ATTRIBUTES = {
  xmlns = true,
- viewbox = true,
+ viewBox = true,
  width = true,
  height = true,
  fill = true,
@@ -522,7 +522,7 @@ end
 local function isSafeSvgAttribute(name, value, rootSize)
  if #value > 4096 or value:find("[<&%z\1-\31\127-\159]") then return false end
  if name == "xmlns" then return value == "http://www.w3.org/2000/svg" end
- if name == "viewbox" then return rootSize == nil and (value == "0 0 72 72" or value == "0 0 144 144")
+ if name == "viewBox" then return rootSize == nil and (value == "0 0 72 72" or value == "0 0 144 144")
    or (rootSize ~= nil and value == "0 0 " .. tostring(rootSize) .. " " .. tostring(rootSize)) end
  if name == "width" or name == "height" then return rootSize == nil and isSvgNumber(value)
    or (rootSize ~= nil and value == tostring(rootSize)) end
@@ -548,7 +548,7 @@ local function parseSvgAttributes(body, tag, rootSize)
   remaining = rest:sub(position)
   local name = remaining:match("^([A-Za-z][A-Za-z0-9-]*)")
   if not name then return nil end
-  local normalizedName = name:lower()
+  local normalizedName = name
   if not SVG_ATTRIBUTES[normalizedName] or attributes[normalizedName] ~= nil then return nil end
   position = position + #name
   local equals = rest:sub(position):match("^%s*=%s*")
@@ -609,7 +609,7 @@ local function isAppearanceIcon(value)
    local attributes, selfClosing = parseSvgAttributes(body, tag, rootSize)
    if not attributes then return false end
    if tag == "svg" then
-    local viewBox = attributes.viewbox
+    local viewBox = attributes.viewBox
     if attributes.xmlns ~= "http://www.w3.org/2000/svg" then return false end
     if viewBox == "0 0 72 72" then rootSize = 72
     elseif viewBox == "0 0 144 144" then rootSize = 144
