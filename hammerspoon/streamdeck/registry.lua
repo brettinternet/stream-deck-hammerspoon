@@ -7,6 +7,7 @@ local allowedFields = {
   settingsSchemaVersion = true,
   appearance = true,
   press = true,
+  release = true,
   appear = true,
   disappear = true,
 }
@@ -271,7 +272,7 @@ local function validateDefinition(definition)
   if type(definition.press) ~= "function" then
     error("Stream Deck action press must be a function", 3)
   end
-  for _, field in ipairs({ "appear", "disappear" }) do
+  for _, field in ipairs({ "appear", "disappear", "release" }) do
     if definition[field] ~= nil and type(definition[field]) ~= "function" then
       error("Stream Deck action " .. field .. " must be a function", 3)
     end

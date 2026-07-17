@@ -25,7 +25,7 @@ ws://localhost:17321/streamdeck
 
 Hammerspoon binds this endpoint to localhost/loopback with Bonjour disabled. The `hs.httpserver:websocket` message callback must return a string, so lifecycle events with no response can produce a zero-length transport frame. The TypeScript transport ignores only zero-length frames before JSON/protocol validation; every non-empty frame remains strict. Empty frames are transport artifacts, not protocol messages or an unauthenticated fallback, and this is a reversible transport-specific limitation.
 
-Authentication starts with the shared token in the plugin's first `hello`. Hammerspoon then creates a fresh non-empty opaque in-memory `sessionId` with `hs.host.uuid()` and returns it in `helloAck.sessionId`. The plugin stores that ID only in memory and includes the exact ID in every later application message (`listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, and `requestAppearance`). Missing or stale IDs are rejected before dispatch. Since `hs.httpserver` does not provide a reliable close callback, the bridge clears the ID and prior instance contexts on close, stop, or failure; a valid reconnect hello is still accepted, safely clears any old contexts, and rotates the ID. A process-global authenticated boolean is not used as the binding.
+Authentication starts with the shared token in the plugin's first `hello`. Hammerspoon then creates a fresh non-empty opaque in-memory `sessionId` with `hs.host.uuid()` and returns it in `helloAck.sessionId`. The plugin stores that ID only in memory and includes the exact ID in every later application message (`listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, `keyUp`, and `requestAppearance`). Missing or stale IDs are rejected before dispatch. Since `hs.httpserver` does not provide a reliable connection-close callback, the session ID prevents a later client from inheriting authorization from a previous process-global hello.
 
 Install the project runtimes with [mise](https://mise.jdx.dev/):
 
@@ -148,8 +148,8 @@ If the plugin reconnects but actions do not run, treat the session as stale rath
 
 1. Reload or restart Hammerspoon so the bridge clears its in-memory session ID and instance contexts.
 2. Restart the plugin (or use the official Stream Deck CLI `restart`) so it rereads the token and sends a new token-bearing `hello`.
-3. Confirm the plugin receives `helloAck.sessionId`, keeps it only in memory, and includes it on `listActions`, each lifecycle event, `keyDown`, and `requestAppearance`.
-4. Confirm the Lua bridge rejects missing/old IDs without invoking `appear`, `press`, or `disappear`; do not log or print the ID while diagnosing.
+3. Confirm the plugin receives `helloAck.sessionId`, keeps it only in memory, and includes it on `listActions`, each lifecycle event, `keyDown`, `keyUp`, and `requestAppearance`.
+4. Confirm the Lua bridge rejects missing/old IDs without invoking `appear`, `press`, `release`, or `disappear`; do not log or print the ID while diagnosing.
 5. Wait for synchronization: the plugin requests actions, re-announces visible instances, and requests appearance. A repeated `instanceAppeared` for the same instance/action refreshes settings and must not run `appear` again.
 
 If Hammerspoon cannot report the old socket's close, this sequence is still safe: the next valid hello clears prior contexts and rotates the session ID, so the abandoned client cannot send tokenless application messages.

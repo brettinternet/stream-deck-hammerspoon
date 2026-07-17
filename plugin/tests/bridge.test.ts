@@ -242,6 +242,33 @@ describe("BridgeClient authentication and transport", () => {
     );
   });
 
+  test("preserves instance identity and event order for key release", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets);
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+
+    client.upsertInstance({ instanceId: "first-instance", actionId: "com.example.action", settings: {} });
+    client.upsertInstance({ instanceId: "second-instance", actionId: "com.example.action", settings: {} });
+    client.keyDown("first-instance");
+    client.keyUp("first-instance");
+    client.keyDown("second-instance");
+    client.keyUp("second-instance");
+
+    expect(
+      frames(sockets[0])
+        .filter((frame) => frame.type === "keyDown" || frame.type === "keyUp")
+        .map(({ type, instanceId, actionId }) => ({ type, instanceId, actionId })),
+    ).toEqual([
+      { type: "keyDown", instanceId: "first-instance", actionId: "com.example.action" },
+      { type: "keyUp", instanceId: "first-instance", actionId: "com.example.action" },
+      { type: "keyDown", instanceId: "second-instance", actionId: "com.example.action" },
+      { type: "keyUp", instanceId: "second-instance", actionId: "com.example.action" },
+    ]);
+  });
+
   test("ignores unknown action IDs without emitting lifecycle frames", async () => {
     const sockets: FakeSocket[] = [];
     const { client } = makeClient(sockets);
@@ -256,10 +283,11 @@ describe("BridgeClient authentication and transport", () => {
       settings: { label: "ignored" },
     });
     client.keyDown("unknown-instance", "com.example.unknown");
+    client.keyUp("unknown-instance", "com.example.unknown");
 
     expect(
       frames(sockets[0]).filter((frame) =>
-        ["instanceAppeared", "instanceDisappeared", "keyDown", "requestAppearance"].includes(frame.type as string),
+        ["instanceAppeared", "instanceDisappeared", "keyDown", "keyUp", "requestAppearance"].includes(frame.type as string),
       ),
     ).toEqual([]);
   });

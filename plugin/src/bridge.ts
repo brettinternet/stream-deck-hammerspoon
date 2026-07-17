@@ -92,7 +92,7 @@ type BridgeMessage =
       "protocolVersion" | "type" | "instanceId" | "actionId" | "settings"
     >
   | Pick<
-      Extract<ClientMessage, { type: "instanceDisappeared" | "keyDown" | "requestAppearance" }>,
+      Extract<ClientMessage, { type: "instanceDisappeared" | "keyDown" | "keyUp" | "requestAppearance" }>,
       "protocolVersion" | "type" | "instanceId" | "actionId"
     >;
 
@@ -285,6 +285,24 @@ export class BridgeClient extends EventEmitter {
     this.send({
       protocolVersion: PROTOCOL_VERSION,
       type: "keyDown",
+      instanceId,
+      actionId: effectiveActionId,
+    });
+  }
+
+  keyUp(instanceId: string, actionId?: string, settings?: JsonSettings): void {
+    if (!isNonEmptyString(instanceId)) return;
+    const snapshot = this.instances.get(instanceId);
+    if (snapshot && settings) {
+      snapshot.settings = copySettings(settings);
+      if (snapshot.actionId) snapshot.settings.actionId = snapshot.actionId;
+    }
+    if (!this.authenticated || !snapshot) return;
+    const effectiveActionId = isNonEmptyString(actionId) ? actionId : snapshot.actionId;
+    if (!effectiveActionId || effectiveActionId !== snapshot.actionId || !this.isKnownAction(effectiveActionId)) return;
+    this.send({
+      protocolVersion: PROTOCOL_VERSION,
+      type: "keyUp",
       instanceId,
       actionId: effectiveActionId,
     });

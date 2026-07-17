@@ -106,6 +106,14 @@ const keyDown: ClientMessage = {
   actionId: "com.example.volumeUp",
 };
 
+const keyUp: ClientMessage = {
+  protocolVersion: 1,
+  type: "keyUp",
+  sessionId,
+  instanceId: "deck-instance-01",
+  actionId: "com.example.volumeUp",
+};
+
 const instanceDisappeared: ClientMessage = {
   protocolVersion: 1,
   type: "instanceDisappeared",
@@ -126,7 +134,7 @@ describe("protocol examples", () => {
   });
 
   test("round-trips legacy and versioned appearance messages", () => {
-    for (const message of [instanceAppeared, requestAppearance, keyDown, instanceDisappeared]) {
+    for (const message of [instanceAppeared, requestAppearance, keyDown, keyUp, instanceDisappeared]) {
       expect(JSON.parse(serializeClientMessage(message))).toEqual(message);
     }
     expect(parseServerMessage(JSON.stringify(appearance))).toEqual(appearance);
@@ -137,7 +145,7 @@ describe("protocol examples", () => {
 
 describe("protocol direction and validation", () => {
   test("rejects plugin-to-server messages in the server-message parser", () => {
-    for (const message of [hello, listActions, instanceAppeared, requestAppearance, keyDown, instanceDisappeared]) {
+    for (const message of [hello, listActions, instanceAppeared, requestAppearance, keyDown, keyUp, instanceDisappeared]) {
       expect(() => parseServerMessage(JSON.stringify(message))).toThrow();
     }
   });

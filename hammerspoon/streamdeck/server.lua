@@ -293,7 +293,7 @@ function server.new(registry, protocol, contextFactory)
       return
     end
 
-    if message.type == "keyDown" or message.type == "requestAppearance" then
+    if message.type == "keyDown" or message.type == "keyUp" or message.type == "requestAppearance" then
       local definition = self.registry:get(message.actionId)
       if not definition then
         self:_queueError("UNKNOWN_ACTION", nil, message.instanceId)
@@ -306,6 +306,8 @@ function server.new(registry, protocol, contextFactory)
       end
       if message.type == "keyDown" then
         instance:invoke("press")
+      elseif message.type == "keyUp" then
+        instance:invoke("release")
       else
         instance:refresh()
       end

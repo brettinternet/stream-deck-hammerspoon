@@ -121,6 +121,12 @@ export interface KeyDownMessage extends AuthenticatedClientMessage {
   instanceId: string;
   actionId: string;
 }
+export interface KeyUpMessage extends AuthenticatedClientMessage {
+  type: "keyUp";
+  instanceId: string;
+  actionId: string;
+}
+
 
 export interface RequestAppearanceMessage extends AuthenticatedClientMessage {
   type: "requestAppearance";
@@ -178,6 +184,7 @@ export type Actions = ActionsMessage;
 export type InstanceAppeared = InstanceAppearedMessage;
 export type InstanceDisappeared = InstanceDisappearedMessage;
 export type KeyDown = KeyDownMessage;
+export type KeyUp = KeyUpMessage;
 export type RequestAppearance = RequestAppearanceMessage;
 export type Feedback = FeedbackMessage;
 export type Appearance = AppearanceMessage;
@@ -188,6 +195,7 @@ export type ClientMessage =
   | InstanceAppearedMessage
   | InstanceDisappearedMessage
   | KeyDownMessage
+  | KeyUpMessage
   | RequestAppearanceMessage;
 
 export type ServerMessage =
@@ -206,6 +214,7 @@ const CLIENT_MESSAGE_TYPES: Record<ClientMessageType, true> = {
   instanceAppeared: true,
   instanceDisappeared: true,
   keyDown: true,
+  keyUp: true,
   requestAppearance: true,
 };
 

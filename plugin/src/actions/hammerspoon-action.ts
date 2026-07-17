@@ -270,6 +270,16 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     this.bridge.keyDown(ev.action.id, instance.actionId, instance.settings as JsonSettings);
   }
 
+  public override async onKeyUp(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onKeyUp"]>>[0]): Promise<void> {
+    const instance = this.instances.get(ev.action.id);
+    if (!instance?.actionId) {
+      await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+      return;
+    }
+
+    this.bridge.keyUp(ev.action.id, instance.actionId, instance.settings as JsonSettings);
+  }
+
   public override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, HammerspoonActionSettings>): Promise<void> {
     if (isRequestStateMessage(ev.payload)) {
       await this.sendBridgeState();

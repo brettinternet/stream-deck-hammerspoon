@@ -11,6 +11,7 @@ local messageTypes = {
   instanceAppeared = true,
   instanceDisappeared = true,
   keyDown = true,
+  keyUp = true,
   requestAppearance = true,
   appearance = true,
   feedback = true,
@@ -777,6 +778,7 @@ function protocol.validate(message)
     if ok then ok, code = required(message, "settings", isObject) end
   elseif messageType == "instanceDisappeared"
       or messageType == "keyDown"
+      or messageType == "keyUp"
       or messageType == "requestAppearance" then
     ok, code = required(message, "sessionId", isNonEmptyString)
     if ok then ok, code = required(message, "instanceId", isNonEmptyString) end

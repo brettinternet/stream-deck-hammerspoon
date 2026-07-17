@@ -76,6 +76,7 @@ class FakeBridge extends EventEmitter {
   readonly upserts: Array<Record<string, unknown>> = [];
   readonly removals: Array<[string, string]> = [];
   readonly keyDowns: Array<[string, string, HammerspoonActionSettings]> = [];
+  readonly keyUps: Array<[string, string, HammerspoonActionSettings]> = [];
 
   upsertInstance(input: Record<string, unknown>): void {
     this.upserts.push(input);
@@ -87,6 +88,10 @@ class FakeBridge extends EventEmitter {
 
   keyDown(instanceId: string, actionId: string, settings: HammerspoonActionSettings): void {
     this.keyDowns.push([instanceId, actionId, settings]);
+  }
+
+  keyUp(instanceId: string, actionId: string, settings: HammerspoonActionSettings): void {
+    this.keyUps.push([instanceId, actionId, settings]);
   }
 }
 
@@ -126,6 +131,10 @@ function settings(action: FakeAction, value: HammerspoonActionSettings) {
 }
 
 function keyDown(action: FakeAction) {
+  return { action } as never;
+}
+
+function keyUp(action: FakeAction) {
   return { action } as never;
 }
 
@@ -290,6 +299,25 @@ describe("HammerspoonAction", () => {
     await adapter.onWillAppear(appear(configured, configuredSettings));
     await adapter.onKeyDown(keyDown(configured));
     expect(bridge.keyDowns).toEqual([["configured", "action.id", configuredSettings]]);
+  });
+
+  test("forwards key releases with each instance identity in order", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const first = new FakeAction("first-instance");
+    const second = new FakeAction("second-instance");
+    const firstSettings = { actionId: "action.id", label: "First" };
+    const secondSettings = { actionId: "action.id", label: "Second" };
+    await adapter.onWillAppear(appear(first, firstSettings));
+    await adapter.onWillAppear(appear(second, secondSettings));
+
+    await adapter.onKeyUp(keyUp(first));
+    await adapter.onKeyUp(keyUp(second));
+
+    expect(bridge.keyUps).toEqual([
+      ["first-instance", "action.id", firstSettings],
+      ["second-instance", "action.id", secondSettings],
+    ]);
   });
 
   test("preserves custom settings through appear, settings updates, and keyDown", async () => {

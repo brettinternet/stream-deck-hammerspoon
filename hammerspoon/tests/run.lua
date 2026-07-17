@@ -226,6 +226,7 @@ test("registry rejects malformed definitions and duplicate IDs", function()
     name = "One",
     appearance = function() return { title = "One", state = "inactive" } end,
     press = function() end,
+    release = function() end,
   }
 
   assertFalse(pcall(registry.register, registry, {}), "missing fields must be rejected")
@@ -236,6 +237,13 @@ test("registry rejects malformed definitions and duplicate IDs", function()
     press = function() end,
     unsupported = true,
   }), "unknown fields must be rejected")
+  assertFalse(pcall(registry.register, registry, {
+    id = "com.test.bad-release",
+    name = "Bad release",
+    appearance = function() end,
+    press = function() end,
+    release = true,
+  }), "non-function release callbacks must be rejected")
   registry:register(definition)
   assertFalse(pcall(registry.register, registry, definition), "duplicate IDs must be rejected")
   assertEqual(#registry:list(), 1, "duplicate registration must not append")
@@ -588,7 +596,7 @@ test("versioned appearance fields validate and render safely", function()
     assertFalse(invalidValid, "invalid appearance fields must be rejected")
   end
 
-  for _, messageType in ipairs({ "instanceDisappeared", "keyDown", "requestAppearance" }) do
+  for _, messageType in ipairs({ "instanceDisappeared", "keyDown", "keyUp", "requestAppearance" }) do
     local missingActionId, missingCode = Protocol.validate(message(messageType, {
       sessionId = "session",
       instanceId = "instance",
@@ -653,6 +661,7 @@ end)
 
 test("multiple instances keep independent settings and callbacks", function()
   local pressed = {}
+  local released = {}
   local registry = Registry.new()
   registry:register({
     id = "com.test.multi",
@@ -667,6 +676,9 @@ test("multiple instances keep independent settings and callbacks", function()
     press = function(context)
       pressed[context.instanceId] = (pressed[context.instanceId] or 0) + 1
       context:refresh()
+    end,
+    release = function(context)
+      released[#released + 1] = context.instanceId .. ":" .. context.actionId
     end,
   })
 
@@ -696,6 +708,17 @@ test("multiple instances keep independent settings and callbacks", function()
     assertEqual(pressed["instance-b"], nil)
     assertEqual(pressedResponse[1].instanceId, "instance-a")
     assertEqual(pressedResponse[1].title, "A")
+
+    exchange(server, message("keyUp", {
+      instanceId = "instance-b",
+      actionId = "com.test.multi",
+    }))
+    exchange(server, message("keyUp", {
+      instanceId = "instance-a",
+      actionId = "com.test.multi",
+    }))
+    assertEqual(released[1], "instance-b:com.test.multi")
+    assertEqual(released[2], "instance-a:com.test.multi")
     server:stop()
   end)
 end)
@@ -933,6 +956,11 @@ test("requestAppearance refreshes an instance without pressing it", function()
     assertEqual(refreshed[1].title, "Render 2")
     assertEqual(appearances, 2)
     assertEqual(pressed, 0, "requestAppearance must not invoke press")
+    local released = exchange(server, message("keyUp", {
+      instanceId = "request-instance",
+      actionId = "com.test.request-appearance",
+    }))
+    assertEqual(#released, 0, "missing release callback must be a no-op")
     server:stop()
   end)
 end)
@@ -1058,6 +1086,7 @@ test("callback exceptions are protected and reported", function()
     name = "Callback error",
     appearance = function() return { title = "Ready", state = "inactive" } end,
     press = function() error("intentional press failure") end,
+    release = function() error("intentional release failure") end,
   })
   withTokenPath(function(path)
     local server = newServer(registry, path)
@@ -1072,6 +1101,11 @@ test("callback exceptions are protected and reported", function()
       actionId = "com.test.callback-error",
     }))
     assertError("CALLBACK_FAILED", responses)
+    local releaseResponses = exchange(server, message("keyUp", {
+      instanceId = "callback-instance",
+      actionId = "com.test.callback-error",
+    }))
+    assertError("CALLBACK_FAILED", releaseResponses)
     server:stop()
   end)
 end)

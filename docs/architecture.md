@@ -82,8 +82,8 @@ The runtime flow is:
 2. The plugin reads the runtime token file and opens one WebSocket connection.
 3. The plugin's first protocol message is `hello`, containing the shared token and `pluginVersion`.
 4. Hammerspoon validates the hello and, even when an earlier session was marked authenticated, accepts it by clearing prior instance contexts, generates a fresh non-empty in-memory opaque `sessionId`, and returns it in the required `helloAck.sessionId`.
-5. The plugin sends that exact `sessionId` on every subsequent application message: `listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, and `requestAppearance`. Missing or stale IDs are rejected before any action or callback is invoked.
-6. Stream Deck instance lifecycle events become `instanceAppeared` and `instanceDisappeared`; key presses become `keyDown` events. Appearance refreshes become `requestAppearance`. A repeated `instanceAppeared` for the same instance/action is a settings refresh and does not run `appear` again.
+5. The plugin sends that exact `sessionId` on every subsequent application message: `listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, `keyUp`, and `requestAppearance`. Missing or stale IDs are rejected before any action or callback is invoked.
+6. Stream Deck instance lifecycle events become `instanceAppeared` and `instanceDisappeared`; key presses and releases become `keyDown` and `keyUp` events. Appearance refreshes become `requestAppearance`. A repeated `instanceAppeared` for the same instance/action is a settings refresh and does not run `appear` again.
 7. Lua computes presentation and sends `appearance`, or sends an asynchronous `error` with a safe code/message. Callback code may also emit validated, instance/action-correlated `feedback` with a bounded safe message and duration.
 8. The plugin applies the v1 `title` and `state` to the Stream Deck key. Feedback temporarily sets the safe message as the title and calls `showOk` or `showAlert`, then restores the previous appearance after expiry.
 
@@ -110,7 +110,7 @@ The first slice is one complete path, not a collection of disconnected scaffolds
 4. Configure one generic Stream Deck keypad instance through the plain TypeScript/HTML property inspector; persist its selected `actionId` in Stream Deck settings.
 5. Send that instance's `instanceAppeared` event and receive its computed `appearance`.
 6. Render the returned title and state (`0` or `1`), plus any bounded versioned presentation decoration, through the official plugin SDK.
-7. Press the key, route `keyDown` to the selected Lua action, and apply the resulting appearance/feedback.
+7. Press and release the key, routing `keyDown` and `keyUp` to the selected Lua action, and apply any resulting appearance/feedback.
 8. Stop or reload Hammerspoon, observe the plugin's disconnected title, reconnect, authenticate again, and synchronize all visible instances and their appearances.
 
 The v1 appearance contract requires `title` and `state` and optionally accepts `appearanceVersion: 1` colors, progress, badge, and a closed icon representation. Semantic bundled slugs resolve to the shipped 72×72 plugin asset, with unknown slugs using that same safe fallback; custom PNG/SVG data is canonical padded base64 and strictly bounded/validated before SDK rendering. Invalid input falls back to title/state and the shipped or manifest image.
@@ -125,7 +125,7 @@ The Hammerspoon server accepts one WebSocket client because of `hs.httpserver` l
 
 ### `hs.httpserver` callback transport behavior
 
-`hs.httpserver:websocket` callbacks must return a string. A lifecycle event with no response therefore produces a zero-length transport frame. The TypeScript transport ignores only zero-length frames before JSON/protocol validation; every non-empty frame still goes through strict JSON Schema/protocol validation. A zero-length frame is not a protocol message, an eleventh protocol type, or an unauthenticated fallback. This is a reversible, transport-specific limitation: replacing the transport can remove the accommodation without changing the v1 message contract or authentication rules.
+`hs.httpserver:websocket` callbacks must return a string. A lifecycle event with no response therefore produces a zero-length transport frame. The TypeScript transport ignores only zero-length frames before JSON/protocol validation; every non-empty frame still goes through strict JSON Schema/protocol validation. A zero-length frame is not a protocol message, a twelfth protocol type, or an unauthenticated fallback. This is a reversible, transport-specific limitation: replacing the transport can remove the accommodation without changing the v1 message contract or authentication rules.
 
 ### Reconnect synchronization
 
