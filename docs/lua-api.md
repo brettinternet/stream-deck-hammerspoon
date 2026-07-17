@@ -200,7 +200,7 @@ When the plugin is not connected, refresh requests cannot be delivered. The plug
 
 The repository includes complete configuration snippets in `hammerspoon/examples/`:
 
-- `microphone.lua` toggles the default input device and refreshes the pressed key.
+- `microphone.lua` toggles the default input device's input mute state and refreshes the pressed key.
 - `application.lua` shows the frontmost application, hides it on press, and refreshes from `hs.application.watcher` events.
 - `multi-instance.lua` keeps independent toggle state for each visible key and reads an optional per-instance `label` setting.
 - `focus-timer.lua` (`com.brettinternet.hammerspoon.focus-timer`) starts and stops a per-key 25-minute focus timer, showing `Focus` while it runs and returning to `Ready` when it expires; its per-instance lifecycle owns the timer and refreshes the key on start, stop, and expiry.
@@ -231,6 +231,14 @@ local function default_microphone()
   return hs.audiodevice.defaultInputDevice()
 end
 
+local function microphone_muted(microphone)
+  local muted = microphone:inputMuted()
+  if type(muted) ~= "boolean" then
+    error("microphone input mute state unavailable")
+  end
+  return muted
+end
+
 streamdeck.register({
   id = "com.example.microphone-toggle",
   name = "Microphone mute",
@@ -244,7 +252,7 @@ streamdeck.register({
       }
     end
 
-    if microphone:muted() then
+    if microphone_muted(microphone) then
       return {
         title = "Muted",
         state = "active",
@@ -263,7 +271,10 @@ streamdeck.register({
       error("no default input device")
     end
 
-    microphone:setMuted(not microphone:muted())
+    local muted = microphone_muted(microphone)
+    if microphone:setInputMuted(not muted) ~= true then
+      error("failed to set microphone mute state")
+    end
     context:refresh()
   end,
 })

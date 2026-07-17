@@ -166,13 +166,17 @@ test("microphone example covers appearance, toggling, and no-device errors", fun
   local microphone = {
     muted_state = false,
     set_calls = 0,
+    set_result = true,
   }
-  function microphone:muted()
+  function microphone:inputMuted()
     return self.muted_state
   end
-  function microphone:setMuted(value)
-    self.muted_state = value
+  function microphone:setInputMuted(value)
     self.set_calls = self.set_calls + 1
+    if self.set_result then
+      self.muted_state = value
+    end
+    return self.set_result
   end
 
   local available = microphone
@@ -199,6 +203,12 @@ test("microphone example covers appearance, toggling, and no-device errors", fun
   appearance = action.appearance(press_context)
   assertEqual(appearance.title, "Muted")
   assertEqual(appearance.state, "active")
+  microphone.set_result = false
+  assertError(function()
+    action.press(press_context)
+  end, "failed to set microphone mute state")
+  assertEqual(press_context.refreshes, 1, "failed microphone mute must not refresh")
+  microphone.set_result = true
 
   available = nil
   appearance = action.appearance(press_context)

@@ -6,6 +6,14 @@ local streamdeck = require("streamdeck")
 local function default_microphone()
   return hs.audiodevice.defaultInputDevice()
 end
+local function microphone_muted(microphone)
+  local muted = microphone:inputMuted()
+  if type(muted) ~= "boolean" then
+    error("microphone input mute state unavailable")
+  end
+  return muted
+end
+
 
 streamdeck.register({
   id = "com.brettinternet.hammerspoon.microphone-toggle",
@@ -20,7 +28,7 @@ streamdeck.register({
       }
     end
 
-    if microphone:muted() then
+    if microphone_muted(microphone) then
       return {
         title = "Muted",
         state = "active",
@@ -39,7 +47,10 @@ streamdeck.register({
       error("no default input device")
     end
 
-    microphone:setMuted(not microphone:muted())
+    local muted = microphone_muted(microphone)
+    if microphone:setInputMuted(not muted) ~= true then
+      error("failed to set microphone mute state")
+    end
     context:refresh()
   end,
 })
