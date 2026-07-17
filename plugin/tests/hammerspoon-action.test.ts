@@ -20,6 +20,7 @@ class FakeAction {
   rejectTitle = false;
   rejectState = false;
   rejectImage = false;
+  imageDelay?: Promise<void>;
   rejectAlert = false;
 
   constructor(
@@ -47,6 +48,9 @@ class FakeAction {
 
   async setImage(image?: string): Promise<void> {
     this.calls.images.push(image);
+    if (this.imageDelay) {
+      await this.imageDelay;
+    }
     if (this.rejectImage) {
       throw new Error("setImage failed");
     }
@@ -437,6 +441,47 @@ describe("HammerspoonAction", () => {
     expect(failed.calls.titles).toEqual(["Hammerspoon\nOffline", "Fallback"]);
     expect(failed.calls.states).toEqual([0, 1]);
     expect(failed.calls.alerts).toBe(1);
+  });
+
+  test("serializes appearance image updates per instance", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const action = new FakeAction("serialized");
+    let releaseImage!: () => void;
+    action.imageDelay = new Promise<void>((resolve) => {
+      releaseImage = resolve;
+    });
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "serialized",
+      actionId: "action.id",
+      title: "Decorated",
+      state: 1,
+      appearanceVersion: 1,
+      backgroundColor: "#202020",
+    });
+    await flush();
+    expect(action.calls.images).toHaveLength(1);
+
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "serialized",
+      actionId: "action.id",
+      title: "Plain",
+      state: 0,
+    });
+    releaseImage();
+    await flush();
+
+    expect(action.calls.images).toHaveLength(2);
+    expect(action.calls.images[1]).toBeUndefined();
+    expect(action.calls.titles.at(-1)).toBe("Plain");
+    expect(action.calls.states.at(-1)).toBe(0);
   });
 
 

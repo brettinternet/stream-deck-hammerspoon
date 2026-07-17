@@ -107,6 +107,7 @@ function isRequestStateMessage(value: JsonValue): value is RequestStateMessage {
 export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings> {
   private readonly instances = new Map<string, TrackedInstance>();
   private readonly synchronized = new Set<string>();
+  private readonly appearanceQueues = new Map<string, Promise<void>>();
   private subscribed = false;
 
   public constructor(private readonly bridge: BridgeClient) {
@@ -130,7 +131,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       void this.sendBridgeState();
     });
     this.bridge.on("appearance", (appearance) => {
-      this.renderAppearance(appearance);
+      this.enqueueAppearance(appearance);
     });
     this.bridge.on("protocolError", (error) => {
       if (error.instanceId) {
@@ -246,6 +247,27 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     for (const instanceId of this.instances.keys()) {
       void this.renderInstance(instanceId);
     }
+  }
+
+  private enqueueAppearance(appearance: BridgeAppearance): void {
+    const previous = this.appearanceQueues.get(appearance.instanceId) ?? Promise.resolve();
+    const next = previous.then(
+      () => this.renderAppearance(appearance),
+      () => this.renderAppearance(appearance),
+    );
+    this.appearanceQueues.set(appearance.instanceId, next);
+    void next.then(
+      () => {
+        if (this.appearanceQueues.get(appearance.instanceId) === next) {
+          this.appearanceQueues.delete(appearance.instanceId);
+        }
+      },
+      () => {
+        if (this.appearanceQueues.get(appearance.instanceId) === next) {
+          this.appearanceQueues.delete(appearance.instanceId);
+        }
+      },
+    );
   }
 
   private async renderAppearance(appearance: BridgeAppearance): Promise<void> {

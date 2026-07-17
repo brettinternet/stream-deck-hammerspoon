@@ -18669,6 +18669,7 @@ class HammerspoonAction extends SingletonAction {
     bridge;
     instances = new Map();
     synchronized = new Set();
+    appearanceQueues = new Map();
     subscribed = false;
     constructor(bridge) {
         super();
@@ -18691,7 +18692,7 @@ class HammerspoonAction extends SingletonAction {
             void this.sendBridgeState();
         });
         this.bridge.on("appearance", (appearance) => {
-            this.renderAppearance(appearance);
+            this.enqueueAppearance(appearance);
         });
         this.bridge.on("protocolError", (error) => {
             if (error.instanceId) {
@@ -18793,6 +18794,20 @@ class HammerspoonAction extends SingletonAction {
         for (const instanceId of this.instances.keys()) {
             void this.renderInstance(instanceId);
         }
+    }
+    enqueueAppearance(appearance) {
+        const previous = this.appearanceQueues.get(appearance.instanceId) ?? Promise.resolve();
+        const next = previous.then(() => this.renderAppearance(appearance), () => this.renderAppearance(appearance));
+        this.appearanceQueues.set(appearance.instanceId, next);
+        void next.then(() => {
+            if (this.appearanceQueues.get(appearance.instanceId) === next) {
+                this.appearanceQueues.delete(appearance.instanceId);
+            }
+        }, () => {
+            if (this.appearanceQueues.get(appearance.instanceId) === next) {
+                this.appearanceQueues.delete(appearance.instanceId);
+            }
+        });
     }
     async renderAppearance(appearance) {
         const instance = this.instances.get(appearance.instanceId);
