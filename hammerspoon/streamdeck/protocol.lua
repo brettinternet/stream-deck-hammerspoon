@@ -233,6 +233,16 @@ local function decodeBase64(value)
   return table.concat(out)
 end
 
+local function crc32(bytes)
+ local crc = 0xffffffff
+ for index = 1, #bytes do
+  crc = crc ~ bytes:byte(index)
+  for _ = 1, 8 do
+   if (crc & 1) == 0 then crc = crc >> 1 else crc = (crc >> 1) ~ 0xedb88320 end
+  end
+ end
+ return (~crc) & 0xffffffff
+end
 local function isValidPng(bytes)
   if #bytes < 33 or bytes:sub(1, 8) ~= string.char(137,80,78,71,13,10,26,10) then return false end
   local offset, hasHeader, hasData = 9, false, false
@@ -242,7 +252,8 @@ local function isValidPng(bytes)
     local chunkEnd = offset + 11 + length
     if chunkEnd > #bytes then return false end
     local chunkType = bytes:sub(offset + 4, offset + 7)
-    if not chunkType:match("^[A-Za-z][A-Za-z][A-Za-z][A-Za-z]$") then return false end
+    if not chunkType:match("^[A-Za-z][A-Za-z][A-Za-z][A-Za-z]$")
+        or crc32(bytes:sub(offset + 4, offset + 7 + length)) ~= string.unpack(">I4", bytes, offset + 8 + length) then return false end
     if not hasHeader then
       if chunkType ~= "IHDR" or length ~= 13 then return false end
       local width = string.unpack(">I4", bytes, offset + 8)
@@ -251,7 +262,10 @@ local function isValidPng(bytes)
       hasHeader = true
     end
     if chunkType == "acTL" then return false end
-    if chunkType == "IDAT" then hasData = true end
+    if chunkType == "IDAT" then
+      if length == 0 then return false end
+      hasData = true
+    end
     if chunkType == "IEND" then
       return hasHeader and hasData and length == 0 and chunkEnd == #bytes
     end

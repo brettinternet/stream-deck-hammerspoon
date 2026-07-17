@@ -183,18 +183,13 @@ describe("protocol direction and validation", () => {
   test("validates bundled fallback and custom image safety bounds", () => {
     const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"></svg>').toString("base64");
     expect(parseServerMessage(JSON.stringify({ ...appearance, appearanceVersion: 1, icon: { kind: "bundled", name: "hammerspoon" } }))).toBeDefined();
-    const png = Buffer.alloc(57);
-    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(png);
-    png.writeUInt32BE(13, 8);
-    png.write("IHDR", 12, "ascii");
-    png.writeUInt32BE(72, 16);
-    png.writeUInt32BE(72, 20);
-    png.write("IDAT", 37, "ascii");
-    png.write("IEND", 49, "ascii");
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAHElEQVR4nO3BMQEAAADCoPVPbQo/oAAAAAAAuhoUiAABdg1dRQAAAABJRU5ErkJggg==";
+    const corruptPng = Buffer.from(png, "base64");
+    corruptPng[29] ^= 1;
     expect(parseServerMessage(JSON.stringify({
       ...appearance,
       appearanceVersion: 1,
-      icon: { kind: "custom", mediaType: "image/png", dataBase64: png.toString("base64") },
+      icon: { kind: "custom", mediaType: "image/png", dataBase64: png },
     }))).toBeDefined();
     expect(parseServerMessage(JSON.stringify({ ...appearance, appearanceVersion: 1, icon: { kind: "bundled", name: "future-icon" } }))).toBeDefined();
     expect(parseServerMessage(JSON.stringify({
@@ -205,6 +200,7 @@ describe("protocol direction and validation", () => {
     for (const icon of [
       { kind: "bundled", name: "bad_name" },
       { kind: "custom", mediaType: "image/png", dataBase64: "not-base64" },
+      { kind: "custom", mediaType: "image/png", dataBase64: corruptPng.toString("base64") },
       { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from("<svg><script/></svg>").toString("base64") },
       { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" style="fill:#fff"></svg>').toString("base64") },
       { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" xmlns:foreign="urn:x" viewBox="0 0 72 72"></svg>').toString("base64") },

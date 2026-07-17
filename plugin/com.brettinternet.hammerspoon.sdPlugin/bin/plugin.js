@@ -18188,6 +18188,16 @@ function isCanonicalBase64(value) {
         && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)
         && Buffer.from(value, "base64").toString("base64") === value;
 }
+function crc32(bytes) {
+    let crc = 0xffffffff;
+    for (const byte of bytes) {
+        crc ^= byte;
+        for (let bit = 0; bit < 8; bit += 1) {
+            crc = (crc & 1) === 0 ? crc >>> 1 : (crc >>> 1) ^ 0xedb88320;
+        }
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+}
 function isValidPng(bytes) {
     if (bytes.length < 33 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) {
         return false;
@@ -18202,7 +18212,8 @@ function isValidPng(bytes) {
         const length = bytes.readUInt32BE(offset);
         const type = bytes.toString("ascii", offset + 4, offset + 8);
         const end = offset + 12 + length;
-        if (!/^[A-Za-z]{4}$/.test(type) || end > bytes.length) {
+        if (!/^[A-Za-z]{4}$/.test(type) || end > bytes.length
+            || crc32(bytes.subarray(offset + 4, offset + 8 + length)) !== bytes.readUInt32BE(offset + 8 + length)) {
             return false;
         }
         if (!hasHeader) {
@@ -18220,6 +18231,9 @@ function isValidPng(bytes) {
             return false;
         }
         if (type === "IDAT") {
+            if (length === 0) {
+                return false;
+            }
             hasData = true;
         }
         if (type === "IEND") {
