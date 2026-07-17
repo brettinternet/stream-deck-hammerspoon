@@ -94,6 +94,7 @@ class FakeBridge extends EventEmitter {
   readonly dialDowns: Array<[string, string, HammerspoonActionSettings]> = [];
   readonly dialRotates: Array<[string, string, number, boolean, HammerspoonActionSettings]> = [];
   readonly dialUps: Array<[string, string, HammerspoonActionSettings]> = [];
+  readonly touchTaps: Array<[string, string, boolean, [number, number], HammerspoonActionSettings]> = [];
 
   upsertInstance(input: Record<string, unknown>): void {
     this.upserts.push(input);
@@ -128,6 +129,17 @@ class FakeBridge extends EventEmitter {
   dialUp(instanceId: string, actionId: string, settings: HammerspoonActionSettings): void {
     this.dialUps.push([instanceId, actionId, settings]);
   }
+
+  touchTap(
+    instanceId: string,
+    actionId: string,
+    hold: boolean,
+    tapPos: [number, number],
+    settings: HammerspoonActionSettings,
+  ): void {
+    this.touchTaps.push([instanceId, actionId, hold, tapPos, settings]);
+  }
+
 }
 
 const propertyInspectorMessages: unknown[] = [];
@@ -182,6 +194,10 @@ function dialRotate(action: FakeAction, ticks: number, pressed: boolean) {
 
 function dialUp(action: FakeAction) {
   return { action } as never;
+}
+
+function touchTap(action: FakeAction, hold: boolean, tapPos: [number, number]) {
+  return { action, payload: { hold, tapPos } } as never;
 }
 
 async function flush(): Promise<void> {
@@ -366,7 +382,7 @@ describe("HammerspoonAction", () => {
     ]);
   });
 
-  test("routes independent encoder push and rotate events with the SDK layout", async () => {
+  test("routes independent encoder push, rotate, and touch events with the SDK layout", async () => {
     const bridge = new FakeBridge();
     const adapter = makeAction(bridge);
     const first = new FakeAction("first-encoder", false);
@@ -380,6 +396,8 @@ describe("HammerspoonAction", () => {
     await adapter.onDialRotate(dialRotate(first, 2, true));
     await adapter.onDialUp(dialUp(first));
     await adapter.onDialRotate(dialRotate(second, -1, false));
+    await adapter.onTouchTap(touchTap(first, true, [120, 40]));
+    await adapter.onTouchTap(touchTap(second, false, [700, 99]));
 
     expect(first.layouts).toEqual(["$A1"]);
     expect(second.layouts).toEqual(["$A1"]);
@@ -389,8 +407,32 @@ describe("HammerspoonAction", () => {
       ["second-encoder", "action.id", -1, false, secondSettings],
     ]);
     expect(bridge.dialUps).toEqual([["first-encoder", "action.id", firstSettings]]);
+    expect(bridge.touchTaps).toEqual([
+      ["first-encoder", "action.id", true, [120, 40], firstSettings],
+      ["second-encoder", "action.id", false, [700, 99], secondSettings],
+    ]);
   });
 
+
+  test("renders dial appearances through the SDK feedback interface", async () => {
+    const bridge = new FakeBridge();
+    bridge.status = "connected";
+    const adapter = makeAction(bridge);
+    const dial = new FakeAction("lcd-dial", false);
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(dial, { actionId: "action.lcd", label: "LCD" }));
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "lcd-dial",
+      actionId: "action.lcd",
+      title: "LCD value",
+      state: 1,
+    });
+    await flush();
+    expect(dial.layouts).toEqual(["$A1"]);
+    expect(dial.feedbacks).toContainEqual({ title: "LCD value" });
+  });
   test("preserves custom settings through appear, settings updates, and keyDown", async () => {
     const bridge = new FakeBridge();
     const adapter = makeAction(bridge);

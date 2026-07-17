@@ -293,17 +293,30 @@ describe("BridgeClient authentication and transport", () => {
     client.dialRotate("first-encoder", undefined, 2, true, { actionId: "com.example.action", label: "First updated" });
     client.dialUp("first-encoder");
     client.dialRotate("second-encoder", "com.example.action", -1, false);
+    client.touchTap("first-encoder", undefined, true, [123.5, 45], { actionId: "com.example.action", label: "First touched" });
+    client.touchTap("second-encoder", "com.example.action", false, [800, 100]);
+    client.touchTap("first-encoder", undefined, false, [-1, 50]);
     client.dialDown("wrong-instance", "com.example.action");
 
     expect(
       frames(sockets[0])
-        .filter((frame) => ["dialDown", "dialRotate", "dialUp"].includes(frame.type as string))
-        .map(({ type, instanceId, actionId, ticks, pressed }) => ({ type, instanceId, actionId, ticks, pressed })),
+        .filter((frame) => ["dialDown", "dialRotate", "dialUp", "touchTap"].includes(frame.type as string))
+        .map(({ type, instanceId, actionId, ticks, pressed, hold, tapPos }) => ({
+          type,
+          instanceId,
+          actionId,
+          ticks,
+          pressed,
+          hold,
+          tapPos,
+        })),
     ).toEqual([
-      { type: "dialDown", instanceId: "first-encoder", actionId: "com.example.action", ticks: undefined, pressed: undefined },
-      { type: "dialRotate", instanceId: "first-encoder", actionId: "com.example.action", ticks: 2, pressed: true },
-      { type: "dialUp", instanceId: "first-encoder", actionId: "com.example.action", ticks: undefined, pressed: undefined },
-      { type: "dialRotate", instanceId: "second-encoder", actionId: "com.example.action", ticks: -1, pressed: false },
+      { type: "dialDown", instanceId: "first-encoder", actionId: "com.example.action", ticks: undefined, pressed: undefined, hold: undefined, tapPos: undefined },
+      { type: "dialRotate", instanceId: "first-encoder", actionId: "com.example.action", ticks: 2, pressed: true, hold: undefined, tapPos: undefined },
+      { type: "dialUp", instanceId: "first-encoder", actionId: "com.example.action", ticks: undefined, pressed: undefined, hold: undefined, tapPos: undefined },
+      { type: "dialRotate", instanceId: "second-encoder", actionId: "com.example.action", ticks: -1, pressed: false, hold: undefined, tapPos: undefined },
+      { type: "touchTap", instanceId: "first-encoder", actionId: "com.example.action", ticks: undefined, pressed: undefined, hold: true, tapPos: [123.5, 45] },
+      { type: "touchTap", instanceId: "second-encoder", actionId: "com.example.action", ticks: undefined, pressed: undefined, hold: false, tapPos: [800, 100] },
     ]);
   });
 

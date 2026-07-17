@@ -141,6 +141,17 @@ const dialUp: ClientMessage = {
   actionId: "com.example.volumeUp",
 };
 
+const touchTap: ClientMessage = {
+  protocolVersion: 1,
+  type: "touchTap",
+  sessionId,
+  instanceId: "encoder-instance-01",
+  actionId: "com.example.volumeUp",
+  hold: true,
+  tapPos: [799.5, 100],
+};
+
+
 const instanceDisappeared: ClientMessage = {
   protocolVersion: 1,
   type: "instanceDisappeared",
@@ -164,7 +175,7 @@ describe("protocol examples", () => {
     for (const message of [instanceAppeared, requestAppearance, keyDown, keyUp, instanceDisappeared]) {
       expect(JSON.parse(serializeClientMessage(message))).toEqual(message);
     }
-    for (const message of [dialDown, dialRotate, dialUp]) {
+    for (const message of [dialDown, dialRotate, dialUp, touchTap]) {
       expect(JSON.parse(serializeClientMessage(message))).toEqual(message);
     }
     expect(parseServerMessage(JSON.stringify(appearance))).toEqual(appearance);
@@ -185,6 +196,7 @@ describe("protocol direction and validation", () => {
       dialDown,
       dialRotate,
       dialUp,
+      touchTap,
       instanceDisappeared,
     ]) {
       expect(() => parseServerMessage(JSON.stringify(message))).toThrow();
@@ -192,7 +204,7 @@ describe("protocol direction and validation", () => {
   });
 
   test("validates versioned encoder payloads", () => {
-    for (const message of [dialDown, dialRotate, dialUp]) {
+    for (const message of [dialDown, dialRotate, dialUp, touchTap]) {
       expect(() => serializeClientMessage(message)).not.toThrow();
     }
     for (const message of [
@@ -200,6 +212,11 @@ describe("protocol direction and validation", () => {
       { ...dialRotate, ticks: Number.NaN },
       { ...dialRotate, pressed: "true" },
       { ...dialRotate, instanceId: "" },
+      { ...touchTap, hold: "true" },
+      { ...touchTap, tapPos: [-1, 50] },
+      { ...touchTap, tapPos: [400, 101] },
+      { ...touchTap, tapPos: [400] },
+      { ...touchTap, tapPos: [400, 50, 1] },
     ]) {
       expect(() => serializeClientMessage(message as ClientMessage)).toThrow();
     }

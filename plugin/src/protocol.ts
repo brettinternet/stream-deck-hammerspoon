@@ -3,6 +3,9 @@ import { inflateSync } from "node:zlib";
 import protocolSchema from "../../protocol/schema/protocol-v1.json";
 
 export const PROTOCOL_VERSION = 1 as const;
+export const TOUCH_TAP_CANVAS_WIDTH = 800 as const;
+export const TOUCH_TAP_CANVAS_HEIGHT = 100 as const;
+
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -232,9 +235,18 @@ export interface DialUpMessage extends AuthenticatedClientMessage {
   instanceId: string;
   actionId: string;
 }
+export interface TouchTapMessage extends AuthenticatedClientMessage {
+  type: "touchTap";
+  instanceId: string;
+  actionId: string;
+  hold: boolean;
+  tapPos: [number, number];
+}
 export type DialDown = DialDownMessage;
 export type DialRotate = DialRotateMessage;
 export type DialUp = DialUpMessage;
+export type TouchTap = TouchTapMessage;
+
 
 
 
@@ -311,7 +323,9 @@ export type ClientMessage =
   | DialDownMessage
   | DialRotateMessage
   | DialUpMessage
+  | TouchTapMessage
   | RequestAppearanceMessage;
+
 export type ServerMessage =
   | HelloAckMessage
   | ActionsMessage
@@ -333,6 +347,7 @@ const CLIENT_MESSAGE_TYPES: Record<ClientMessageType, true> = {
   dialDown: true,
   dialRotate: true,
   dialUp: true,
+  touchTap: true,
 };
 
 const SERVER_MESSAGE_TYPES: Record<ServerMessageType, true> = {

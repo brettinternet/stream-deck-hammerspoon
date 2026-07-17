@@ -533,6 +533,25 @@ test("protocol validation and authentication failures are explicit", function()
   }))
   assertFalse(valid)
   assertEqual(code, "INVALID_FIELD")
+  local touch = message("touchTap", {
+    sessionId = "session",
+    instanceId = "instance",
+    actionId = "action",
+    hold = true,
+    tapPos = { 400, 50 },
+  })
+  valid, code = Protocol.validate(touch)
+  assertTrue(valid, "valid touch taps must pass")
+  for _, invalidTouch in ipairs({
+    message("touchTap", { sessionId = "session", instanceId = "instance", actionId = "action", hold = "true", tapPos = { 400, 50 } }),
+    message("touchTap", { sessionId = "session", instanceId = "instance", actionId = "action", hold = true, tapPos = { -1, 50 } }),
+    message("touchTap", { sessionId = "session", instanceId = "instance", actionId = "action", hold = true, tapPos = { 400, 101 } }),
+    message("touchTap", { sessionId = "session", instanceId = "instance", actionId = "action", hold = true, tapPos = { 400 } }),
+  }) do
+    valid, code = Protocol.validate(invalidTouch)
+    assertFalse(valid)
+    assertEqual(code, "INVALID_FIELD")
+  end
 
   local registry = Registry.new()
   registry:register({
@@ -777,6 +796,7 @@ test("encoder events preserve independent contexts and callback payloads", funct
   local pushes = {}
   local rotations = {}
   local releases = {}
+  local touches = {}
   local registry = Registry.new()
   registry:register({
     id = "com.test.encoder",
@@ -796,6 +816,15 @@ test("encoder events preserve independent contexts and callback payloads", funct
         label = context:getSettings().label,
         ticks = ticks,
         pressed = pressed,
+      }
+    end,
+    touchTap = function(context, hold, tapPos)
+      touches[#touches + 1] = {
+        instanceId = context.instanceId,
+        label = context:getSettings().label,
+        hold = hold,
+        x = tapPos[1],
+        y = tapPos[2],
       }
     end,
     release = function(context)
@@ -833,6 +862,18 @@ test("encoder events preserve independent contexts and callback payloads", funct
       pressed = false,
     }))
     exchange(server, message("dialUp", { instanceId = "encoder-b", actionId = "com.test.encoder" }))
+    exchange(server, message("touchTap", {
+      instanceId = "encoder-a",
+      actionId = "com.test.encoder",
+      hold = true,
+      tapPos = { 120, 40 },
+    }))
+    exchange(server, message("touchTap", {
+      instanceId = "encoder-b",
+      actionId = "com.test.encoder",
+      hold = false,
+      tapPos = { 800, 100 },
+    }))
 
     assertEqual(pushes[1], "encoder-a:A")
     assertEqual(pushes[2], nil)
@@ -845,6 +886,16 @@ test("encoder events preserve independent contexts and callback payloads", funct
     assertEqual(rotations[2].ticks, -1)
     assertFalse(rotations[2].pressed)
     assertEqual(releases[1], "encoder-b")
+    assertEqual(touches[1].instanceId, "encoder-a")
+    assertEqual(touches[1].label, "A")
+    assertTrue(touches[1].hold)
+    assertEqual(touches[1].x, 120)
+    assertEqual(touches[1].y, 40)
+    assertEqual(touches[2].instanceId, "encoder-b")
+    assertEqual(touches[2].label, "B")
+    assertFalse(touches[2].hold)
+    assertEqual(touches[2].x, 800)
+    assertEqual(touches[2].y, 100)
     server:stop()
   end)
 end)

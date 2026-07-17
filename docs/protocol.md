@@ -41,7 +41,7 @@ A valid v1 message may carry extension fields, but a v1 implementation must not 
 
 ## Message inventory
 
-There are exactly fifteen v1 message types:
+There are exactly sixteen v1 message types:
 
 | Direction | Type | Kind | Correlation |
 | --- | --- | --- | --- |
@@ -56,11 +56,12 @@ There are exactly fifteen v1 message types:
 | Plugin → Lua | `dialDown` | encoder push event | no acknowledgement; errors use `instanceId` |
 | Plugin → Lua | `dialRotate` | encoder rotate event | no acknowledgement; errors use `instanceId` |
 | Plugin → Lua | `dialUp` | encoder push release event | no acknowledgement; errors use `instanceId` |
+| Plugin → Lua | `touchTap` | touchscreen tap event (`hold`, `tapPos`) | no acknowledgement; errors use `instanceId` |
 | Plugin → Lua | `requestAppearance` | appearance request | no acknowledgement; errors use `instanceId` |
 | Lua → Plugin | `appearance` | appearance response | identifies `instanceId`; no separate request ID |
 | Lua → Plugin | `feedback` | transient success/error feedback | identifies `instanceId` and `actionId` |
 | Lua → Plugin | `error` | asynchronous error | optional `requestId` and/or `instanceId` |
-No other message type is part of v1. In particular, there is no wire-level settings-change, ping, pong, touch, or plugin-to-Lua error message.
+| No other message type is part of v1. In particular, there is no wire-level settings-change, ping, pong, or plugin-to-Lua error message.
 
 The state is per WebSocket connection, and the active session ID is per accepted `hello`:
 
@@ -254,6 +255,22 @@ Required fields: `protocolVersion`, `type: "dialRotate"`, `sessionId`, `instance
 Required fields: `protocolVersion`, `type: "dialUp"`, `sessionId`, `instanceId`, `actionId`. Lua invokes the optional protected `release(context)` callback. When it is not registered, the validated event is ignored.
 
 All encoder events use the same v1 envelope and session binding as key events. They remain instance-scoped, so settings and callback state cannot cross between encoder placements.
+
+### `touchTap` (plugin → Lua)
+
+Required fields: `protocolVersion`, `type: "touchTap"`, `sessionId`, `instanceId`, `actionId`, boolean `hold`, and `tapPos: [x, y]`. `tapPos` is bounded to the Stream Deck+ touchscreen canvas (`0 <= x <= 800`, `0 <= y <= 100`). Lua validates the session and instance/action identity before invoking the optional protected `touchTap(context, hold, tapPos)` callback. There is no success acknowledgement.
+
+```json
+{
+  "protocolVersion": 1,
+  "type": "touchTap",
+  "sessionId": "opaque-session-01",
+  "instanceId": "encoder-instance-01",
+  "actionId": "com.example.volume",
+  "hold": false,
+  "tapPos": [400, 50]
+}
+```
 
 ### `requestAppearance` (plugin → Lua)
 

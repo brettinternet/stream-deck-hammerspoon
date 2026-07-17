@@ -12,7 +12,8 @@
         "layout": "$A1",
         "TriggerDescription": {
           "Push": "Run Hammerspoon action",
-          "Rotate": "Adjust Hammerspoon action"
+          "Rotate": "Adjust Hammerspoon action",
+          "Touch": "Tap Hammerspoon action"
         }
       },
       "Icon": "imgs/action",

@@ -14,6 +14,8 @@ local messageTypes = {
   keyUp = true,
   dialDown = true,
   dialRotate = true,
+  touchTap = true,
+
   dialUp = true,
   requestAppearance = true,
   appearance = true,
@@ -180,6 +182,17 @@ end
 local function isFeedbackDuration(value)
   return isFiniteNumber(value) and value >= MIN_FEEDBACK_DURATION_MS and value <= MAX_FEEDBACK_DURATION_MS
 end
+local TOUCH_TAP_CANVAS_WIDTH = 800
+local TOUCH_TAP_CANVAS_HEIGHT = 100
+local function isTouchTapPosition(value)
+  return isArray(value)
+    and #value == 2
+    and isFiniteNumber(value[1])
+    and isFiniteNumber(value[2])
+    and value[1] >= 0 and value[1] <= TOUCH_TAP_CANVAS_WIDTH
+    and value[2] >= 0 and value[2] <= TOUCH_TAP_CANVAS_HEIGHT
+end
+
 
 local function boundedString(value, maximum)
   if not isNonEmptyString(value) then
@@ -819,6 +832,12 @@ function protocol.validate(message)
     ok, code = required(message, "sessionId", isNonEmptyString)
     if ok then ok, code = required(message, "instanceId", isNonEmptyString) end
     if ok then ok, code = required(message, "actionId", isNonEmptyString) end
+  elseif messageType == "touchTap" then
+    ok, code = required(message, "sessionId", isNonEmptyString)
+    if ok then ok, code = required(message, "instanceId", isNonEmptyString) end
+    if ok then ok, code = required(message, "actionId", isNonEmptyString) end
+    if ok then ok, code = required(message, "hold", function(value) return type(value) == "boolean" end) end
+    if ok then ok, code = required(message, "tapPos", isTouchTapPosition) end
   elseif messageType == "dialRotate" then
     ok, code = required(message, "sessionId", isNonEmptyString)
     if ok then ok, code = required(message, "instanceId", isNonEmptyString) end

@@ -70,7 +70,7 @@ Stops the server, closes the plugin connection, clears the current in-memory ses
 
 The shared token is accepted only in `hello`. A valid hello is accepted even if a prior session was still marked authenticated: the bridge safely clears prior instance contexts, generates a fresh non-empty opaque `sessionId` with `hs.host.uuid()`, and returns it in the required `helloAck.sessionId`. This session ID is an in-memory capability, not a replacement for the token.
 
-After `helloAck`, every plugin-to-Lua application message (`listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, `keyUp`, `dialDown`, `dialRotate`, `dialUp`, and `requestAppearance`) must include the exact current `sessionId`. Missing, stale, or invalid IDs are rejected before action dispatch and invoke no callback. The bridge clears the ID and contexts on close, `stop()`, or failure. Because `hs.httpserver` does not provide a reliable connection-close callback, this explicit ID check prevents a later client from inheriting tokenless authorization from a prior process-global hello flag. Reconnect or plugin restart sends a new token-bearing hello and rotates the ID; old-session messages remain invalid. Session IDs are never logged.
+After `helloAck`, every plugin-to-Lua application message (`listActions`, lifecycle, `keyDown`, `keyUp`, `dialDown`, `dialRotate`, `dialUp`, `touchTap`, and `requestAppearance`) must include the exact current `sessionId`. Missing, stale, or invalid IDs are rejected before action dispatch and invoke no callback. The bridge clears the ID and contexts on close, `stop()`, or failure. Because `hs.httpserver` does not provide a reliable connection-close callback, this explicit ID check prevents an old authenticated state from becoming tokenless authorization.
 
 ### `streamdeck.refresh(actionId)`
 
@@ -152,6 +152,8 @@ Callbacks run asynchronously in response to bridge events and are protected with
 
 
 Encoder events use the same context lifecycle and error isolation as key events. `dialDown` invokes `push(context)` when defined, otherwise `press(context)`; `dialRotate` invokes `rotate(context, ticks, pressed)` when defined; and `dialUp` invokes `release(context)` when defined. Encoder callbacks are independent per visible instance, so settings and state are not shared between placements.
+
+`touchTap(context, hold, tapPos)` is optional and runs only for dial actions. `hold` is a boolean and `tapPos` is a bounded `[x, y]` touchscreen coordinate (`0 <= x <= 800`, `0 <= y <= 100`). The callback is protected and receives the instance's own context and settings.
 Registration and startup failures are synchronous Lua errors. Callback failures are runtime errors handled by the bridge. This distinction makes a typo in the action table visible during configuration load while keeping a device callback failure from taking down the bridge.
 
 When the plugin is not connected, refresh requests cannot be delivered. The plugin displays its disconnected/offline presentation and retries with bounded backoff. Once authentication succeeds again, it receives a fresh session ID, requests the action list, re-announces visible instances with that ID, and requests appearance. Re-announcing an unchanged instance/action refreshes settings but does not invoke `appear` again.

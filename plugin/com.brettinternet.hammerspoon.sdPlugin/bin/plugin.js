@@ -17194,6 +17194,9 @@ var oneOf = [
 		$ref: "#/$defs/dialUp"
 	},
 	{
+		$ref: "#/$defs/touchTap"
+	},
+	{
 		$ref: "#/$defs/requestAppearance"
 	},
 	{
@@ -17881,6 +17884,59 @@ var $defs = {
 			}
 		]
 	},
+	touchTap: {
+		allOf: [
+			{
+				$ref: "#/$defs/message"
+			},
+			{
+				type: "object",
+				properties: {
+					type: {
+						"const": "touchTap"
+					},
+					sessionId: {
+						$ref: "#/$defs/sessionId"
+					},
+					instanceId: {
+						$ref: "#/$defs/id"
+					},
+					actionId: {
+						$ref: "#/$defs/id"
+					},
+					hold: {
+						type: "boolean"
+					},
+					tapPos: {
+						type: "array",
+						prefixItems: [
+							{
+								type: "number",
+								minimum: 0,
+								maximum: 800
+							},
+							{
+								type: "number",
+								minimum: 0,
+								maximum: 100
+							}
+						],
+						items: false,
+						minItems: 2,
+						maxItems: 2
+					}
+				},
+				required: [
+					"sessionId",
+					"instanceId",
+					"actionId",
+					"hold",
+					"tapPos"
+				],
+				additionalProperties: true
+			}
+		]
+	},
 	requestAppearance: {
 		allOf: [
 			{
@@ -18169,6 +18225,8 @@ var protocolSchema = {
 };
 
 const PROTOCOL_VERSION = 1;
+const TOUCH_TAP_CANVAS_WIDTH = 800;
+const TOUCH_TAP_CANVAS_HEIGHT = 100;
 const DEVICE_SIZE_MIN = 1;
 const DEVICE_SIZE_MAX = 64;
 const DEVICE_TYPE_VALUES = {
@@ -18239,6 +18297,7 @@ const CLIENT_MESSAGE_TYPES = {
     dialDown: true,
     dialRotate: true,
     dialUp: true,
+    touchTap: true,
 };
 const SERVER_MESSAGE_TYPES = {
     helloAck: true,
@@ -19105,6 +19164,14 @@ class BridgeClient extends EventEmitter$1 {
             ...(payload === undefined ? {} : payload),
         });
     }
+    touchTap(instanceId, actionId, hold, tapPos, settings) {
+        if (typeof hold !== "boolean" || !Array.isArray(tapPos) || tapPos.length !== 2
+            || tapPos.some((coordinate, index) => typeof coordinate !== "number" || !Number.isFinite(coordinate)
+                || coordinate < 0 || coordinate > (index === 0 ? TOUCH_TAP_CANVAS_WIDTH : TOUCH_TAP_CANVAS_HEIGHT))) {
+            return;
+        }
+        this.sendDialEvent(instanceId, "touchTap", actionId, settings, { hold, tapPos: [tapPos[0], tapPos[1]] });
+    }
     requestActions() {
         if (!this.authenticated || this.pendingActions.size > 0)
             return;
@@ -19744,6 +19811,17 @@ class HammerspoonAction extends SingletonAction {
             return;
         }
         this.bridge.dialUp(ev.action.id, instance.actionId, instance.settings);
+    }
+    async onTouchTap(ev) {
+        if (!isDialAction(ev.action)) {
+            return;
+        }
+        const instance = this.instances.get(ev.action.id);
+        if (!instance?.actionId) {
+            await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+            return;
+        }
+        this.bridge.touchTap(ev.action.id, instance.actionId, ev.payload.hold, ev.payload.tapPos, instance.settings);
     }
     async onSendToPlugin(ev) {
         if (isRequestStateMessage(ev.payload)) {

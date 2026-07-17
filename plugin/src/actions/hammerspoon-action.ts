@@ -399,6 +399,27 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     this.bridge.dialUp(ev.action.id, instance.actionId, instance.settings as JsonSettings);
   }
 
+  public override async onTouchTap(
+    ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onTouchTap"]>>[0],
+  ): Promise<void> {
+    if (!isDialAction(ev.action)) {
+      return;
+    }
+    const instance = this.instances.get(ev.action.id);
+    if (!instance?.actionId) {
+      await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+      return;
+    }
+
+    this.bridge.touchTap(
+      ev.action.id,
+      instance.actionId,
+      ev.payload.hold,
+      ev.payload.tapPos,
+      instance.settings as JsonSettings,
+    );
+  }
+
   public override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, HammerspoonActionSettings>): Promise<void> {
     if (isRequestStateMessage(ev.payload)) {
       await this.sendBridgeState();

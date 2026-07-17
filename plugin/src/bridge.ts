@@ -6,6 +6,8 @@ import WebSocket from "ws";
 
 import {
   PROTOCOL_VERSION,
+  TOUCH_TAP_CANVAS_HEIGHT,
+  TOUCH_TAP_CANVAS_WIDTH,
   parseServerMessage,
   sanitizeDeviceMetadata,
   serializeClientMessage,
@@ -98,14 +100,19 @@ type BridgeMessage =
   | Pick<
       Extract<
         ClientMessage,
-        { type: "instanceDisappeared" | "keyDown" | "keyUp" | "dialDown" | "dialUp" | "requestAppearance" }
+        { type: "instanceDisappeared" | "keyDown" | "keyUp" | "dialDown" | "dialUp" | "touchTap" | "requestAppearance" }
       >,
       "protocolVersion" | "type" | "instanceId" | "actionId"
     >
   | Pick<
       Extract<ClientMessage, { type: "dialRotate" }>,
       "protocolVersion" | "type" | "instanceId" | "actionId" | "ticks" | "pressed"
+    >
+  | Pick<
+      Extract<ClientMessage, { type: "touchTap" }>,
+      "protocolVersion" | "type" | "instanceId" | "actionId" | "hold" | "tapPos"
     >;
+
 
 const DEFAULT_URL = "ws://localhost:17321/streamdeck";
 const DEFAULT_TOKEN_PATH = join(homedir(), ".hammerspoon", "streamdeck-token");
@@ -354,10 +361,10 @@ export class BridgeClient extends EventEmitter {
 
   private sendDialEvent(
     instanceId: string,
-    type: "dialDown" | "dialRotate" | "dialUp",
+    type: "dialDown" | "dialRotate" | "dialUp" | "touchTap",
     actionId?: string,
     settings?: JsonSettings,
-    payload: { ticks: number; pressed: boolean } | undefined = undefined,
+    payload: { ticks: number; pressed: boolean } | { hold: boolean; tapPos: [number, number] } | undefined = undefined,
   ): void {
     if (!isNonEmptyString(instanceId)) return;
     const snapshot = this.instances.get(instanceId);
@@ -375,6 +382,21 @@ export class BridgeClient extends EventEmitter {
       actionId: effectiveActionId,
       ...(payload === undefined ? {} : payload),
     } as BridgeMessage);
+  }
+
+  touchTap(
+    instanceId: string,
+    actionId: string | undefined,
+    hold: boolean,
+    tapPos: [number, number],
+    settings?: JsonSettings,
+  ): void {
+    if (typeof hold !== "boolean" || !Array.isArray(tapPos) || tapPos.length !== 2
+      || tapPos.some((coordinate, index) => typeof coordinate !== "number" || !Number.isFinite(coordinate)
+        || coordinate < 0 || coordinate > (index === 0 ? TOUCH_TAP_CANVAS_WIDTH : TOUCH_TAP_CANVAS_HEIGHT))) {
+      return;
+    }
+    this.sendDialEvent(instanceId, "touchTap", actionId, settings, { hold, tapPos: [tapPos[0], tapPos[1]] });
   }
 
   requestActions(): void {

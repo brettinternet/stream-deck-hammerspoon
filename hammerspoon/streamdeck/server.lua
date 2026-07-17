@@ -383,6 +383,7 @@ function server.new(registry, protocol, contextFactory)
         or message.type == "dialDown"
         or message.type == "dialRotate"
         or message.type == "dialUp"
+        or message.type == "touchTap"
         or message.type == "requestAppearance" then
       local definition = self.registry:get(message.actionId)
       if not definition then
@@ -404,6 +405,8 @@ function server.new(registry, protocol, contextFactory)
         instance:invoke("rotate", message.ticks, message.pressed)
       elseif message.type == "dialUp" then
         instance:invoke("release")
+      elseif message.type == "touchTap" then
+        instance:invoke("touchTap", message.hold, message.tapPos)
       else
         instance:refresh()
       end
