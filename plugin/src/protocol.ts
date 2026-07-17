@@ -301,7 +301,7 @@ function hasDuplicateObjectKeys(source: string): boolean {
       skipString();
       return false;
     }
-    while (index < source.length && !/[\s,]}]/.test(source[index] ?? "")) {
+    while (index < source.length && !/[\s,}\]]/.test(source[index] ?? "")) {
       index += 1;
     }
     return false;
