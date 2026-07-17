@@ -447,6 +447,13 @@ export function parseServerMessage(data: string): ServerMessage {
   if (!validateProtocolMessage(parsed)) {
     throw schemaError("server");
   }
+  if (parsed.type === "appearance" && parsed.badge !== undefined) {
+    try {
+      encodeURIComponent(parsed.badge as string);
+    } catch {
+      throw new Error("Invalid server message: badge must contain valid Unicode.");
+    }
+  }
 
   if (parsed.type === "actions") {
     const actions = parsed.actions as ActionDefinition[];

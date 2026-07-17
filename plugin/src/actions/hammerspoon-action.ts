@@ -107,7 +107,7 @@ function isRequestStateMessage(value: JsonValue): value is RequestStateMessage {
 export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings> {
   private readonly instances = new Map<string, TrackedInstance>();
   private readonly synchronized = new Set<string>();
-  private readonly appearanceQueues = new Map<string, Promise<void>>();
+  private readonly renderQueues = new Map<string, Promise<void>>();
   private subscribed = false;
 
   public constructor(private readonly bridge: BridgeClient) {
@@ -131,7 +131,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       void this.sendBridgeState();
     });
     this.bridge.on("appearance", (appearance) => {
-      this.enqueueAppearance(appearance);
+      void this.enqueueRender(appearance.instanceId, () => this.renderAppearance(appearance));
     });
     this.bridge.on("protocolError", (error) => {
       if (error.instanceId) {
@@ -152,7 +152,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     const settings = this.settingsFrom(ev.payload.settings);
     this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: this.instances.get(instanceId)?.imageApplied ?? false });
     this.synchronized.delete(instanceId);
-    await this.renderInstance(instanceId);
+    await this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
     if (settings.actionId) {
       this.bridge.upsertInstance({
         instanceId,
@@ -185,7 +185,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
     this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: previous?.imageApplied ?? false });
     this.synchronized.delete(instanceId);
-    await this.renderInstance(instanceId);
+    await this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
     if (settings.actionId) {
       this.bridge.upsertInstance({
         instanceId,
@@ -198,7 +198,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   public override async onKeyDown(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onKeyDown"]>>[0]): Promise<void> {
     const instance = this.instances.get(ev.action.id);
     if (!instance?.actionId) {
-      await this.renderInstance(ev.action.id);
+      await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
       return;
     }
 
@@ -226,14 +226,18 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
 
     if (!instance.actionId) {
-      await this.clearImage(instance);
+      if (!(await this.clearImage(instance))) {
+        return;
+      }
       await this.setTitle(instance.action, "Select action");
       await this.setState(instance.action, 0);
       return;
     }
 
     if (this.bridge.status !== "connected" || !this.synchronized.has(instanceId)) {
-      await this.clearImage(instance);
+      if (!(await this.clearImage(instance))) {
+        return;
+      }
       await this.setTitle(instance.action, "Hammerspoon\nOffline");
       await this.setState(instance.action, 0);
       return;
@@ -245,29 +249,27 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
 
   private renderStatus(): void {
     for (const instanceId of this.instances.keys()) {
-      void this.renderInstance(instanceId);
+      void this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
     }
   }
 
-  private enqueueAppearance(appearance: BridgeAppearance): void {
-    const previous = this.appearanceQueues.get(appearance.instanceId) ?? Promise.resolve();
-    const next = previous.then(
-      () => this.renderAppearance(appearance),
-      () => this.renderAppearance(appearance),
-    );
-    this.appearanceQueues.set(appearance.instanceId, next);
+  private enqueueRender(instanceId: string, render: () => Promise<void>): Promise<void> {
+    const previous = this.renderQueues.get(instanceId) ?? Promise.resolve();
+    const next = previous.then(render, render);
+    this.renderQueues.set(instanceId, next);
     void next.then(
       () => {
-        if (this.appearanceQueues.get(appearance.instanceId) === next) {
-          this.appearanceQueues.delete(appearance.instanceId);
+        if (this.renderQueues.get(instanceId) === next) {
+          this.renderQueues.delete(instanceId);
         }
       },
       () => {
-        if (this.appearanceQueues.get(appearance.instanceId) === next) {
-          this.appearanceQueues.delete(appearance.instanceId);
+        if (this.renderQueues.get(instanceId) === next) {
+          this.renderQueues.delete(instanceId);
         }
       },
     );
+    return next;
   }
 
   private async renderAppearance(appearance: BridgeAppearance): Promise<void> {
@@ -275,26 +277,35 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     if (!instance || instance.actionId !== appearance.actionId) {
       return;
     }
+    if (this.bridge.status !== "connected") {
+      await this.renderInstance(appearance.instanceId);
+      return;
+    }
+    this.synchronized.add(appearance.instanceId);
     const image = appearanceImage(appearance);
     if (image !== undefined) {
-      await this.clearImage(instance);
+      if (!(await this.clearImage(instance))) {
+        return;
+      }
       if (await this.setImage(instance.action, image)) {
         instance.imageApplied = true;
       }
-    } else if (instance.imageApplied) {
-      await this.clearImage(instance);
+    } else if (instance.imageApplied && !(await this.clearImage(instance))) {
+      return;
     }
     await this.setTitle(instance.action, appearance.title);
     await this.setState(instance.action, appearance.state);
   }
 
-  private async clearImage(instance: TrackedInstance): Promise<void> {
+  private async clearImage(instance: TrackedInstance): Promise<boolean> {
     if (!instance.imageApplied) {
-      return;
+      return true;
     }
     if (await this.setImage(instance.action, undefined)) {
       instance.imageApplied = false;
+      return true;
     }
+    return false;
   }
   private async setImage(action: KeyAction<HammerspoonActionSettings>, image: string | undefined): Promise<boolean> {
     try {

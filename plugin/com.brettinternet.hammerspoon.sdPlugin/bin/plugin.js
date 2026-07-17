@@ -18087,6 +18087,14 @@ function parseServerMessage(data) {
     if (!validateProtocolMessage(parsed)) {
         throw schemaError("server");
     }
+    if (parsed.type === "appearance" && parsed.badge !== undefined) {
+        try {
+            encodeURIComponent(parsed.badge);
+        }
+        catch {
+            throw new Error("Invalid server message: badge must contain valid Unicode.");
+        }
+    }
     if (parsed.type === "actions") {
         const actions = parsed.actions;
         const actionIds = new Set();
@@ -18669,7 +18677,7 @@ class HammerspoonAction extends SingletonAction {
     bridge;
     instances = new Map();
     synchronized = new Set();
-    appearanceQueues = new Map();
+    renderQueues = new Map();
     subscribed = false;
     constructor(bridge) {
         super();
@@ -18692,7 +18700,7 @@ class HammerspoonAction extends SingletonAction {
             void this.sendBridgeState();
         });
         this.bridge.on("appearance", (appearance) => {
-            this.enqueueAppearance(appearance);
+            void this.enqueueRender(appearance.instanceId, () => this.renderAppearance(appearance));
         });
         this.bridge.on("protocolError", (error) => {
             if (error.instanceId) {
@@ -18711,7 +18719,7 @@ class HammerspoonAction extends SingletonAction {
         const settings = this.settingsFrom(ev.payload.settings);
         this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: this.instances.get(instanceId)?.imageApplied ?? false });
         this.synchronized.delete(instanceId);
-        await this.renderInstance(instanceId);
+        await this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
         if (settings.actionId) {
             this.bridge.upsertInstance({
                 instanceId,
@@ -18741,7 +18749,7 @@ class HammerspoonAction extends SingletonAction {
         }
         this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: previous?.imageApplied ?? false });
         this.synchronized.delete(instanceId);
-        await this.renderInstance(instanceId);
+        await this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
         if (settings.actionId) {
             this.bridge.upsertInstance({
                 instanceId,
@@ -18753,7 +18761,7 @@ class HammerspoonAction extends SingletonAction {
     async onKeyDown(ev) {
         const instance = this.instances.get(ev.action.id);
         if (!instance?.actionId) {
-            await this.renderInstance(ev.action.id);
+            await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
             return;
         }
         this.bridge.keyDown(ev.action.id, instance.actionId, instance.settings);
@@ -18776,13 +18784,17 @@ class HammerspoonAction extends SingletonAction {
             return;
         }
         if (!instance.actionId) {
-            await this.clearImage(instance);
+            if (!(await this.clearImage(instance))) {
+                return;
+            }
             await this.setTitle(instance.action, "Select action");
             await this.setState(instance.action, 0);
             return;
         }
         if (this.bridge.status !== "connected" || !this.synchronized.has(instanceId)) {
-            await this.clearImage(instance);
+            if (!(await this.clearImage(instance))) {
+                return;
+            }
             await this.setTitle(instance.action, "Hammerspoon\nOffline");
             await this.setState(instance.action, 0);
             return;
@@ -18792,48 +18804,58 @@ class HammerspoonAction extends SingletonAction {
     }
     renderStatus() {
         for (const instanceId of this.instances.keys()) {
-            void this.renderInstance(instanceId);
+            void this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
         }
     }
-    enqueueAppearance(appearance) {
-        const previous = this.appearanceQueues.get(appearance.instanceId) ?? Promise.resolve();
-        const next = previous.then(() => this.renderAppearance(appearance), () => this.renderAppearance(appearance));
-        this.appearanceQueues.set(appearance.instanceId, next);
+    enqueueRender(instanceId, render) {
+        const previous = this.renderQueues.get(instanceId) ?? Promise.resolve();
+        const next = previous.then(render, render);
+        this.renderQueues.set(instanceId, next);
         void next.then(() => {
-            if (this.appearanceQueues.get(appearance.instanceId) === next) {
-                this.appearanceQueues.delete(appearance.instanceId);
+            if (this.renderQueues.get(instanceId) === next) {
+                this.renderQueues.delete(instanceId);
             }
         }, () => {
-            if (this.appearanceQueues.get(appearance.instanceId) === next) {
-                this.appearanceQueues.delete(appearance.instanceId);
+            if (this.renderQueues.get(instanceId) === next) {
+                this.renderQueues.delete(instanceId);
             }
         });
+        return next;
     }
     async renderAppearance(appearance) {
         const instance = this.instances.get(appearance.instanceId);
         if (!instance || instance.actionId !== appearance.actionId) {
             return;
         }
+        if (this.bridge.status !== "connected") {
+            await this.renderInstance(appearance.instanceId);
+            return;
+        }
+        this.synchronized.add(appearance.instanceId);
         const image = appearanceImage(appearance);
         if (image !== undefined) {
-            await this.clearImage(instance);
+            if (!(await this.clearImage(instance))) {
+                return;
+            }
             if (await this.setImage(instance.action, image)) {
                 instance.imageApplied = true;
             }
         }
-        else if (instance.imageApplied) {
-            await this.clearImage(instance);
+        else if (instance.imageApplied && !(await this.clearImage(instance))) {
+            return;
         }
         await this.setTitle(instance.action, appearance.title);
         await this.setState(instance.action, appearance.state);
     }
     async clearImage(instance) {
         if (!instance.imageApplied) {
-            return;
+            return true;
         }
         if (await this.setImage(instance.action, undefined)) {
             instance.imageApplied = false;
+            return true;
         }
+        return false;
     }
     async setImage(action, image) {
         try {

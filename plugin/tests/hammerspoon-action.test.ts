@@ -20,6 +20,7 @@ class FakeAction {
   rejectTitle = false;
   rejectState = false;
   rejectImage = false;
+  rejectImageClear = false;
   imageDelay?: Promise<void>;
   rejectAlert = false;
 
@@ -51,7 +52,7 @@ class FakeAction {
     if (this.imageDelay) {
       await this.imageDelay;
     }
-    if (this.rejectImage) {
+    if (this.rejectImage || (image === undefined && this.rejectImageClear)) {
       throw new Error("setImage failed");
     }
   }
@@ -348,6 +349,7 @@ describe("HammerspoonAction", () => {
     const action = new FakeAction("instance");
     adapter.subscribe();
     await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+    bridge.status = "connected";
 
     bridge.emit("appearance", {
       type: "appearance",
@@ -381,6 +383,7 @@ describe("HammerspoonAction", () => {
     const action = new FakeAction("decorated");
     adapter.subscribe();
     await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+    bridge.status = "connected";
 
     bridge.emit("appearance", {
       type: "appearance",
@@ -443,6 +446,44 @@ describe("HammerspoonAction", () => {
     expect(failed.calls.alerts).toBe(1);
   });
 
+  test("retains the previous appearance when decoration cannot be cleared", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const action = new FakeAction("clear-failure");
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+    bridge.status = "connected";
+
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "clear-failure",
+      actionId: "action.id",
+      title: "Decorated",
+      state: 1,
+      appearanceVersion: 1,
+      backgroundColor: "#202020",
+    });
+    await flush();
+    action.rejectImageClear = true;
+
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "clear-failure",
+      actionId: "action.id",
+      title: "Plain",
+      state: 0,
+    });
+    await flush();
+
+    expect(action.calls.images).toHaveLength(2);
+    expect(action.calls.images[1]).toBeUndefined();
+    expect(action.calls.titles).toEqual(["Hammerspoon\nOffline", "Decorated"]);
+    expect(action.calls.states).toEqual([0, 1]);
+    expect(action.calls.alerts).toBe(1);
+  });
+
   test("serializes appearance image updates per instance", async () => {
     const bridge = new FakeBridge();
     const adapter = makeAction(bridge);
@@ -453,6 +494,7 @@ describe("HammerspoonAction", () => {
     });
     adapter.subscribe();
     await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+    bridge.status = "connected";
 
     bridge.emit("appearance", {
       type: "appearance",
@@ -481,6 +523,40 @@ describe("HammerspoonAction", () => {
     expect(action.calls.images).toHaveLength(2);
     expect(action.calls.images[1]).toBeUndefined();
     expect(action.calls.titles.at(-1)).toBe("Plain");
+    expect(action.calls.states.at(-1)).toBe(0);
+  });
+
+  test("keeps offline fallback when disconnect interrupts appearance rendering", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const action = new FakeAction("disconnecting");
+    let releaseImage!: () => void;
+    action.imageDelay = new Promise<void>((resolve) => {
+      releaseImage = resolve;
+    });
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+    bridge.status = "connected";
+
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "disconnecting",
+      actionId: "action.id",
+      title: "Decorated",
+      state: 1,
+      appearanceVersion: 1,
+      backgroundColor: "#202020",
+    });
+    await flush();
+    bridge.status = "disconnected";
+    bridge.emit("status", "disconnected");
+    releaseImage();
+    await flush();
+
+    expect(action.calls.images).toHaveLength(2);
+    expect(action.calls.images[1]).toBeUndefined();
+    expect(action.calls.titles.at(-1)).toBe("Hammerspoon\nOffline");
     expect(action.calls.states.at(-1)).toBe(0);
   });
 
