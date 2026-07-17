@@ -2,8 +2,14 @@
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")
+local helpers = require("streamdeck.helpers")
 
-local state_by_instance = {}
+local state = helpers.perInstanceState(function()
+  return false
+end)
+local refreshAfterToggle = helpers.refreshAfter(function(context)
+  state:set(context, not state:get(context))
+end)
 
 streamdeck.register({
   id = "com.brettinternet.hammerspoon.per-instance-toggle",
@@ -13,11 +19,7 @@ streamdeck.register({
     { type = "text", key = "label", maxLength = 32 },
   },
 
-  appear = function(context)
-    if state_by_instance[context.instanceId] == nil then
-      state_by_instance[context.instanceId] = false
-    end
-  end,
+  appear = state.appear,
 
   appearance = function(context)
     local settings = context:getSettings()
@@ -28,18 +30,14 @@ streamdeck.register({
 
     return {
       title = label,
-      state = state_by_instance[context.instanceId] and "active" or "inactive",
+      state = state:get(context) and "active" or "inactive",
     }
   end,
 
-  press = function(context)
-    state_by_instance[context.instanceId] = not state_by_instance[context.instanceId]
-    context:refresh()
-  end,
+  press = refreshAfterToggle,
 
-  disappear = function(context)
-    state_by_instance[context.instanceId] = nil
-  end,
+  disappear = state.disappear,
+
 })
 
 streamdeck.start()

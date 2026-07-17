@@ -156,6 +156,7 @@ _G.hs = {
 local Registry = require("streamdeck.registry")
 local Protocol = require("streamdeck.protocol")
 local Context = require("streamdeck.context")
+local Helpers = require("streamdeck.helpers")
 local Server = require("streamdeck.server")
 
 local passed = 0
@@ -1282,6 +1283,62 @@ test("repeated appearance refreshes settings without repeating lifecycle callbac
     assertEqual(disappeared, 2, "stop must disappear each remaining instance once")
   end)
 end)
+test("helper components isolate state and refresh only after success", function()
+  local initialized = {}
+  local state = Helpers.perInstanceState(function(context)
+    initialized[#initialized + 1] = context
+    return { count = 0 }
+  end)
+  local a = { instanceId = "helper-a" }
+  local b = { instanceId = "helper-b" }
+
+  state.appear(a)
+  state.appear(b)
+  assertEqual(initialized[1], a, "initializer must receive context A")
+  assertEqual(initialized[2], b, "initializer must receive context B")
+  assertEqual(state:get(a).count, 0)
+  assertEqual(state:get(b).count, 0)
+
+  state:set(a, { count = 1 })
+  state.appear(a)
+  assertEqual(#initialized, 2, "repeated appear must not reset state")
+  assertEqual(state:get(a).count, 1)
+  assertEqual(state:get(b).count, 0, "instances must not share state")
+
+  state.disappear(a)
+  assertEqual(state:get(a), nil, "disappear must clean up only its instance")
+  assertEqual(state:get(b).count, 0, "disappear must preserve other instances")
+  state.appear(a)
+  assertEqual(#initialized, 3, "reappearing after disappear must initialize")
+
+  assertFalse(pcall(Helpers.perInstanceState, "not a function"))
+  assertFalse(pcall(state.appear, {}))
+  assertFalse(pcall(state.disappear, {}))
+  assertFalse(pcall(state.get, {}))
+  assertFalse(pcall(state.set, {}, false))
+
+  local refreshes = 0
+  function a:refresh()
+    refreshes = refreshes + 1
+  end
+  local wrapped = Helpers.refreshAfter(function(context, first, second)
+    assertEqual(context, a, "refresh wrapper must preserve context")
+    return first, nil, second
+  end)
+  local first, missing, second = wrapped(a, "first", "second")
+  assertEqual(first, "first")
+  assertEqual(missing, nil)
+  assertEqual(second, "second")
+  assertEqual(refreshes, 1, "successful callback must refresh once")
+
+  local failed = Helpers.refreshAfter(function()
+    error("expected helper callback failure")
+  end)
+  assertFalse(pcall(failed, a), "callback errors must propagate")
+  assertEqual(refreshes, 1, "failed callback must not refresh")
+  assertFalse(pcall(Helpers.refreshAfter, "not a function"))
+end)
+
 
 test("requestAppearance refreshes an instance without pressing it", function()
   local pressed = 0

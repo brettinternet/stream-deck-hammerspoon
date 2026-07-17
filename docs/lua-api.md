@@ -95,6 +95,44 @@ Emit instance-scoped transient feedback after a callback succeeds or fails. `mes
 
 These are the only context methods in v1. Contexts are per-instance: assigning one action to several keys gives each key an independent context and independent settings. Do not use a module-global settings table when per-key behavior is intended.
 
+## Composable helper components
+
+The optional `streamdeck.helpers` module provides small components for common per-instance lifecycle and refresh patterns. It keeps state in each returned component closure; it does not register actions, start the bridge, or hide lifecycle callbacks.
+
+### `helpers.perInstanceState(initializer)`
+
+Returns a state component with `appear`, `disappear`, `get`, and `set` functions. The initializer runs once for each instance on its first `appear(context)`. Repeated appearances preserve that instance's value, `disappear(context)` removes only that instance, and `get`/`set` can be used from the other action callbacks. The initializer and every component context must be valid, and initializer errors remain callback errors.
+
+### `helpers.refreshAfter(callback)`
+
+Returns a callback wrapper that invokes `callback(context, ...)`, refreshes that same context once after a successful callback, and returns the callback's values unchanged. Errors propagate without refreshing. The callback must be a function.
+
+```lua
+local streamdeck = require("streamdeck")
+local helpers = require("streamdeck.helpers")
+local state = helpers.perInstanceState(function()
+  return false
+end)
+
+streamdeck.register({
+  id = "com.example.toggle",
+  name = "Toggle",
+  appearance = function(context)
+    return {
+      title = "Toggle",
+      state = state:get(context) and "active" or "inactive",
+    }
+  end,
+  press = helpers.refreshAfter(function(context)
+    state:set(context, not state:get(context))
+  end),
+  appear = state.appear,
+  disappear = state.disappear,
+})
+```
+
+Lifecycle remains explicit: the bridge invokes `appear` and `disappear`, while the helper only owns the closure-scoped map and callback composition.
+
 ## Action definitions and validation
 
 An action definition is a table with these fields:
