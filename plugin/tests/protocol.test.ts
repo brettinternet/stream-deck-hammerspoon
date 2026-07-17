@@ -181,6 +181,9 @@ describe("protocol direction and validation", () => {
   });
 
   test("rejects unsafe feedback messages and duration bounds", () => {
+    const maxUnicodeFeedback = { ...feedback, message: "😀".repeat(256) };
+    expect(parseServerMessage(JSON.stringify(maxUnicodeFeedback))).toEqual(maxUnicodeFeedback);
+    expect(() => parseServerMessage(JSON.stringify({ ...feedback, message: "😀".repeat(257) }))).toThrow();
     const invalidFeedback = [
       { ...feedback, message: "" },
       { ...feedback, message: "x".repeat(257) },

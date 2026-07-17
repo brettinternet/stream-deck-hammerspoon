@@ -408,7 +408,7 @@ function validateSettingsSchema(action: ActionDefinition, actionIndex: number): 
 }
 
 function validateFeedback(message: FeedbackMessage): void {
-  if (message.message.length > 256) {
+  if (stringLength(message.message) > 256) {
     throw new Error("Invalid server message: feedback message exceeds 256 characters.");
   }
   for (const character of message.message) {

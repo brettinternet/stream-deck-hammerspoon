@@ -18095,7 +18095,7 @@ function validateSettingsSchema(action, actionIndex) {
     });
 }
 function validateFeedback(message) {
-    if (message.message.length > 256) {
+    if (stringLength(message.message) > 256) {
         throw new Error("Invalid server message: feedback message exceeds 256 characters.");
     }
     for (const character of message.message) {
