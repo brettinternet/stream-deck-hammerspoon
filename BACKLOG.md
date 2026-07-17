@@ -159,9 +159,12 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Stream Deck+ encoder lifecycle and input events use authenticated versioned `dialDown`, `dialRotate`, and `dialUp` payloads. Dial actions receive SDK `$A1` layouts and per-instance settings/context; push falls back to `press`, rotation carries signed ticks and pressed state, and release remains optional and protected. Lua registry, context invocation, server dispatch, schema, plugin transport, generated artifact, docs, and hardware-free tests are synchronized.
 
 ### EXT-004 — Stream Deck+ touchscreen
-- Status: ready
+- Status: done
 - Depends on: EXT-003
 - Acceptance: Touch/tap events and LCD updates are validated, instance-aware, and tested behind SDK interfaces.
+- Commits: 3f45f996eda0fcbead30048fa5884e545565db8e, cdc7ddd
+- Verification: 84 plugin tests; 45 Lua bridge tests; 10 Lua startup tests; TypeScript and Lua checks; build; generated JavaScript syntax check; Stream Deck manifest validation; independent verifier PASS on all 5 criteria.
+- Outcome: Added authenticated, instance-correlated `touchTap` events carrying validated `hold` and bounded Stream Deck+ `tapPos` coordinates through the SDK adapter, BridgeClient, protocol schema/Ajv, Lua validation, registry, and protected per-instance callback dispatch. Dial LCD appearance updates remain behind SDK `setFeedback` with hardware-free coverage; manifest trigger descriptions, docs, and generated artifacts are synchronized.
 
 ### EXT-005 — Device metadata
 - Status: done
