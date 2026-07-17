@@ -8,19 +8,33 @@ type FakeOption = {
   disabled: boolean;
 };
 
+type FakeChild = FakeOption | FakeElement;
+
 class FakeElement {
   value = "";
   textContent: string | null = null;
   disabled = false;
-  children: FakeOption[] = [];
+  checked = false;
+  type = "";
+  min = "";
+  max = "";
+  step = "";
+  maxLength = 0;
+  children: FakeChild[] = [];
   private readonly listeners = new Map<string, Listener>();
+
+  constructor(readonly tagName = "div") {}
 
   addEventListener(type: string, listener: Listener): void {
     this.listeners.set(type, listener);
   }
 
-  replaceChildren(...children: FakeOption[]): void {
+  replaceChildren(...children: FakeChild[]): void {
     this.children = children;
+  }
+
+  appendChild(child: FakeElement): void {
+    this.children.push(child);
   }
 
   dispatch(type: string): void {
@@ -29,8 +43,10 @@ class FakeElement {
 }
 
 class FakeDocument {
-  readonly actionSelect = new FakeElement();
-  readonly connectionStatus = new FakeElement();
+  readonly actionSelect = new FakeElement("select");
+  readonly connectionStatus = new FakeElement("p");
+  readonly actionSettings = new FakeElement("section");
+  readonly settingsStatus = new FakeElement("p");
 
   getElementById(id: string): FakeElement | null {
     if (id === "action-id") {
@@ -39,14 +55,20 @@ class FakeDocument {
     if (id === "connection-status") {
       return this.connectionStatus;
     }
+    if (id === "action-settings") {
+      return this.actionSettings;
+    }
+    if (id === "settings-status") {
+      return this.settingsStatus;
+    }
     return null;
   }
 
-  createElement(tagName: string): FakeOption {
-    if (tagName !== "option") {
-      throw new Error(`Unexpected element: ${tagName}`);
+  createElement(tagName: string): FakeElement | FakeOption {
+    if (tagName === "option") {
+      return { value: "", textContent: null, disabled: false };
     }
-    return { value: "", textContent: null, disabled: false };
+    return new FakeElement(tagName);
   }
 }
 
@@ -489,6 +511,172 @@ describe.serial("property inspector", () => {
       expect(environment.document.actionSelect.children).toEqual([
         { value: "", textContent: "No actions available", disabled: false },
       ]);
+    } finally {
+      environment.restore();
+    }
+  });
+  test("renders supported controls with defaults and constraints and preserves opaque settings", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(
+        28196,
+        "context-01",
+        "register",
+        "",
+        JSON.stringify({
+          context: "context-01",
+          payload: { settings: { actionId: "schema", text: "init", opaque: { keep: true } } },
+        }),
+      );
+      const socket = FakeSocket.instances[0]!;
+      socket.open();
+      socket.message(
+        bridgeState("connected", [
+          action("schema", "Schema", {
+            settingsSchemaVersion: 1,
+            settingsSchema: [
+              { type: "text", key: "text", label: "Text", default: "default", minLength: 2, maxLength: 5 },
+              { type: "number", key: "count", label: "Count", default: 4, min: 0, max: 10, step: 2 },
+              { type: "boolean", key: "enabled", label: "Enabled", default: true },
+              {
+                type: "select",
+                key: "mode",
+                label: "Mode",
+                default: "one",
+                options: [
+                  { value: "one", label: "One" },
+                  { value: "two", label: "Two" },
+                ],
+              },
+            ],
+          }),
+        ]),
+      );
+      socket.message(
+        JSON.stringify({
+          event: "didReceiveSettings",
+          payload: { settings: { actionId: "schema", text: "init", opaque: { keep: true } } },
+        }),
+      );
+
+      expect(environment.document.actionSettings.children).toHaveLength(4);
+      const text = (environment.document.actionSettings.children[0] as FakeElement).children[0] as FakeElement;
+      const count = (environment.document.actionSettings.children[1] as FakeElement).children[0] as FakeElement;
+      const enabled = (environment.document.actionSettings.children[2] as FakeElement).children[0] as FakeElement;
+      const mode = (environment.document.actionSettings.children[3] as FakeElement).children[0] as FakeElement;
+      expect(text.value).toBe("init");
+      expect(text.maxLength).toBe(5);
+      expect(count.value).toBe("4");
+      expect(count.min).toBe("0");
+      expect(count.max).toBe("10");
+      expect(count.step).toBe("2");
+      expect(enabled.checked).toBe(true);
+      expect(mode.value).toBe("one");
+
+      text.value = "too-long";
+      text.dispatch("change");
+      expect(environment.document.settingsStatus.textContent).toContain("invalid");
+      expect(sentFrames(socket).filter((frame) => (frame as { event?: unknown }).event === "setSettings")).toHaveLength(0);
+
+      text.value = "ok";
+      count.value = "6";
+      enabled.checked = false;
+      mode.value = "two";
+      text.dispatch("change");
+      count.dispatch("change");
+      enabled.dispatch("change");
+      mode.dispatch("change");
+      const frames = sentFrames(socket).filter((frame) => (frame as { event?: unknown }).event === "setSettings");
+      expect(frames.at(-1)).toEqual({
+        event: "setSettings",
+        context: "context-01",
+        payload: {
+          actionId: "schema",
+          text: "ok",
+          count: 6,
+          enabled: false,
+          mode: "two",
+          opaque: { keep: true },
+        },
+      });
+    } finally {
+      environment.restore();
+    }
+  });
+
+  test("didReceiveSettings round-trips per-instance values and rejects wrong types", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(28196, "context-01", "register", "", "{}");
+      const socket = FakeSocket.instances[0]!;
+      socket.open();
+      socket.message(
+        bridgeState("connected", [
+          action("schema", "Schema", {
+            settingsSchemaVersion: 1,
+            settingsSchema: [
+              { type: "text", key: "label", default: "Default" },
+              { type: "number", key: "count", min: 1, max: 5, default: 2 },
+            ],
+          }),
+        ]),
+      );
+      socket.message(
+        JSON.stringify({
+          event: "didReceiveSettings",
+          payload: { settings: { actionId: "schema", label: "Instance", count: "wrong", opaque: ["preserve"] } },
+        }),
+      );
+
+      const label = (environment.document.actionSettings.children[0] as FakeElement).children[0] as FakeElement;
+      const count = (environment.document.actionSettings.children[1] as FakeElement).children[0] as FakeElement;
+      expect(label.value).toBe("Instance");
+      expect(count.value).toBe("2");
+      expect(environment.document.settingsStatus.textContent).toContain("invalid saved value");
+
+      count.value = "4";
+      count.dispatch("change");
+      const frames = sentFrames(socket).filter((frame) => (frame as { event?: unknown }).event === "setSettings");
+      expect(frames.at(-1)).toEqual({
+        event: "setSettings",
+        context: "context-01",
+        payload: {
+          actionId: "schema",
+          label: "Instance",
+          count: 4,
+          opaque: ["preserve"],
+        },
+      });
+    } finally {
+      environment.restore();
+    }
+  });
+
+  test("clearly reports unsupported fields without disabling valid action selection", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(28196, "context-01", "register", "", "{}");
+      const socket = FakeSocket.instances[0]!;
+      socket.open();
+      socket.message(
+        bridgeState("connected", [
+          action("unsupported", "Unsupported", {
+            settingsSchemaVersion: 1,
+            settingsSchema: [{ type: "string", key: "legacy" }],
+          }),
+          action("valid", "Valid"),
+        ]),
+      );
+      environment.document.actionSelect.value = "unsupported";
+      environment.document.actionSelect.dispatch("change");
+      expect(environment.document.settingsStatus.textContent).toContain("Unsupported settings field");
+      expect(environment.document.actionSettings.children).toHaveLength(1);
+      expect((environment.document.actionSettings.children[0] as FakeElement).disabled).toBe(true);
+
+      environment.document.actionSelect.value = "valid";
+      environment.document.actionSelect.dispatch("change");
+      expect(environment.document.settingsStatus.textContent).toBe("No additional settings.");
+      expect(environment.document.actionSelect.disabled).toBe(false);
     } finally {
       environment.restore();
     }

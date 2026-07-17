@@ -39,6 +39,37 @@
         font: inherit;
       }
 
+      #action-settings {
+        display: grid;
+        gap: 8px;
+      }
+
+      #settings-status {
+        margin: 0;
+        color: #bdbdbd;
+        font-size: 11px;
+      }
+
+      input,
+      #action-settings select {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 32px;
+        padding: 6px 8px;
+        border: 1px solid #555;
+        border-radius: 4px;
+        background: #1f1f1f;
+        color: inherit;
+        font: inherit;
+      }
+
+      input[type="checkbox"] {
+        width: auto;
+        min-height: auto;
+        margin-left: 8px;
+        vertical-align: middle;
+      }
+
       #connection-status {
         margin: 2px 0 0;
         color: #bdbdbd;
@@ -52,6 +83,8 @@
       <select id="action-id" name="actionId" aria-describedby="connection-status" disabled>
         <option value="">No actions available</option>
       </select>
+      <section id="action-settings" aria-live="polite"></section>
+      <p id="settings-status" role="status" aria-live="polite">Select an action to edit its settings.</p>
       <p id="connection-status" role="status" aria-live="polite">Connecting</p>
     </main>
     <script src="property-inspector.js"></script>

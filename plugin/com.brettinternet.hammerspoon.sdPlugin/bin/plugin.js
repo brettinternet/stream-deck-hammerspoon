@@ -17914,7 +17914,7 @@ function hasDuplicateObjectKeys(source) {
             skipString();
             return false;
         }
-        while (index < source.length && !/[\s,]}]/.test(source[index] ?? "")) {
+        while (index < source.length && !/[\s,}\]]/.test(source[index] ?? "")) {
             index += 1;
         }
         return false;
@@ -18587,7 +18587,11 @@ class HammerspoonAction extends SingletonAction {
         this.synchronized.delete(instanceId);
         await this.renderInstance(instanceId);
         if (settings.actionId) {
-            this.bridge.upsertInstance({ instanceId, actionId: settings.actionId, settings });
+            this.bridge.upsertInstance({
+                instanceId,
+                actionId: settings.actionId,
+                settings: settings,
+            });
         }
     }
     async onWillDisappear(ev) {
@@ -18613,7 +18617,11 @@ class HammerspoonAction extends SingletonAction {
         this.synchronized.delete(instanceId);
         await this.renderInstance(instanceId);
         if (settings.actionId) {
-            this.bridge.upsertInstance({ instanceId, actionId: settings.actionId, settings });
+            this.bridge.upsertInstance({
+                instanceId,
+                actionId: settings.actionId,
+                settings: settings,
+            });
         }
     }
     async onKeyDown(ev) {
@@ -18630,7 +18638,11 @@ class HammerspoonAction extends SingletonAction {
         }
     }
     settingsFrom(value) {
-        return typeof value.actionId === "string" && value.actionId.length > 0 ? { actionId: value.actionId } : {};
+        const settings = cloneJsonValue(value);
+        if (typeof settings.actionId !== "string" || settings.actionId.length === 0) {
+            delete settings.actionId;
+        }
+        return settings;
     }
     async renderInstance(instanceId) {
         const instance = this.instances.get(instanceId);

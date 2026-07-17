@@ -248,6 +248,40 @@ describe("HammerspoonAction", () => {
     expect(bridge.keyDowns).toEqual([["configured", "action.id", configuredSettings]]);
   });
 
+  test("preserves custom settings through appear, settings updates, and keyDown", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const action = new FakeAction("instance");
+    const initial = {
+      actionId: "action.id",
+      label: "Initial",
+      enabled: true,
+      opaque: { nested: ["value"] },
+    } as never;
+    await adapter.onWillAppear(appear(action, initial));
+    expect(bridge.upserts[0]).toEqual({
+      instanceId: "instance",
+      actionId: "action.id",
+      settings: initial,
+    });
+
+    const updated = {
+      actionId: "action.id",
+      label: "Updated",
+      enabled: false,
+      opaque: { nested: ["changed"] },
+    } as never;
+    await adapter.onDidReceiveSettings(settings(action, updated));
+    expect(bridge.upserts[1]).toEqual({
+      instanceId: "instance",
+      actionId: "action.id",
+      settings: updated,
+    });
+
+    await adapter.onKeyDown(keyDown(action));
+    expect(bridge.keyDowns.at(-1)).toEqual(["instance", "action.id", updated]);
+  });
+
   test("sends requestState and deep-cloned bridgeState payloads", async () => {
     propertyInspectorMessages.length = 0;
     const bridge = new FakeBridge();

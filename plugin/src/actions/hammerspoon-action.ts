@@ -4,6 +4,7 @@ import streamDeck, {
   type SendToPluginEvent,
 } from "@elgato/streamdeck";
 import type { BridgeClient } from "../bridge.js";
+import type { JsonSettings } from "../protocol.js";
 
 type JsonObject = { [key: string]: JsonValue };
 type JsonPrimitive = boolean | number | string | null | undefined;
@@ -25,7 +26,7 @@ function cloneJsonValue(value: JsonValue): JsonValue {
 
 export const HAMMERSPOON_ACTION_UUID = "com.brettinternet.hammerspoon.action";
 
-export type HammerspoonActionSettings = {
+export type HammerspoonActionSettings = JsonObject & {
   actionId?: string;
 };
 
@@ -93,7 +94,11 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     this.synchronized.delete(instanceId);
     await this.renderInstance(instanceId);
     if (settings.actionId) {
-      this.bridge.upsertInstance({ instanceId, actionId: settings.actionId, settings });
+      this.bridge.upsertInstance({
+        instanceId,
+        actionId: settings.actionId,
+        settings: settings as JsonSettings,
+      });
     }
   }
 
@@ -123,7 +128,11 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     this.synchronized.delete(instanceId);
     await this.renderInstance(instanceId);
     if (settings.actionId) {
-      this.bridge.upsertInstance({ instanceId, actionId: settings.actionId, settings });
+      this.bridge.upsertInstance({
+        instanceId,
+        actionId: settings.actionId,
+        settings: settings as JsonSettings,
+      });
     }
   }
 
@@ -134,7 +143,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       return;
     }
 
-    this.bridge.keyDown(ev.action.id, instance.actionId, instance.settings);
+    this.bridge.keyDown(ev.action.id, instance.actionId, instance.settings as JsonSettings);
   }
 
   public override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, HammerspoonActionSettings>): Promise<void> {
@@ -144,7 +153,11 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   }
 
   private settingsFrom(value: HammerspoonActionSettings): HammerspoonActionSettings {
-    return typeof value.actionId === "string" && value.actionId.length > 0 ? { actionId: value.actionId } : {};
+    const settings = cloneJsonValue(value) as HammerspoonActionSettings;
+    if (typeof settings.actionId !== "string" || settings.actionId.length === 0) {
+      delete settings.actionId;
+    }
+    return settings;
   }
 
   private async renderInstance(instanceId: string): Promise<void> {
