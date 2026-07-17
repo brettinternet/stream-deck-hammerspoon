@@ -84,17 +84,24 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 ## Phase 3: Customization
 
 ### CUS-001 — Settings schema contract
-- Status: ready
+- Status: done
 - Depends on: VSL-003
 - Acceptance: Versioned schema supports bounded field types, defaults, constraints, validation errors, and compatibility tests at both boundaries.
+- Commits: 90107f7e65dc49afe2d220ec6a9c6ff7f6606f57, cd4105d939232ce5057cc21a4c8c96b2b816255e
+- Verification: TypeScript check and 43 plugin tests; Lua syntax check and 35 Lua bridge tests.
+- Outcome: Explicit v1 settings fields validate bounded types, defaults, constraints, and errors at both boundaries; legacy schemas remain opaque and unsupported versions are not rendered.
+- Follow-up: JSON Schema covers structural bounds; runtime validators enforce cross-field default/range and property-uniqueness invariants that draft 2020-12 cannot express directly.
 
 ### CUS-002 — Dynamic property-inspector controls
-- Status: waiting
+- Status: done
 - Depends on: CUS-001
 - Acceptance: Inspector renders supported schema controls, persists validated per-instance values, and clearly handles unsupported fields.
+- Commits: 880e1c4fbda95f736bcbe11fce53cff24437ecfc, f847ecd1838f26a435c3e72dff599d7de0bd1a1a
+- Verification: 63 plugin tests; 36 Lua bridge tests; 10 Lua startup tests; TypeScript and Lua checks; build; generated JavaScript syntax checks; Stream Deck manifest validation.
+- Outcome: The inspector renders version 1 text, number, boolean, and select controls with defaults and native constraints, preserves per-instance and opaque settings, rejects invalid edits with clear status, and reports unsupported schemas without editable controls. HammerspoonAction forwards complete JSON settings through appearance, settings updates, and keyDown.
 
 ### CUS-003 — Additional presentation fields
-- Status: waiting
+- Status: ready
 - Depends on: CUS-001, VSL-005
 - Acceptance: Foreground/background colors, progress, and badge fields are versioned, validated, rendered, and device-safe.
 
