@@ -200,10 +200,63 @@ local function isAppearanceBadge(value)
   return length ~= nil and length <= 4
 end
 
-local function validateSettingsField(field, seenKeys)
-  if not isObject(field) or not boundedString(rawget(field, "key"), MAX_SETTINGS_KEY_LENGTH) then
-    return false
+local MAX_ICON_BYTES = 32768
+local MAX_ICON_BASE64_LENGTH = 43692
+local function decodeBase64(value)
+  if #value == 0 or #value % 4 ~= 0 or value:find("[^A-Za-z0-9+/=]") or value:find("=.*[^=]") then return nil end
+  local out = {}
+  local function digit(byte)
+    if byte >= 65 and byte <= 90 then return byte - 65
+    elseif byte >= 97 and byte <= 122 then return byte - 71
+    elseif byte >= 48 and byte <= 57 then return byte + 4
+    elseif byte == 43 then return 62
+    elseif byte == 47 then return 63
+    end
   end
+  for index = 1, #value, 4 do
+    local a, b, c, d = value:byte(index, index + 3)
+    local da, db = digit(a), digit(b)
+    local dc, dd = c == 61 and 0 or digit(c), d == 61 and 0 or digit(d)
+    if not da or not db or not dc or not dd or (c == 61 and d ~= 61) then return nil end
+    out[#out + 1] = string.char(da * 4 + math.floor(db / 16))
+    if c ~= 61 then out[#out + 1] = string.char((db % 16) * 16 + math.floor(dc / 4)) end
+    if d ~= 61 then out[#out + 1] = string.char((dc % 4) * 64 + dd) end
+  end
+  return table.concat(out)
+end
+
+local function isAppearanceIcon(value)
+  if not isObject(value) then return false end
+  if rawget(value, "kind") == "bundled" then
+    if rawget(value, "name") ~= "hammerspoon" then return false end
+    for key in pairs(value) do if key ~= "kind" and key ~= "name" then return false end end
+    return true
+  end
+  if rawget(value, "kind") ~= "custom" then return false end
+  local mediaType, encoded = rawget(value, "mediaType"), rawget(value, "dataBase64")
+  if (mediaType ~= "image/png" and mediaType ~= "image/svg+xml") or type(encoded) ~= "string"
+      or #encoded < 4 or #encoded > MAX_ICON_BASE64_LENGTH
+      or not encoded:match("^(%w%w%w%w)*([%w+/][%w+/][%w+/=][%w+/=])?$") then return false end
+  local bytes = decodeBase64(encoded)
+  if not bytes or #bytes == 0 or #bytes > MAX_ICON_BYTES then return false end
+  if mediaType == "image/png" then
+    if bytes:sub(1, 8) ~= string.char(137,80,78,71,13,10,26,10) or bytes:find("acTL", 1, true) then return false end
+    local width = string.unpack(">I4", bytes, 17)
+    local height = string.unpack(">I4", bytes, 21)
+    return width == height and (width == 72 or width == 144)
+  end
+  local svg = bytes:lower()
+  if #svg > 16384 or not svg:match("^%s*<svg[^>]*>") or not svg:match("</svg>%s*$")
+      or (not svg:match('viewbox%s*=%s*["\']0%s+0%s+(72)%s+%1["\']')
+        and not svg:match('viewbox%s*=%s*["\']0%s+0%s+(144)%s+%1["\']'))
+      or svg:find("<!doctype", 1, true) or svg:find("<!entity", 1, true)
+      or svg:find("<script", 1, true) or svg:find("<style", 1, true)
+      or svg:find("<text", 1, true) or svg:find("<image", 1, true)
+      or svg:find("<use", 1, true) or svg:find("<foreignobject", 1, true)
+      or svg:match("%son[%a]+%s*=") or svg:find("url(", 1, true) or svg:match("%shref%s*=") then return false end
+  return true
+end
+local function validateSettingsField(field, seenKeys)
   local kind = rawget(field, "type")
   local allowed = { type = true, key = true, label = true, required = true, default = true }
   if kind == "text" then
@@ -358,13 +411,15 @@ function protocol.validate(message)
       local backgroundColor = rawget(message, "backgroundColor")
       local progress = rawget(message, "progress")
       local badge = rawget(message, "badge")
-      local hasExtendedFields = foregroundColor ~= nil or backgroundColor ~= nil or progress ~= nil or badge ~= nil
+      local icon = rawget(message, "icon")
+      local hasExtendedFields = foregroundColor ~= nil or backgroundColor ~= nil or progress ~= nil or badge ~= nil or icon ~= nil
       ok = appearanceVersion == nil or (isInteger(appearanceVersion) and appearanceVersion == 1)
       if ok and hasExtendedFields then ok = appearanceVersion == 1 end
       if ok and foregroundColor ~= nil then ok = isAppearanceColor(foregroundColor) end
       if ok and backgroundColor ~= nil then ok = isAppearanceColor(backgroundColor) end
       if ok and progress ~= nil then ok = isFiniteNumber(progress) and progress >= 0 and progress <= 1 end
       if ok and badge ~= nil then ok = isAppearanceBadge(badge) end
+      if ok and icon ~= nil then ok = isAppearanceIcon(icon) end
       if not ok then code = "INVALID_FIELD" end
     end
   elseif messageType == "error" then

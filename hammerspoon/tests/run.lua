@@ -504,6 +504,7 @@ test("versioned appearance fields validate and render safely", function()
     backgroundColor = "#202020",
     progress = 0.5,
     badge = "<&",
+    icon = { kind = "bundled", name = "hammerspoon" },
   }
   local valid, code = Protocol.validate(message("appearance", {
     instanceId = "instance",
@@ -515,6 +516,7 @@ test("versioned appearance fields validate and render safely", function()
     backgroundColor = appearance.backgroundColor,
     progress = appearance.progress,
     badge = appearance.badge,
+    icon = appearance.icon,
   }))
   assertTrue(valid, code or "valid appearance fields must pass")
 
@@ -526,6 +528,8 @@ test("versioned appearance fields validate and render safely", function()
     { appearanceVersion = 1, progress = 1.01 },
     { appearanceVersion = 1, badge = string.rep("x", 5) },
     { appearanceVersion = 1, badge = string.char(0) },
+    { appearanceVersion = 1, icon = { kind = "bundled", name = "unknown" } },
+    { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/svg+xml", dataBase64 = "bad!" } },
     { progress = 0.5 },
   }
   for _, fields in ipairs(invalidFields) do
@@ -568,6 +572,8 @@ test("versioned appearance fields validate and render safely", function()
     }))
     assertEqual(responses[1].type, "appearance")
     assertEqual(responses[1].appearanceVersion, 1)
+    assertEqual(responses[1].icon.kind, "bundled")
+    assertEqual(responses[1].icon.name, "hammerspoon")
     assertEqual(responses[1].foregroundColor, "#FFFFFF")
     assertEqual(responses[1].backgroundColor, "#202020")
     assertEqual(responses[1].progress, 0.5)

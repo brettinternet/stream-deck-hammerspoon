@@ -22,6 +22,28 @@ local function isAppearanceBadge(value)
   return length ~= nil and length <= 4
 end
 
+local MAX_ICON_BASE64_LENGTH = 43692
+local function isAppearanceIcon(value)
+  if type(value) ~= "table" then return false end
+  if value.kind == "bundled" then
+    if value.name ~= "hammerspoon" then return false end
+  elseif value.kind == "custom" then
+    if value.mediaType ~= "image/png" and value.mediaType ~= "image/svg+xml" then return false end
+    if type(value.dataBase64) ~= "string" or #value.dataBase64 < 4 or #value.dataBase64 > MAX_ICON_BASE64_LENGTH
+        or not value.dataBase64:match("^(%w%w%w%w)*([%w+/][%w+/][%w+/=][%w+/=])?$") then return false end
+  else
+    return false
+  end
+  for key in pairs(value) do
+    if value.kind == "bundled" then
+      if key ~= "kind" and key ~= "name" then return false end
+    elseif key ~= "kind" and key ~= "mediaType" and key ~= "dataBase64" then
+      return false
+    end
+  end
+  return true
+end
+
 local MAX_FEEDBACK_MESSAGE_LENGTH = 256
 local MIN_FEEDBACK_DURATION_MS = 100
 local MAX_FEEDBACK_DURATION_MS = 10000
@@ -53,10 +75,7 @@ local function isFeedbackDuration(value)
 end
 
 local function isAppearance(value)
-  if type(value) ~= "table" then
-    return false
-  end
-  if type(value.title) ~= "string" then
+  if type(value) ~= "table" or type(value.title) ~= "string" then
     return false
   end
   if value.state ~= "active" and value.state ~= "inactive" then
@@ -66,6 +85,7 @@ local function isAppearance(value)
     or value.backgroundColor ~= nil
     or value.progress ~= nil
     or value.badge ~= nil
+    or value.icon ~= nil
   if value.appearanceVersion ~= nil and value.appearanceVersion ~= 1 then
     return false
   end
@@ -86,10 +106,13 @@ local function isAppearance(value)
   if value.badge ~= nil and not isAppearanceBadge(value.badge) then
     return false
   end
+  if value.icon ~= nil and not isAppearanceIcon(value.icon) then
+    return false
+  end
   for key in pairs(value) do
     if key ~= "title" and key ~= "state" and key ~= "appearanceVersion"
         and key ~= "foregroundColor" and key ~= "backgroundColor"
-        and key ~= "progress" and key ~= "badge" then
+        and key ~= "progress" and key ~= "badge" and key ~= "icon" then
       return false
     end
   end

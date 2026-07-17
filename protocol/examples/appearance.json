@@ -43,7 +43,11 @@
     "foregroundColor": "#FFFFFF",
     "backgroundColor": "#202020",
     "progress": 0.5,
-    "badge": "½"
+    "badge": "½",
+    "icon": {
+      "kind": "bundled",
+      "name": "hammerspoon"
+    }
   },
   {
     "protocolVersion": 1,

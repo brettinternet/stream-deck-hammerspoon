@@ -4,7 +4,7 @@ import streamDeck, {
   type SendToPluginEvent,
 } from "@elgato/streamdeck";
 import type { BridgeAppearance, BridgeClient, BridgeFeedback } from "../bridge.js";
-import type { JsonSettings } from "../protocol.js";
+import { isSafeAppearanceIcon, type JsonSettings } from "../protocol.js";
 type JsonObject = { [key: string]: JsonValue };
 type JsonPrimitive = boolean | number | string | null | undefined;
 type JsonValue = JsonObject | JsonPrimitive | JsonValue[];
@@ -36,7 +36,27 @@ function escapeXml(value: string): string {
 }
 
 
+const BUNDLED_ICON_PATH = "imgs/key.svg";
+
 function appearanceImage(appearance: BridgeAppearance): string | undefined {
+  const icon = appearance.icon;
+  if (icon !== undefined) {
+    if (!isSafeAppearanceIcon(icon)) {
+      return undefined;
+    }
+    if (icon.kind === "custom") {
+      return `data:${icon.mediaType};base64,${icon.dataBase64}`;
+    }
+    if (
+      appearance.foregroundColor === undefined &&
+      appearance.backgroundColor === undefined &&
+      appearance.progress === undefined &&
+      appearance.badge === undefined
+    ) {
+      return BUNDLED_ICON_PATH;
+    }
+  }
+
   const hasDecoration = appearance.foregroundColor !== undefined
     || appearance.backgroundColor !== undefined
     || appearance.progress !== undefined
@@ -78,6 +98,9 @@ function appearanceImage(appearance: BridgeAppearance): string | undefined {
       }
     }
   }
+  const bundledOverlay = icon?.kind === "bundled"
+    ? `<image href="${BUNDLED_ICON_PATH}" x="0" y="0" width="72" height="72"/>`
+    : "";
   const progressBar = progress === undefined
     ? ""
     : `<rect x="4" y="64" width="${Math.round(progress * 64)}" height="4" fill="${foreground}"/>`;
@@ -87,7 +110,7 @@ function appearanceImage(appearance: BridgeAppearance): string | undefined {
   const badgeText = badge === undefined
     ? ""
     : `<text x="68" y="14" text-anchor="end" fill="${foreground}">${escapeXml(badge)}</text>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="${background}"/>${foregroundBorder}${progressBar}${badgeText}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="${background}"/>${bundledOverlay}${foregroundBorder}${progressBar}${badgeText}</svg>`;
   try {
     return `data:image/svg+xml,${encodeURIComponent(svg)}`;
   } catch {

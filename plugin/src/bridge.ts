@@ -432,6 +432,7 @@ export class BridgeClient extends EventEmitter {
       ...(message.foregroundColor === undefined ? {} : { foregroundColor: message.foregroundColor }),
       ...(message.backgroundColor === undefined ? {} : { backgroundColor: message.backgroundColor }),
       ...(message.progress === undefined ? {} : { progress: message.progress }),
+      ...(message.icon === undefined ? {} : { icon: message.icon }),
       ...(message.badge === undefined ? {} : { badge: message.badge }),
     };
     this.emit("appearance", appearance);

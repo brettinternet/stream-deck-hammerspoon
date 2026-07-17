@@ -524,6 +524,53 @@ describe("HammerspoonAction", () => {
     expect(failed.calls.alerts).toBe(1);
   });
 
+  test("renders bundled and validated custom icons with safe fallback", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const action = new FakeAction("icons");
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+    bridge.status = "connected";
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "icons",
+      actionId: "action.id",
+      title: "Bundled",
+      state: 0,
+      appearanceVersion: 1,
+      icon: { kind: "bundled", name: "hammerspoon" },
+    });
+    await flush();
+    expect(action.calls.images.at(-1)).toBe("imgs/key.svg");
+    const custom = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"></svg>').toString("base64");
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "icons",
+      actionId: "action.id",
+      title: "Custom",
+      state: 1,
+      appearanceVersion: 1,
+      icon: { kind: "custom", mediaType: "image/svg+xml", dataBase64: custom },
+    });
+    await flush();
+    expect(action.calls.images.at(-1)).toBe(`data:image/svg+xml;base64,${custom}`);
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "icons",
+      actionId: "action.id",
+      title: "Fallback",
+      state: 0,
+      appearanceVersion: 1,
+      icon: { kind: "custom", mediaType: "image/svg+xml", dataBase64: "bad" },
+    } as never);
+    await flush();
+    expect(action.calls.images.at(-1)).toBeUndefined();
+    expect(action.calls.titles.at(-1)).toBe("Fallback");
+  });
+
   test("retains the previous appearance when decoration cannot be cleared", async () => {
     const bridge = new FakeBridge();
     const adapter = makeAction(bridge);

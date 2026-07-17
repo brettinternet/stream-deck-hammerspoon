@@ -180,6 +180,24 @@ describe("protocol direction and validation", () => {
     }
   });
 
+  test("validates the closed icon variants and custom image safety bounds", () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"></svg>').toString("base64");
+    expect(parseServerMessage(JSON.stringify({ ...appearance, appearanceVersion: 1, icon: { kind: "bundled", name: "hammerspoon" } }))).toBeDefined();
+    expect(parseServerMessage(JSON.stringify({
+      ...appearance,
+      appearanceVersion: 1,
+      icon: { kind: "custom", mediaType: "image/svg+xml", dataBase64: svg },
+    }))).toBeDefined();
+    for (const icon of [
+      { kind: "bundled", name: "unknown" },
+      { kind: "custom", mediaType: "image/png", dataBase64: "not-base64" },
+      { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from("<svg><script/></svg>").toString("base64") },
+      { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from(`<svg viewBox="0 0 72 72">${"x".repeat(16384)}</svg>`).toString("base64") },
+    ]) {
+      expect(() => parseServerMessage(JSON.stringify({ ...appearance, appearanceVersion: 1, icon }))).toThrow();
+    }
+  });
+
   test("rejects unsafe feedback messages and duration bounds", () => {
     const maxUnicodeFeedback = { ...feedback, message: "😀".repeat(256) };
     expect(parseServerMessage(JSON.stringify(maxUnicodeFeedback))).toEqual(maxUnicodeFeedback);

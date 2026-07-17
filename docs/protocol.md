@@ -221,7 +221,7 @@ Unknown actions and stale instances produce the corresponding asynchronous error
 
 ### `appearance` (Lua → plugin)
 
-Required fields: `protocolVersion`, `type: "appearance"`, `instanceId`, `actionId`, `title`, `state`. `state` must be integer `0` or `1`; `title` must be a JSON string. The optional presentation fields are enabled only by `appearanceVersion: 1`: `foregroundColor` and `backgroundColor` are six-digit `#RRGGBB` strings, `progress` is a number from `0` through `1`, and `badge` is a UTF-8 string of at most four characters (an empty badge clears it). Any presentation field without `appearanceVersion: 1` is invalid. The plugin renders the extended fields as a bounded SVG image through the SDK's `setImage`; if initial decoration rendering fails, it applies the plain title/state rendering, while a failed attempt to clear an existing decoration retains the previous complete appearance rather than applying a partial update.
+Required fields: `protocolVersion`, `type: "appearance"`, `instanceId`, `actionId`, `title`, `state`. `state` must be integer `0` or `1`; `title` must be a JSON string. Optional presentation fields are enabled only by `appearanceVersion: 1`: colors are six-digit `#RRGGBB` strings, `progress` is `0` through `1`, `badge` is at most four characters, and `icon` is either `{ "kind": "bundled", "name": "hammerspoon" }` or a bounded custom `{ "kind": "custom", "mediaType": "image/png"|"image/svg+xml", "dataBase64": "..." }`. Custom data is canonical padded base64, at most 32,768 decoded bytes; PNG must be non-animated 72×72 or 144×144, and SVG is a constrained single-root profile with a 72 or 144 square viewBox and no scripts, entities, styles, external references, or executable/event content. The plugin renders only validated data through the SDK; invalid, unknown, oversized, or failed icons fall back to the shipped 72×72 bundled asset or manifest/default image, while preserving the complete title/state/presentation appearance.
 
 ```json
 {
@@ -235,7 +235,8 @@ Required fields: `protocolVersion`, `type: "appearance"`, `instanceId`, `actionI
   "foregroundColor": "#FFFFFF",
   "backgroundColor": "#202020",
   "progress": 0.5,
-  "badge": "½"
+  "badge": "½",
+  "icon": { "kind": "bundled", "name": "hammerspoon" }
 }
 ```
 

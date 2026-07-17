@@ -12,12 +12,17 @@ export type WireState = 0 | 1;
 export const APPEARANCE_VERSION = 1 as const;
 export type AppearanceVersion = typeof APPEARANCE_VERSION;
 
+export type AppearanceIcon =
+  | { kind: "bundled"; name: "hammerspoon" }
+  | { kind: "custom"; mediaType: "image/png" | "image/svg+xml"; dataBase64: string };
+
 export interface AppearanceFields {
   appearanceVersion?: AppearanceVersion;
   foregroundColor?: string;
   backgroundColor?: string;
   progress?: number;
   badge?: string;
+  icon?: AppearanceIcon;
 }
 
 export type State = WireState;
@@ -427,6 +432,58 @@ function validateFeedback(message: FeedbackMessage): void {
   }
 }
 
+
+const MAX_ICON_BYTES = 32768;
+const MAX_ICON_BASE64_LENGTH = 43692;
+export function isSafeAppearanceIcon(value: unknown): value is AppearanceIcon {
+  if (!isObject(value)) {
+    return false;
+  }
+  if (value.kind === "bundled") {
+    return value.name === "hammerspoon" && Object.keys(value).every((key) => key === "kind" || key === "name");
+  }
+  if (
+    value.kind !== "custom" ||
+    (value.mediaType !== "image/png" && value.mediaType !== "image/svg+xml") ||
+    typeof value.dataBase64 !== "string" ||
+    value.dataBase64.length < 4 ||
+    value.dataBase64.length > MAX_ICON_BASE64_LENGTH ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.dataBase64) ||
+    Buffer.from(value.dataBase64, "base64").toString("base64") !== value.dataBase64 ||
+    Object.keys(value).some((key) => !["kind", "mediaType", "dataBase64"].includes(key))
+  ) {
+    return false;
+  }
+  const bytes = Buffer.from(value.dataBase64, "base64");
+  if (bytes.length === 0 || bytes.length > MAX_ICON_BYTES) {
+    return false;
+  }
+  if (value.mediaType === "image/png") {
+    if (bytes.length < 24 || !bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+      return false;
+    }
+    const width = bytes.readUInt32BE(16);
+    const height = bytes.readUInt32BE(20);
+    return width === height && (width === 72 || width === 144) && !bytes.includes(Buffer.from("acTL"));
+  }
+  const svg = bytes.toString("utf8");
+  if (Buffer.from(svg).length !== bytes.length || svg.length > 16384) {
+    return false;
+  }
+  const root = svg.match(/^\s*<svg\b([^>]*)>/i);
+  const viewBox = root?.[1].match(/\bviewBox\s*=\s*["']0\s+0\s+(72|144)\s+\1["']/i);
+  if (!root || !viewBox || !/<\/svg>\s*$/i.test(svg)) {
+    return false;
+  }
+  if (
+    /<!DOCTYPE|<!ENTITY|<\s*(?:script|style|text|image|use|foreignObject)\b|\bon[a-z]+\s*=|url\s*\(|(?:href|src)\s*=|xmlns:[^=]+=/i.test(svg) ||
+    (svg.match(/<(?!!|\/?svg\b)[^>]+>/gi) ?? []).length > 128
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function schemaError(direction: "server" | "client"): Error {
   const details = ajv.errorsText(validateProtocolMessage.errors, { separator: "; " });
   return new Error(
@@ -496,6 +553,9 @@ export function parseServerMessage(data: string): ServerMessage {
     } catch {
       throw new Error("Invalid server message: badge must contain valid Unicode.");
     }
+  }
+  if (parsed.type === "appearance" && parsed.icon !== undefined && !isSafeAppearanceIcon(parsed.icon)) {
+    throw new Error("Invalid server message: icon is unsupported, malformed, oversized, or unsafe.");
   }
 
   if (parsed.type === "actions") {

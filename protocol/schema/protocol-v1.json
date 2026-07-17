@@ -311,6 +311,34 @@
       "type": "string",
       "maxLength": 4
     },
+    "appearanceIcon": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "bundled" },
+            "name": { "const": "hammerspoon" }
+          },
+          "required": ["kind", "name"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "custom" },
+            "mediaType": { "type": "string", "enum": ["image/png", "image/svg+xml"] },
+            "dataBase64": {
+              "type": "string",
+              "minLength": 4,
+              "maxLength": 43692,
+              "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+            }
+          },
+          "required": ["kind", "mediaType", "dataBase64"],
+          "additionalProperties": false
+        }
+      ]
+    },
     "appearance": {
       "allOf": [
         { "$ref": "#/$defs/message" },
@@ -326,7 +354,8 @@
             "foregroundColor": { "$ref": "#/$defs/appearanceColor" },
             "backgroundColor": { "$ref": "#/$defs/appearanceColor" },
             "progress": { "type": "number", "minimum": 0, "maximum": 1 },
-            "badge": { "$ref": "#/$defs/appearanceBadge" }
+            "badge": { "$ref": "#/$defs/appearanceBadge" },
+            "icon": { "$ref": "#/$defs/appearanceIcon" }
           },
           "required": ["instanceId", "actionId", "title", "state"],
           "additionalProperties": true
@@ -338,7 +367,8 @@
               { "required": ["foregroundColor"] },
               { "required": ["backgroundColor"] },
               { "required": ["progress"] },
-              { "required": ["badge"] }
+              { "required": ["badge"] },
+              { "required": ["icon"] }
             ]
           },
           "then": { "type": "object", "required": ["appearanceVersion"] }

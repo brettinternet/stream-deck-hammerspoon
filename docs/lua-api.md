@@ -240,7 +240,7 @@ The following are intentionally outside this contract:
 
 - remote Lua evaluation or arbitrary Lua commands sent from Stream Deck;
 - direct hardware calls from Lua, device enumeration, or per-button hardware configuration;
-- unversioned or arbitrary appearance fields and custom image/SVG input;
+- unversioned or arbitrary appearance fields; v1 permits only the closed bundled `hammerspoon` icon or bounded canonical-base64 PNG/SVG values validated at the protocol boundary;
 - callback return values that mutate settings or presentation implicitly;
 - a Lua settings-write API;
 - multiple simultaneous plugin clients, Bonjour discovery, or non-loopback binding;
