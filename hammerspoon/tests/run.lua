@@ -242,6 +242,7 @@ test("action listing preserves names and order", function()
   registry:register({
     id = "com.test.second",
     name = "Second action",
+    settingsSchemaVersion = 1,
     settingsSchema = {
       { type = "text", key = "label" },
     },
@@ -266,9 +267,54 @@ test("action listing preserves names and order", function()
     assertEqual(responses[1].actions[1].name, "First action")
     assertEqual(responses[1].actions[2].actionId, "com.test.second")
     assertEqual(responses[1].actions[2].name, "Second action")
+    assertEqual(responses[1].actions[2].settingsSchemaVersion, 1)
     assertTrue(responses[1].actions[2].settingsSchema ~= nil, "settings schema must be listed")
     server:stop()
   end)
+end)
+
+test("versioned settings schemas validate kinds, bounds, defaults, and errors", function()
+  local registry = Registry.new()
+  local callback = function() end
+  local base = {
+    id = "com.test.settings",
+    name = "Settings",
+    appearance = callback,
+    press = callback,
+  }
+  registry:register({
+    id = base.id,
+    name = base.name,
+    settingsSchemaVersion = 1,
+    settingsSchema = {
+      { type = "text", key = "text", default = "ok", minLength = 1, maxLength = 4 },
+      { type = "number", key = "number", default = 2, min = 0, max = 4, step = 1 },
+      { type = "boolean", key = "boolean", default = true },
+      { type = "select", key = "select", options = {
+        { value = "one", label = "One" },
+        { value = "two", label = "Two" },
+      }, default = "one" },
+    },
+    appearance = callback,
+    press = callback,
+  })
+  local invalid = {
+    { type = "text", key = "x", unsupported = true },
+    { type = "text", key = "" },
+    { type = "boolean", key = "x", default = "wrong" },
+    { type = "select", key = "x", options = {{ value = "a", label = "A" }}, default = "b" },
+  }
+  for _, field in ipairs(invalid) do
+    local definition = {
+      id = "com.test.invalid-" .. tostring(#registry.order + 1),
+      name = "Invalid",
+      settingsSchemaVersion = 1,
+      settingsSchema = { field },
+      appearance = callback,
+      press = callback,
+    }
+    assertFalse(pcall(registry.register, registry, definition), "invalid versioned schema must be rejected")
+  end
 end)
 
 test("protocol validation and authentication failures are explicit", function()
@@ -283,6 +329,37 @@ test("protocol validation and authentication failures are explicit", function()
     actionId = "action",
     title = "Ready",
     state = 2,
+  }))
+  assertFalse(valid)
+  assertEqual(code, "INVALID_FIELD")
+  valid, code = Protocol.validate(message("actions", {
+    requestId = "legacy",
+    actions = {{ actionId = "legacy", name = "Legacy", settingsSchema = {{ arbitrary = true }} }},
+  }))
+  assertTrue(valid, "legacy schemas must remain opaque")
+  valid, code = Protocol.validate(message("actions", {
+    requestId = "versioned",
+    actions = {{
+      actionId = "versioned",
+      name = "Versioned",
+      settingsSchemaVersion = 1,
+      settingsSchema = {
+        { type = "text", key = "text", default = "ok", minLength = 1, maxLength = 4 },
+        { type = "number", key = "number", default = 2, min = 0, max = 4, step = 1 },
+        { type = "boolean", key = "boolean", default = true },
+        { type = "select", key = "select", options = {{ value = "one", label = "One" }}, default = "one" },
+      },
+    }},
+  }))
+  assertTrue(valid, "supported versioned schemas must validate")
+  valid, code = Protocol.validate(message("actions", {
+    requestId = "invalid",
+    actions = {{
+      actionId = "invalid",
+      name = "Invalid",
+      settingsSchemaVersion = 1,
+      settingsSchema = {{ type = "text", key = "x", unsupported = true }},
+    }},
   }))
   assertFalse(valid)
   assertEqual(code, "INVALID_FIELD")

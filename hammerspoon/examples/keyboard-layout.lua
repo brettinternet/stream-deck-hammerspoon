@@ -53,6 +53,7 @@ end
 streamdeck.register({
   id = "com.brettinternet.hammerspoon.keyboard-layout",
   name = "Keyboard layout",
+  settingsSchemaVersion = 1,
   settingsSchema = {
     { type = "text", key = "firstLayout", maxLength = 64 },
     { type = "text", key = "secondLayout", maxLength = 64 },

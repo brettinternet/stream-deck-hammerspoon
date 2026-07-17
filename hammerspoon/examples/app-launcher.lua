@@ -72,6 +72,7 @@ end
 streamdeck.register({
   id = action_id,
   name = "Launch or focus app",
+  settingsSchemaVersion = 1,
   settingsSchema = {
     { type = "text", key = "app", maxLength = 128 },
     { type = "text", key = "label", maxLength = 32 },

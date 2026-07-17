@@ -34,6 +34,95 @@
       "description": "Application-owned JSON object. Keys and values are opaque to protocol v1.",
       "additionalProperties": true
     },
+    "settingsFieldBase": {
+      "type": "object",
+      "required": ["type", "key"],
+      "properties": {
+        "type": { "type": "string", "enum": ["text", "number", "boolean", "select"] },
+        "key": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "required": { "type": "boolean" },
+        "default": {}
+      }
+    },
+    "textSettingsField": {
+      "allOf": [
+        { "$ref": "#/$defs/settingsFieldBase" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "text" },
+            "default": { "type": "string" },
+            "minLength": { "type": "integer", "minimum": 0, "maximum": 4096 },
+            "maxLength": { "type": "integer", "minimum": 0, "maximum": 4096 }
+          }
+        }
+      ]
+    },
+    "numberSettingsField": {
+      "allOf": [
+        { "$ref": "#/$defs/settingsFieldBase" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "number" },
+            "default": { "type": "number", "minimum": -1000000000000, "maximum": 1000000000000 },
+            "min": { "type": "number", "minimum": -1000000000000, "maximum": 1000000000000 },
+            "max": { "type": "number", "minimum": -1000000000000, "maximum": 1000000000000 },
+            "step": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000000000000 }
+          }
+        }
+      ]
+    },
+    "booleanSettingsField": {
+      "allOf": [
+        { "$ref": "#/$defs/settingsFieldBase" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "boolean" },
+            "default": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "selectSettingsField": {
+      "allOf": [
+        { "$ref": "#/$defs/settingsFieldBase" },
+        {
+          "type": "object",
+          "required": ["options"],
+          "properties": {
+            "type": { "const": "select" },
+            "default": { "type": "string" },
+            "options": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "required": ["value", "label"],
+                "properties": {
+                  "value": { "type": "string", "minLength": 1, "maxLength": 256 },
+                  "label": { "type": "string", "minLength": 1, "maxLength": 128 }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    "settingsField": {
+      "type": "object",
+      "oneOf": [
+        { "$ref": "#/$defs/textSettingsField" },
+        { "$ref": "#/$defs/numberSettingsField" },
+        { "$ref": "#/$defs/booleanSettingsField" },
+        { "$ref": "#/$defs/selectSettingsField" }
+      ],
+      "unevaluatedProperties": false
+    },
     "message": {
       "type": "object",
       "required": ["protocolVersion", "type"],
@@ -100,10 +189,34 @@
         "name": { "$ref": "#/$defs/text" },
         "settingsSchema": {
           "type": "array",
-          "description": "Optional extension reserved for future property-inspector controls."
-        }
+          "maxItems": 32,
+          "items": {},
+          "description": "Optional bounded legacy field descriptors; explicit settingsSchemaVersion: 1 enables strict descriptor validation."
+        },
+        "settingsSchemaVersion": { "type": "integer", "minimum": 1, "maximum": 16 }
       },
       "required": ["actionId", "name"],
+      "allOf": [
+        {
+          "if": { "required": ["settingsSchemaVersion"] },
+          "then": { "required": ["settingsSchema"] }
+        },
+        {
+          "if": {
+            "properties": { "settingsSchemaVersion": { "const": 1 } },
+            "required": ["settingsSchemaVersion"]
+          },
+          "then": {
+            "properties": {
+              "settingsSchema": {
+                "type": "array",
+                "maxItems": 32,
+                "items": { "$ref": "#/$defs/settingsField" }
+              }
+            }
+          }
+        }
+      ],
       "additionalProperties": true
     },
     "actions": {

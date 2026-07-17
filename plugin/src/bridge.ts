@@ -20,6 +20,7 @@ export interface BridgeAction {
   actionId: string;
   name: string;
   settingsSchema?: JsonValue[];
+  settingsSchemaVersion?: number;
 }
 
 export interface BridgeAppearance {
@@ -121,6 +122,7 @@ function copyAction(action: BridgeAction): BridgeAction {
     ...(action.settingsSchema === undefined
       ? {}
       : { settingsSchema: action.settingsSchema.map(copyJsonValue) }),
+    ...(action.settingsSchemaVersion === undefined ? {} : { settingsSchemaVersion: action.settingsSchemaVersion }),
   };
 }
 

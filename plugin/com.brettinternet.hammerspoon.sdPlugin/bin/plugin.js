@@ -17209,6 +17209,184 @@ var $defs = {
 		description: "Application-owned JSON object. Keys and values are opaque to protocol v1.",
 		additionalProperties: true
 	},
+	settingsFieldBase: {
+		type: "object",
+		required: [
+			"type",
+			"key"
+		],
+		properties: {
+			type: {
+				type: "string",
+				"enum": [
+					"text",
+					"number",
+					"boolean",
+					"select"
+				]
+			},
+			key: {
+				type: "string",
+				minLength: 1,
+				maxLength: 64
+			},
+			label: {
+				type: "string",
+				minLength: 1,
+				maxLength: 128
+			},
+			required: {
+				type: "boolean"
+			},
+			"default": {
+			}
+		}
+	},
+	textSettingsField: {
+		allOf: [
+			{
+				$ref: "#/$defs/settingsFieldBase"
+			},
+			{
+				type: "object",
+				properties: {
+					type: {
+						"const": "text"
+					},
+					"default": {
+						type: "string"
+					},
+					minLength: {
+						type: "integer",
+						minimum: 0,
+						maximum: 4096
+					},
+					maxLength: {
+						type: "integer",
+						minimum: 0,
+						maximum: 4096
+					}
+				}
+			}
+		]
+	},
+	numberSettingsField: {
+		allOf: [
+			{
+				$ref: "#/$defs/settingsFieldBase"
+			},
+			{
+				type: "object",
+				properties: {
+					type: {
+						"const": "number"
+					},
+					"default": {
+						type: "number",
+						minimum: -1e12,
+						maximum: 1000000000000
+					},
+					min: {
+						type: "number",
+						minimum: -1e12,
+						maximum: 1000000000000
+					},
+					max: {
+						type: "number",
+						minimum: -1e12,
+						maximum: 1000000000000
+					},
+					step: {
+						type: "number",
+						exclusiveMinimum: 0,
+						maximum: 1000000000000
+					}
+				}
+			}
+		]
+	},
+	booleanSettingsField: {
+		allOf: [
+			{
+				$ref: "#/$defs/settingsFieldBase"
+			},
+			{
+				type: "object",
+				properties: {
+					type: {
+						"const": "boolean"
+					},
+					"default": {
+						type: "boolean"
+					}
+				}
+			}
+		]
+	},
+	selectSettingsField: {
+		allOf: [
+			{
+				$ref: "#/$defs/settingsFieldBase"
+			},
+			{
+				type: "object",
+				required: [
+					"options"
+				],
+				properties: {
+					type: {
+						"const": "select"
+					},
+					"default": {
+						type: "string"
+					},
+					options: {
+						type: "array",
+						minItems: 1,
+						maxItems: 64,
+						items: {
+							type: "object",
+							required: [
+								"value",
+								"label"
+							],
+							properties: {
+								value: {
+									type: "string",
+									minLength: 1,
+									maxLength: 256
+								},
+								label: {
+									type: "string",
+									minLength: 1,
+									maxLength: 128
+								}
+							},
+							additionalProperties: false
+						}
+					}
+				}
+			}
+		]
+	},
+	settingsField: {
+		type: "object",
+		oneOf: [
+			{
+				$ref: "#/$defs/textSettingsField"
+			},
+			{
+				$ref: "#/$defs/numberSettingsField"
+			},
+			{
+				$ref: "#/$defs/booleanSettingsField"
+			},
+			{
+				$ref: "#/$defs/selectSettingsField"
+			}
+		],
+		unevaluatedProperties: false
+	},
 	message: {
 		type: "object",
 		required: [
@@ -17312,12 +17490,57 @@ var $defs = {
 			},
 			settingsSchema: {
 				type: "array",
-				description: "Optional extension reserved for future property-inspector controls."
+				maxItems: 32,
+				items: {
+				},
+				description: "Optional bounded legacy field descriptors; explicit settingsSchemaVersion: 1 enables strict descriptor validation."
+			},
+			settingsSchemaVersion: {
+				type: "integer",
+				minimum: 1,
+				maximum: 16
 			}
 		},
 		required: [
 			"actionId",
 			"name"
+		],
+		allOf: [
+			{
+				"if": {
+					required: [
+						"settingsSchemaVersion"
+					]
+				},
+				then: {
+					required: [
+						"settingsSchema"
+					]
+				}
+			},
+			{
+				"if": {
+					properties: {
+						settingsSchemaVersion: {
+							"const": 1
+						}
+					},
+					required: [
+						"settingsSchemaVersion"
+					]
+				},
+				then: {
+					properties: {
+						settingsSchema: {
+							type: "array",
+							maxItems: 32,
+							items: {
+								$ref: "#/$defs/settingsField"
+							}
+						}
+					}
+				}
+			}
 		],
 		additionalProperties: true
 	},
@@ -17698,8 +17921,63 @@ function hasDuplicateObjectKeys(source) {
     };
     return scanValue();
 }
+function settingsSchemaError(actionIndex, fieldIndex, message) {
+    return new Error(`Invalid server message: settingsSchema action ${actionIndex} field ${fieldIndex}: ${message}.`);
+}
+function validateSettingsSchema(action, actionIndex) {
+    if (action.settingsSchemaVersion !== 1) {
+        return;
+    }
+    const fields = action.settingsSchema;
+    if (!fields) {
+        throw settingsSchemaError(actionIndex, 0, "settingsSchemaVersion requires settingsSchema");
+    }
+    const keys = new Set();
+    fields.forEach((field, fieldIndex) => {
+        if (keys.has(field.key)) {
+            throw settingsSchemaError(actionIndex, fieldIndex, `duplicate key "${field.key}"`);
+        }
+        keys.add(field.key);
+        if (field.type === "text") {
+            if (field.minLength !== undefined &&
+                field.maxLength !== undefined &&
+                field.minLength > field.maxLength) {
+                throw settingsSchemaError(actionIndex, fieldIndex, "minLength must not exceed maxLength");
+            }
+            if (field.default !== undefined &&
+                ((field.minLength !== undefined && field.default.length < field.minLength) ||
+                    (field.maxLength !== undefined && field.default.length > field.maxLength))) {
+                throw settingsSchemaError(actionIndex, fieldIndex, "default is outside the text length bounds");
+            }
+        }
+        else if (field.type === "number") {
+            if (field.min !== undefined && field.max !== undefined && field.min > field.max) {
+                throw settingsSchemaError(actionIndex, fieldIndex, "min must not exceed max");
+            }
+            if (field.default !== undefined &&
+                ((field.min !== undefined && field.default < field.min) ||
+                    (field.max !== undefined && field.default > field.max))) {
+                throw settingsSchemaError(actionIndex, fieldIndex, "default is outside the number bounds");
+            }
+        }
+        else if (field.type === "select") {
+            const optionValues = new Set();
+            for (const option of field.options) {
+                if (optionValues.has(option.value)) {
+                    throw settingsSchemaError(actionIndex, fieldIndex, `duplicate select option "${option.value}"`);
+                }
+                optionValues.add(option.value);
+            }
+            if (field.default !== undefined && !optionValues.has(field.default)) {
+                throw settingsSchemaError(actionIndex, fieldIndex, "default must match a select option");
+            }
+        }
+        else if (field.type === "boolean") ;
+    });
+}
 function schemaError(direction) {
-    return new Error(`Invalid ${direction} message: failed protocol schema validation.`);
+    const details = ajv.errorsText(validateProtocolMessage.errors, { separator: "; " });
+    return new Error(`Invalid ${direction} message: failed protocol schema validation${details ? `: ${details}` : ""}.`);
 }
 function classifyServerType(type) {
     if (typeof type !== "string") {
@@ -17747,7 +18025,8 @@ function parseServerMessage(data) {
     if (parsed.type === "actions") {
         const actions = parsed.actions;
         const actionIds = new Set();
-        for (const action of actions) {
+        for (const [index, action] of actions.entries()) {
+            validateSettingsSchema(action, index);
             if (actionIds.has(action.actionId)) {
                 throw new Error("Invalid server message: duplicate action IDs are not allowed.");
             }
@@ -17813,6 +18092,7 @@ function copyAction(action) {
         ...(action.settingsSchema === undefined
             ? {}
             : { settingsSchema: action.settingsSchema.map(copyJsonValue) }),
+        ...(action.settingsSchemaVersion === undefined ? {} : { settingsSchemaVersion: action.settingsSchemaVersion }),
     };
 }
 function frameToString(data) {
@@ -18416,6 +18696,9 @@ class HammerspoonAction extends SingletonAction {
             };
             if (action.settingsSchema) {
                 copy.settingsSchema = action.settingsSchema.map(cloneJsonValue);
+            }
+            if (action.settingsSchemaVersion !== undefined) {
+                copy.settingsSchemaVersion = action.settingsSchemaVersion;
             }
             return copy;
         });

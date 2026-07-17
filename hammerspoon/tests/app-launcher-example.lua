@@ -36,6 +36,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local action = streamdeck.registrations[1]
     assertEqual(action.id, "com.brettinternet.hammerspoon.app-launcher")
     assertEqual(action.name, "Launch or focus app")
+    assertEqual(action.settingsSchemaVersion, 1)
     assertEqual(#action.settingsSchema, 2)
     assertEqual(action.settingsSchema[1].type, "text")
     assertEqual(action.settingsSchema[1].key, "app")

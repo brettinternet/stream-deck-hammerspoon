@@ -252,10 +252,15 @@ describe("HammerspoonAction", () => {
     propertyInspectorMessages.length = 0;
     const bridge = new FakeBridge();
     const schema: JsonValue[] = [
-      { label: "Mode", options: ["one", { value: 2 }] },
+      { type: "select", key: "mode", options: [{ value: "one", label: "One" }], default: "one" },
     ];
     bridge.status = "connected";
-    bridge.actions = [{ actionId: "action.id", name: "Action", settingsSchema: schema }];
+    bridge.actions = [{
+      actionId: "action.id",
+      name: "Action",
+      settingsSchemaVersion: 1,
+      settingsSchema: schema,
+    }];
     const adapter = makeAction(bridge);
     adapter.subscribe();
 
@@ -264,7 +269,12 @@ describe("HammerspoonAction", () => {
     expect(propertyInspectorMessages[0]).toEqual({
       type: "bridgeState",
       status: "connected",
-      actions: [{ actionId: "action.id", name: "Action", settingsSchema: schema }],
+      actions: [{
+        actionId: "action.id",
+        name: "Action",
+        settingsSchemaVersion: 1,
+        settingsSchema: schema,
+      }],
     });
 
     schema[0] = { label: "mutated" };
@@ -274,7 +284,8 @@ describe("HammerspoonAction", () => {
       actions: [{
         actionId: "action.id",
         name: "Action",
-        settingsSchema: [{ label: "Mode", options: ["one", { value: 2 }] }],
+        settingsSchemaVersion: 1,
+        settingsSchema: [{ type: "select", key: "mode", options: [{ value: "one", label: "One" }], default: "one" }],
       }],
     });
 

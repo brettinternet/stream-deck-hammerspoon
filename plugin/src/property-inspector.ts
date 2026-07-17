@@ -49,6 +49,8 @@ type BridgeStatus = "disconnected" | "connecting" | "authenticating" | "connecte
 type BridgeAction = {
   actionId: string;
   name: string;
+  settingsSchema?: unknown[];
+  settingsSchemaVersion?: number;
 };
 
 const browserGlobal = globalThis as unknown as BrowserGlobal;
@@ -214,16 +216,31 @@ function parseBridgeState(value: unknown): {
       item.actionId.trim().length === 0 ||
       typeof item.name !== "string" ||
       item.name.trim().length === 0 ||
-      ("settingsSchema" in item && !Array.isArray(item.settingsSchema))
+      ("settingsSchema" in item && !Array.isArray(item.settingsSchema)) ||
+      ("settingsSchemaVersion" in item &&
+        (typeof item.settingsSchemaVersion !== "number" ||
+          !Number.isInteger(item.settingsSchemaVersion) ||
+          item.settingsSchemaVersion < 1 ||
+          item.settingsSchemaVersion > 16))
     ) {
       return undefined;
+    }
+    if (item.settingsSchemaVersion !== undefined && item.settingsSchemaVersion !== 1) {
+      continue;
     }
 
     if (actionIds.has(item.actionId)) {
       return undefined;
     }
     actionIds.add(item.actionId);
-    actions.push({ actionId: item.actionId, name: item.name });
+    actions.push({
+      actionId: item.actionId,
+      name: item.name,
+      ...(Array.isArray(item.settingsSchema) ? { settingsSchema: item.settingsSchema } : {}),
+      ...(typeof item.settingsSchemaVersion === "number"
+        ? { settingsSchemaVersion: item.settingsSchemaVersion }
+        : {}),
+    });
   }
 
   return { status, actions };

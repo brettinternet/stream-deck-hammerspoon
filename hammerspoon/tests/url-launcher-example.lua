@@ -16,6 +16,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(streamdeck.starts, 1, "URL launcher must start the bridge")
     local action = streamdeck.registrations[1]
     assertEqual(action.id, "com.brettinternet.hammerspoon.url-launcher")
+    assertEqual(action.settingsSchemaVersion, 1)
     assertEqual(#action.settingsSchema, 2)
     assertEqual(action.settingsSchema[1].key, "label")
     assertEqual(action.settingsSchema[2].key, "url")

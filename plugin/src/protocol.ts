@@ -37,10 +37,46 @@ export interface ListActionsMessage extends AuthenticatedClientMessage {
   requestId: string;
 }
 
+export interface SettingsFieldBase {
+  type: "text" | "number" | "boolean" | "select";
+  key: string;
+  label?: string;
+  required?: boolean;
+}
+
+export interface TextSettingsField extends SettingsFieldBase {
+  type: "text";
+  default?: string;
+  minLength?: number;
+  maxLength?: number;
+}
+
+export interface NumberSettingsField extends SettingsFieldBase {
+  type: "number";
+  default?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+}
+
+export interface BooleanSettingsField extends SettingsFieldBase {
+  type: "boolean";
+  default?: boolean;
+}
+
+export interface SelectSettingsField extends SettingsFieldBase {
+  type: "select";
+  default?: string;
+  options: Array<{ value: string; label: string }>;
+}
+
+export type SettingsField = TextSettingsField | NumberSettingsField | BooleanSettingsField | SelectSettingsField;
+
 export interface ActionDefinition {
   actionId: string;
   name: string;
   settingsSchema?: JsonValue[];
+  settingsSchemaVersion?: number;
   [key: string]: unknown;
 }
 
@@ -274,8 +310,75 @@ function hasDuplicateObjectKeys(source: string): boolean {
   return scanValue();
 }
 
+
+function settingsSchemaError(actionIndex: number, fieldIndex: number, message: string): Error {
+  return new Error(`Invalid server message: settingsSchema action ${actionIndex} field ${fieldIndex}: ${message}.`);
+}
+
+function validateSettingsSchema(action: ActionDefinition, actionIndex: number): void {
+  if (action.settingsSchemaVersion !== 1) {
+    return;
+  }
+
+  const fields = action.settingsSchema as SettingsField[] | undefined;
+  if (!fields) {
+    throw settingsSchemaError(actionIndex, 0, "settingsSchemaVersion requires settingsSchema");
+  }
+  const keys = new Set<string>();
+  fields.forEach((field, fieldIndex) => {
+    if (keys.has(field.key)) {
+      throw settingsSchemaError(actionIndex, fieldIndex, `duplicate key "${field.key}"`);
+    }
+    keys.add(field.key);
+
+    if (field.type === "text") {
+      if (
+        field.minLength !== undefined &&
+        field.maxLength !== undefined &&
+        field.minLength > field.maxLength
+      ) {
+        throw settingsSchemaError(actionIndex, fieldIndex, "minLength must not exceed maxLength");
+      }
+      if (
+        field.default !== undefined &&
+        ((field.minLength !== undefined && field.default.length < field.minLength) ||
+          (field.maxLength !== undefined && field.default.length > field.maxLength))
+      ) {
+        throw settingsSchemaError(actionIndex, fieldIndex, "default is outside the text length bounds");
+      }
+    } else if (field.type === "number") {
+      if (field.min !== undefined && field.max !== undefined && field.min > field.max) {
+        throw settingsSchemaError(actionIndex, fieldIndex, "min must not exceed max");
+      }
+      if (
+        field.default !== undefined &&
+        ((field.min !== undefined && field.default < field.min) ||
+          (field.max !== undefined && field.default > field.max))
+      ) {
+        throw settingsSchemaError(actionIndex, fieldIndex, "default is outside the number bounds");
+      }
+    } else if (field.type === "select") {
+      const optionValues = new Set<string>();
+      for (const option of field.options) {
+        if (optionValues.has(option.value)) {
+          throw settingsSchemaError(actionIndex, fieldIndex, `duplicate select option "${option.value}"`);
+        }
+        optionValues.add(option.value);
+      }
+      if (field.default !== undefined && !optionValues.has(field.default)) {
+        throw settingsSchemaError(actionIndex, fieldIndex, "default must match a select option");
+      }
+    } else if (field.type === "boolean") {
+      // Boolean fields have no kind-specific constraints.
+    }
+  });
+}
+
 function schemaError(direction: "server" | "client"): Error {
-  return new Error(`Invalid ${direction} message: failed protocol schema validation.`);
+  const details = ajv.errorsText(validateProtocolMessage.errors, { separator: "; " });
+  return new Error(
+    `Invalid ${direction} message: failed protocol schema validation${details ? `: ${details}` : ""}.`,
+  );
 }
 
 function classifyServerType(type: unknown): void {
@@ -329,7 +432,8 @@ export function parseServerMessage(data: string): ServerMessage {
   if (parsed.type === "actions") {
     const actions = parsed.actions as ActionDefinition[];
     const actionIds = new Set<string>();
-    for (const action of actions) {
+    for (const [index, action] of actions.entries()) {
+      validateSettingsSchema(action, index);
       if (actionIds.has(action.actionId)) {
         throw new Error("Invalid server message: duplicate action IDs are not allowed.");
       }

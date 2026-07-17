@@ -222,6 +222,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       if (action.settingsSchema) {
         copy.settingsSchema = action.settingsSchema.map(cloneJsonValue);
       }
+      if (action.settingsSchemaVersion !== undefined) {
+        copy.settingsSchemaVersion = action.settingsSchemaVersion;
+      }
       return copy;
     });
     await streamDeck.ui.sendToPropertyInspector({

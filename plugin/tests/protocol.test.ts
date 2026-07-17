@@ -34,7 +34,22 @@ const actions: ServerMessage = {
   requestId: "req-01",
   actions: [
     { actionId: "com.example.volumeUp", name: "Volume Up" },
-    { actionId: "com.example.mute", name: "Mute", settingsSchema: [] },
+    {
+      actionId: "com.example.mute",
+      name: "Mute",
+      settingsSchemaVersion: 1,
+      settingsSchema: [
+        { type: "text", key: "label", minLength: 1, maxLength: 32, default: "Mute" },
+        { type: "number", key: "volume", min: 0, max: 100, step: 1, default: 50 },
+        { type: "boolean", key: "muted", default: false },
+        {
+          type: "select",
+          key: "mode",
+          options: [{ value: "normal", label: "Normal" }, { value: "silent", label: "Silent" }],
+          default: "normal",
+        },
+      ],
+    },
   ],
 };
 
@@ -153,5 +168,64 @@ describe("protocol direction and validation", () => {
     expect(() =>
       parseServerMessage(JSON.stringify({ protocolVersion: 1, type: "futureMessage" })),
     ).toThrow();
+  });
+});
+
+describe("versioned settings schema compatibility", () => {
+  const actionMessage = (action: Record<string, unknown>) =>
+    JSON.stringify({
+      protocolVersion: 1,
+      type: "actions",
+      requestId: "settings",
+      actions: [{ actionId: "com.example.settings", name: "Settings", ...action }],
+    });
+
+  test("accepts legacy opaque arrays and explicit supported fields", () => {
+    expect(parseServerMessage(actionMessage({ settingsSchema: [{ arbitrary: true }] }))).toBeDefined();
+    expect(
+      parseServerMessage(
+        actionMessage({
+          settingsSchemaVersion: 1,
+          settingsSchema: [
+            { type: "text", key: "text", default: "ok", minLength: 1, maxLength: 4 },
+            { type: "number", key: "number", default: 2, min: 0, max: 4, step: 1 },
+            { type: "boolean", key: "boolean", default: true },
+            {
+              type: "select",
+              key: "select",
+              options: [{ value: "one", label: "One" }, { value: "two", label: "Two" }],
+              default: "one",
+            },
+          ],
+        }),
+      ),
+    ).toBeDefined();
+  });
+
+  test("rejects invalid explicit schemas with deterministic errors", () => {
+    const invalid = [
+      { settingsSchemaVersion: 1, settingsSchema: [{ type: "text", key: "x", unsupported: true }] },
+      { settingsSchemaVersion: 1, settingsSchema: [{ type: "text", key: "x" }, { type: "boolean", key: "x" }] },
+      {
+        settingsSchemaVersion: 1,
+        settingsSchema: [{ type: "number", key: "x", min: 5, max: 1 }],
+      },
+      {
+        settingsSchemaVersion: 1,
+        settingsSchema: [{ type: "select", key: "x", options: [{ value: "a", label: "A" }], default: "b" }],
+      },
+    ];
+
+    for (const action of invalid) {
+      expect(() => parseServerMessage(actionMessage(action))).toThrow(/settingsSchema|schema validation/);
+    }
+  });
+
+  test("preserves bounded unsupported schema versions without interpreting fields", () => {
+    expect(
+      parseServerMessage(
+        actionMessage({ settingsSchemaVersion: 2, settingsSchema: [{ future: "descriptor" }] }),
+      ),
+    ).toBeDefined();
   });
 });

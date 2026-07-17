@@ -8,6 +8,7 @@ local state_by_instance = {}
 streamdeck.register({
   id = "com.brettinternet.hammerspoon.per-instance-toggle",
   name = "Per-instance toggle",
+  settingsSchemaVersion = 1,
   settingsSchema = {
     { type = "text", key = "label", maxLength = 32 },
   },

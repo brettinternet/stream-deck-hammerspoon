@@ -143,6 +143,92 @@ local function required(message, field, predicate)
   return true
 end
 
+local MAX_SETTINGS_FIELDS = 32
+local MAX_SETTINGS_KEY_LENGTH = 64
+local MAX_SETTINGS_LABEL_LENGTH = 128
+local MAX_SETTINGS_TEXT_LENGTH = 4096
+local MAX_SETTINGS_NUMBER = 1000000000000
+local MAX_SETTINGS_OPTIONS = 64
+local MAX_SETTINGS_OPTION_VALUE_LENGTH = 256
+
+local function boundedString(value, maximum)
+  return isNonEmptyString(value) and #value <= maximum
+end
+
+local function validateSettingsField(field, seenKeys)
+  if not isObject(field) or not boundedString(rawget(field, "key"), MAX_SETTINGS_KEY_LENGTH) then
+    return false
+  end
+  local kind = rawget(field, "type")
+  local allowed = { type = true, key = true, label = true, required = true, default = true }
+  if kind == "text" then
+    allowed.minLength = true
+    allowed.maxLength = true
+  elseif kind == "number" then
+    allowed.min = true
+    allowed.max = true
+    allowed.step = true
+  elseif kind == "select" then
+    allowed.options = true
+  elseif kind ~= "boolean" then
+    return false
+  end
+  for key in next, field do
+    if not allowed[key] then return false end
+  end
+  if rawget(field, "label") ~= nil and not boundedString(rawget(field, "label"), MAX_SETTINGS_LABEL_LENGTH) then return false end
+  if rawget(field, "required") ~= nil and type(rawget(field, "required")) ~= "boolean" then return false end
+  local fieldKey = rawget(field, "key")
+  if seenKeys[fieldKey] then return false end
+  seenKeys[fieldKey] = true
+
+  if kind == "text" then
+    local minimum, maximum, default = rawget(field, "minLength"), rawget(field, "maxLength"), rawget(field, "default")
+    if minimum ~= nil and (not isInteger(minimum) or minimum < 0 or minimum > MAX_SETTINGS_TEXT_LENGTH) then return false end
+    if maximum ~= nil and (not isInteger(maximum) or maximum < 0 or maximum > MAX_SETTINGS_TEXT_LENGTH) then return false end
+    if minimum ~= nil and maximum ~= nil and minimum > maximum then return false end
+    if default ~= nil and (type(default) ~= "string" or (minimum ~= nil and #default < minimum) or (maximum ~= nil and #default > maximum)) then return false end
+  elseif kind == "number" then
+    local minimum, maximum, step, default = rawget(field, "min"), rawget(field, "max"), rawget(field, "step"), rawget(field, "default")
+    if minimum ~= nil and (not isFiniteNumber(minimum) or minimum < -MAX_SETTINGS_NUMBER or minimum > MAX_SETTINGS_NUMBER) then return false end
+    if maximum ~= nil and (not isFiniteNumber(maximum) or maximum < -MAX_SETTINGS_NUMBER or maximum > MAX_SETTINGS_NUMBER) then return false end
+    if minimum ~= nil and maximum ~= nil and minimum > maximum then return false end
+    if step ~= nil and (not isFiniteNumber(step) or step <= 0 or step > MAX_SETTINGS_NUMBER) then return false end
+    if default ~= nil and (not isFiniteNumber(default) or (minimum ~= nil and default < minimum) or (maximum ~= nil and default > maximum)) then return false end
+  elseif kind == "boolean" then
+    if rawget(field, "default") ~= nil and type(rawget(field, "default")) ~= "boolean" then return false end
+  elseif kind == "select" then
+    local options = rawget(field, "options")
+    if not isArray(options) then return false end
+    local optionCount, values = 0, {}
+    for _, option in ipairs(options) do
+      if not isObject(option) then return false end
+      for key in next, option do
+        if key ~= "value" and key ~= "label" then return false end
+      end
+      local value, label = rawget(option, "value"), rawget(option, "label")
+      if not boundedString(value, MAX_SETTINGS_OPTION_VALUE_LENGTH) or not boundedString(label, MAX_SETTINGS_LABEL_LENGTH) or values[value] then return false end
+      values[value] = true
+      optionCount = optionCount + 1
+    end
+    if optionCount < 1 or optionCount > MAX_SETTINGS_OPTIONS then return false end
+    local default = rawget(field, "default")
+    if default ~= nil and (not boundedString(default, MAX_SETTINGS_OPTION_VALUE_LENGTH) or not values[default]) then return false end
+  end
+  return true
+end
+
+local function validateSettingsSchema(settingsSchema, version)
+  if not isArray(settingsSchema) or #settingsSchema > MAX_SETTINGS_FIELDS then return false end
+  if version == 1 then
+    local seenKeys = {}
+    for _, field in ipairs(settingsSchema) do
+      if not validateSettingsField(field, seenKeys) then return false end
+    end
+  end
+  return true
+end
+
 local function validateActions(actions)
   if not isArray(actions) then
     return false, "INVALID_FIELD"
@@ -156,7 +242,15 @@ local function validateActions(actions)
       return false, "INVALID_FIELD"
     end
     local settingsSchema = rawget(action, "settingsSchema")
-    if settingsSchema ~= nil and not isArray(settingsSchema) then
+    local settingsSchemaVersion = rawget(action, "settingsSchemaVersion")
+    if settingsSchemaVersion ~= nil
+        and (not isInteger(settingsSchemaVersion) or settingsSchemaVersion < 1 or settingsSchemaVersion > 16) then
+      return false, "INVALID_FIELD"
+    end
+    if settingsSchemaVersion ~= nil and settingsSchema == nil then
+      return false, "INVALID_FIELD"
+    end
+    if settingsSchema ~= nil and not validateSettingsSchema(settingsSchema, settingsSchemaVersion) then
       return false, "INVALID_FIELD"
     end
     seen[rawget(action, "actionId")] = true

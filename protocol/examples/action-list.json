@@ -14,7 +14,10 @@
       {
         "actionId": "com.example.mute",
         "name": "Mute",
-        "settingsSchema": []
+        "settingsSchemaVersion": 1,
+        "settingsSchema": [
+          { "type": "boolean", "key": "muted", "label": "Muted", "default": false }
+        ]
       }
     ]
   }

@@ -123,7 +123,9 @@ Required fields: `protocolVersion`, `type: "listActions"`, `sessionId`, `request
 
 ### `actions` (Lua → plugin)
 
-Required fields: `protocolVersion`, `type: "actions"`, `requestId`, `actions`. `requestId` must equal the outstanding `listActions.requestId`. `actions` is an array, including an empty array when no actions are registered. Each item requires a non-empty `actionId` and a non-empty, human-readable `name` for rendering a labeled action selector. An item may include an optional `settingsSchema` array reserved for future property-inspector controls; v1 does not interpret or render those controls. Action IDs are unique within the response. Unknown extension fields in an item are ignored.
+Required fields: `protocolVersion`, `type: "actions"`, `requestId`, `actions`. `requestId` must equal the outstanding `listActions.requestId`. `actions` is an array, including an empty array when no actions are registered. Each item requires a non-empty `actionId` and a non-empty, human-readable `name` for rendering a labeled action selector. An item may include a bounded `settingsSchema` array. Legacy arrays without `settingsSchemaVersion` remain opaque for compatibility. An explicit `settingsSchemaVersion` from 1 through 16 is accepted; only version 1 is interpreted and validated, while newer versions are preserved but not rendered.
+
+Version 1 fields require a unique non-empty `key` (maximum 64 characters), optional non-empty `label` (maximum 128) and boolean `required`. Supported field types are `text`, `number`, `boolean`, and `select`. Text fields support integer `minLength`/`maxLength` from 0 through 4096; number fields support finite `min`/`max` within ±1e12 and positive finite `step` up to 1e12; select fields require 1–64 unique options with bounded string `value` and `label`. Defaults must match their field type and bounds, and select defaults must match an option. Field arrays and all option arrays are dense and bounded. Unknown descriptor or constraint keys, duplicate field/option values, invalid combinations, and out-of-range values are rejected as `INVALID_FIELD`; instance settings are not validated against this schema yet.
 
 ```json
 {
@@ -135,7 +137,10 @@ Required fields: `protocolVersion`, `type: "actions"`, `requestId`, `actions`. `
     {
       "actionId": "com.example.mute",
       "name": "Mute",
-      "settingsSchema": []
+      "settingsSchemaVersion": 1,
+      "settingsSchema": [
+        { "type": "boolean", "key": "muted", "label": "Muted", "default": false }
+      ]
     }
   ]
 }

@@ -40,6 +40,7 @@ end
 streamdeck.register({
   id = "com.brettinternet.hammerspoon.url-launcher",
   name = "URL launcher",
+  settingsSchemaVersion = 1,
   settingsSchema = {
     { type = "text", key = "label", maxLength = 32 },
     { type = "text", key = "url", maxLength = 1024 },
