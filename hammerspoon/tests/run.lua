@@ -653,6 +653,117 @@ test("multiple instances keep independent settings and callbacks", function()
   end)
 end)
 
+test("settings replay rebuilds independent contexts after reconnect", function()
+  local pressed = {}
+  local states = {}
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.replay-per-instance",
+    name = "Replay per instance",
+    appearance = function(context)
+      local settings = context:getSettings()
+      local label = type(settings.label) == "string" and settings.label or "Unknown"
+      return {
+        title = label,
+        state = states[context.instanceId] and "active" or "inactive",
+      }
+    end,
+    press = function(context)
+      states[context.instanceId] = not states[context.instanceId]
+      pressed[context.instanceId] = (pressed[context.instanceId] or 0) + 1
+      context:refresh()
+    end,
+    appear = function(context)
+      states[context.instanceId] = false
+    end,
+    disappear = function(context)
+      states[context.instanceId] = nil
+    end,
+  })
+
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    local firstSession = authenticate(server, path)
+    local first = exchange(server, message("instanceAppeared", {
+      instanceId = "profile-a-device-one",
+      actionId = "com.test.replay-per-instance",
+      settings = { label = "Alpha" },
+    }))
+    local second = exchange(server, message("instanceAppeared", {
+      instanceId = "profile-b-device-two",
+      actionId = "com.test.replay-per-instance",
+      settings = { label = "Beta" },
+    }))
+    assertEqual(first[1].title, "Alpha")
+    assertEqual(second[1].title, "Beta")
+
+    local pressedFirst = exchange(server, message("keyDown", {
+      instanceId = "profile-a-device-one",
+      actionId = "com.test.replay-per-instance",
+    }))
+    assertEqual(pressed["profile-a-device-one"], 1)
+    assertEqual(pressed["profile-b-device-two"], nil)
+    assertEqual(pressedFirst[1].state, 1)
+    assertEqual(exchange(server, message("requestAppearance", {
+      instanceId = "profile-b-device-two",
+      actionId = "com.test.replay-per-instance",
+    }))[1].state, 0)
+
+    local updated = exchange(server, message("instanceAppeared", {
+      instanceId = "profile-a-device-one",
+      actionId = "com.test.replay-per-instance",
+      settings = { label = "Alpha updated" },
+    }))
+    assertEqual(updated[1].title, "Alpha updated")
+    assertEqual(updated[1].state, 1, "settings updates must retain the same context state")
+
+    local restarted = exchange(server, message("hello", {
+      token = tokenAt(path),
+      pluginVersion = "restarted-plugin",
+    }))
+    assertEqual(restarted[1].type, "helloAck")
+    assertTrue(restarted[1].sessionId ~= firstSession)
+    assertEqual(states["profile-a-device-one"], nil, "reconnect must discard old mutable context state")
+    assertEqual(states["profile-b-device-two"], nil, "reconnect must discard every old context state")
+    assertError("AUTH_REQUIRED", exchange(server, message("keyDown", {
+      sessionId = firstSession,
+      instanceId = "profile-a-device-one",
+      actionId = "com.test.replay-per-instance",
+    })))
+
+    local replayedFirst = exchange(server, message("instanceAppeared", {
+      instanceId = "profile-a-device-one",
+      actionId = "com.test.replay-per-instance",
+      settings = { label = "Alpha updated" },
+    }))
+    local replayedSecond = exchange(server, message("instanceAppeared", {
+      instanceId = "profile-b-device-two",
+      actionId = "com.test.replay-per-instance",
+      settings = { label = "Beta" },
+    }))
+    assertEqual(replayedFirst[1].title, "Alpha updated")
+    assertEqual(replayedFirst[1].state, 0)
+    assertEqual(replayedSecond[1].title, "Beta")
+    assertEqual(replayedSecond[1].state, 0)
+
+    exchange(server, message("instanceDisappeared", {
+      instanceId = "profile-a-device-one",
+      actionId = "com.test.replay-per-instance",
+    }))
+    assertError("STALE_INSTANCE", exchange(server, message("keyDown", {
+      instanceId = "profile-a-device-one",
+      actionId = "com.test.replay-per-instance",
+    })))
+    local pressedSecond = exchange(server, message("keyDown", {
+      instanceId = "profile-b-device-two",
+      actionId = "com.test.replay-per-instance",
+    }))
+    assertEqual(pressed["profile-b-device-two"], 1)
+    assertEqual(pressedSecond[1].instanceId, "profile-b-device-two")
+    server:stop()
+  end)
+end)
+
 test("stale instance IDs are rejected", function()
   local registry = Registry.new()
   registry:register({

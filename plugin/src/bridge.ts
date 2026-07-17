@@ -234,8 +234,21 @@ export class BridgeClient extends EventEmitter {
         ? settings.actionId
         : undefined;
     if (configuredActionId) settings.actionId = configuredActionId;
+    const previous = this.instances.get(input.instanceId);
     const snapshot = { actionId: configuredActionId, settings };
     this.instances.set(input.instanceId, snapshot);
+    if (
+      this.authenticated
+      && previous?.actionId
+      && previous.actionId !== configuredActionId
+    ) {
+      this.send({
+        protocolVersion: PROTOCOL_VERSION,
+        type: "instanceDisappeared",
+        instanceId: input.instanceId,
+        actionId: previous.actionId,
+      });
+    }
 
     if (this.authenticated && configuredActionId && this.isKnownAction(configuredActionId)) {
       this.sendInstanceAppeared(input.instanceId, snapshot);

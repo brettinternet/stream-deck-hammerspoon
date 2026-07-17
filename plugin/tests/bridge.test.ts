@@ -508,6 +508,128 @@ describe("BridgeClient instance lifecycle", () => {
     ]);
   });
 
+  test("keeps per-instance settings through updates and reconnect replay", async () => {
+    const sockets: FakeSocket[] = [];
+    const timers = new ManualTimers();
+    const { client } = makeClient(sockets, timers);
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0], "session-settings-first");
+    completeActions(sockets[0], requestId);
+
+    client.upsertInstance({
+      instanceId: "profile-a-device-one",
+      actionId: "com.example.action",
+      settings: { actionId: "com.example.action", label: "Alpha" },
+    });
+    client.upsertInstance({
+      instanceId: "profile-b-device-two",
+      actionId: "com.example.action",
+      settings: { actionId: "com.example.action", label: "Beta" },
+    });
+    client.upsertInstance({
+      instanceId: "profile-a-device-one",
+      actionId: "com.example.action",
+      settings: { actionId: "com.example.action", label: "Alpha updated" },
+    });
+
+    const initialLifecycle = frames(sockets[0]).filter((frame) => frame.type === "instanceAppeared");
+    expect(initialLifecycle).toEqual([
+      expect.objectContaining({
+        instanceId: "profile-a-device-one",
+        settings: { actionId: "com.example.action", label: "Alpha" },
+      }),
+      expect.objectContaining({
+        instanceId: "profile-b-device-two",
+        settings: { actionId: "com.example.action", label: "Beta" },
+      }),
+      expect.objectContaining({
+        instanceId: "profile-a-device-one",
+        settings: { actionId: "com.example.action", label: "Alpha updated" },
+      }),
+    ]);
+
+    sockets[0].peerClose();
+    timers.runNext();
+    await flush();
+    const reconnect = sockets[1];
+    const reconnectRequestId = await authenticate(reconnect, "session-settings-reconnect");
+    completeActions(reconnect, reconnectRequestId);
+
+    expect(frames(reconnect).filter((frame) => frame.type === "instanceAppeared")).toEqual([
+      expect.objectContaining({
+        instanceId: "profile-a-device-one",
+        settings: { actionId: "com.example.action", label: "Alpha updated" },
+      }),
+      expect.objectContaining({
+        instanceId: "profile-b-device-two",
+        settings: { actionId: "com.example.action", label: "Beta" },
+      }),
+    ]);
+
+    client.removeInstance("profile-a-device-one");
+    client.keyDown("profile-a-device-one", "com.example.action");
+    client.keyDown("profile-b-device-two", "com.example.action");
+    const liveInput = frames(reconnect).filter((frame) => frame.type === "keyDown");
+    expect(liveInput).toEqual([
+      expect.objectContaining({ instanceId: "profile-b-device-two", actionId: "com.example.action" }),
+    ]);
+
+    const appearances: unknown[] = [];
+    client.on("appearance", (value) => appearances.push(value));
+    reconnect.receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "appearance",
+      instanceId: "profile-a-device-one",
+      actionId: "com.example.action",
+      title: "stale",
+      state: 1,
+    }));
+    reconnect.receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "appearance",
+      instanceId: "profile-b-device-two",
+      actionId: "com.example.action",
+      title: "live",
+      state: 1,
+    }));
+    expect(appearances).toEqual([
+      expect.objectContaining({ instanceId: "profile-b-device-two", title: "live" }),
+    ]);
+  });
+
+  test("replaces an instance action without leaving the old Lua context visible", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets);
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+
+    client.upsertInstance({
+      instanceId: "reused-instance",
+      actionId: "com.example.action",
+      settings: { actionId: "com.example.action" },
+    });
+    client.upsertInstance({
+      instanceId: "reused-instance",
+      settings: { label: "unconfigured" },
+    });
+
+    expect(frames(sockets[0]).filter((frame) => ["instanceAppeared", "instanceDisappeared"].includes(frame.type as string))).toEqual([
+      expect.objectContaining({
+        type: "instanceAppeared",
+        instanceId: "reused-instance",
+        actionId: "com.example.action",
+      }),
+      expect.objectContaining({
+        type: "instanceDisappeared",
+        instanceId: "reused-instance",
+        actionId: "com.example.action",
+      }),
+    ]);
+  });
+
   test("correlates feedback to visible instances and isolates listener failures", async () => {
     const sockets: FakeSocket[] = [];
     const { client } = makeClient(sockets);

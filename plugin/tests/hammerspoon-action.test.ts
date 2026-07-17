@@ -326,6 +326,56 @@ describe("HammerspoonAction", () => {
     expect(bridge.keyDowns.at(-1)).toEqual(["instance", "action.id", updated]);
   });
 
+  test("keeps two placements independent through settings and disappearance", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const first = new FakeAction("profile-one-device-one");
+    const second = new FakeAction("profile-two-device-two");
+    const firstSettings = { actionId: "action.id", label: "First" } as never;
+    const secondSettings = { actionId: "action.id", label: "Second" } as never;
+
+    await adapter.onWillAppear(appear(first, firstSettings));
+    await adapter.onWillAppear(appear(second, secondSettings));
+    expect(bridge.upserts).toEqual([
+      { instanceId: first.id, actionId: "action.id", settings: firstSettings },
+      { instanceId: second.id, actionId: "action.id", settings: secondSettings },
+    ]);
+
+    const updatedFirst = { actionId: "action.id", label: "First updated" } as never;
+    await adapter.onDidReceiveSettings(settings(first, updatedFirst));
+    await adapter.onKeyDown(keyDown(first));
+    await adapter.onKeyDown(keyDown(second));
+    expect(bridge.keyDowns).toEqual([
+      [first.id, "action.id", updatedFirst],
+      [second.id, "action.id", secondSettings],
+    ]);
+
+    await adapter.onWillDisappear(disappear(first));
+    expect(bridge.removals).toEqual([[first.id, "action.id"]]);
+    const firstCallsAfterDisappear = structuredClone(first.calls);
+    bridge.status = "connected";
+    adapter.subscribe();
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: first.id,
+      actionId: "action.id",
+      title: "stale first",
+      state: 1,
+    });
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: second.id,
+      actionId: "action.id",
+      title: "live second",
+      state: 1,
+    });
+    await flush();
+    expect(first.calls).toEqual(firstCallsAfterDisappear);
+    expect(second.calls.titles.at(-1)).toBe("live second");
+  });
+
   test("sends requestState and deep-cloned bridgeState payloads", async () => {
     propertyInspectorMessages.length = 0;
     const bridge = new FakeBridge();
