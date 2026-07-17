@@ -84,6 +84,13 @@ class FakeSocket {
   }
 }
 
+class ThrowingCloseSocket extends FakeSocket {
+  override close(): void {
+    this.closeCalls += 1;
+    throw new Error("close failed");
+  }
+}
+
 class ManualTimers {
   private nextId = 1;
   private callbacks = new Map<number, { delay: number; callback: () => void }>();
@@ -94,8 +101,9 @@ class ManualTimers {
     return id;
   };
 
-  readonly clearTimeout = (id: number): void => {
-    this.callbacks.delete(id);
+  readonly clearTimeout = (handle: unknown): void => {
+    if (typeof handle !== "number") return;
+    this.callbacks.delete(handle);
   };
 
   delays(): number[] {
@@ -195,6 +203,102 @@ describe("BridgeClient authentication and transport", () => {
     expect(statuses).toContain("authenticating");
     expect(statuses).toContain("connected");
   });
+  test("falls back to the registered action ID and snapshots settings across reconnects", async () => {
+    const sockets: FakeSocket[] = [];
+    const timers = new ManualTimers();
+    const { client } = makeClient(sockets, timers);
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0], "session-snapshot-first");
+    completeActions(sockets[0], requestId);
+
+    const settings = {
+      actionId: "com.example.action",
+      nested: { label: "original" },
+      values: ["original"],
+    };
+    client.upsertInstance({ instanceId: "snapshot-instance", settings });
+    settings.nested.label = "mutated";
+    settings.values.push("mutated");
+
+    sockets[0].peerClose();
+    timers.runNext();
+    await flush();
+    const reconnect = sockets[1];
+    const reconnectRequestId = await authenticate(reconnect, "session-snapshot-reconnect");
+    completeActions(reconnect, reconnectRequestId);
+
+    expect(frames(reconnect)).toContainEqual(
+      expect.objectContaining({
+        type: "instanceAppeared",
+        instanceId: "snapshot-instance",
+        actionId: "com.example.action",
+        settings: {
+          actionId: "com.example.action",
+          nested: { label: "original" },
+          values: ["original"],
+        },
+      }),
+    );
+  });
+
+  test("ignores unknown action IDs without emitting lifecycle frames", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets);
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+
+    client.upsertInstance({
+      instanceId: "unknown-instance",
+      actionId: "com.example.unknown",
+      settings: { label: "ignored" },
+    });
+    client.keyDown("unknown-instance", "com.example.unknown");
+
+    expect(
+      frames(sockets[0]).filter((frame) =>
+        ["instanceAppeared", "instanceDisappeared", "keyDown", "requestAppearance"].includes(frame.type as string),
+      ),
+    ).toEqual([]);
+  });
+
+  test("uses the registered action ID when an instance disappears without one", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets);
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+
+    client.upsertInstance({
+      instanceId: "disappearing-instance",
+      settings: { actionId: "com.example.action", label: "kept" },
+    });
+    client.removeInstance("disappearing-instance");
+    const lifecycleBeforeKeyDown = frames(sockets[0]).filter((frame) =>
+      ["instanceAppeared", "instanceDisappeared", "keyDown"].includes(frame.type as string),
+    );
+    client.keyDown("disappearing-instance");
+
+    expect(lifecycleBeforeKeyDown).toEqual([
+      expect.objectContaining({
+        type: "instanceAppeared",
+        instanceId: "disappearing-instance",
+        actionId: "com.example.action",
+      }),
+      expect.objectContaining({
+        type: "instanceDisappeared",
+        instanceId: "disappearing-instance",
+        actionId: "com.example.action",
+      }),
+    ]);
+    expect(
+      frames(sockets[0]).filter((frame) => ["instanceAppeared", "instanceDisappeared", "keyDown"].includes(frame.type as string)),
+    ).toEqual(lifecycleBeforeKeyDown);
+  });
+
 
   test("rejects application responses before authentication and invalid server frames", async () => {
     const preAuthSockets: FakeSocket[] = [];
@@ -221,6 +325,59 @@ describe("BridgeClient authentication and transport", () => {
     sockets[0].receive(JSON.stringify({ protocolVersion: 1, type: "appearance", instanceId: "", actionId: "a", title: "bad", state: 0 }));
     sockets[0].receive("{");
     expect(errors).toHaveLength(2);
+  });
+
+  test("reports a socket factory failure and schedules reconnect", async () => {
+    const timers = new ManualTimers();
+    const statuses: string[] = [];
+    const client = new BridgeClient({
+      pluginVersion: "1.0.0",
+      createSocket: () => {
+        throw new Error("socket setup failed");
+      },
+      readToken: async () => "shared-token",
+      setTimeout: timers.setTimeout,
+      clearTimeout: (handle: unknown) => {
+        if (typeof handle !== "number") return;
+        timers.clearTimeout(handle);
+      },
+      random: () => 0.5,
+    });
+    client.on("status", (status) => statuses.push(status as string));
+
+    client.start();
+    await flush();
+
+    expect(client.status).toBe("disconnected");
+    expect(statuses).toEqual(["connecting", "disconnected"]);
+    expect(timers.delays()).toEqual([250]);
+    client.stop();
+  });
+
+  test("contains a throwing socket close during teardown", async () => {
+    const timers = new ManualTimers();
+    const socket = new ThrowingCloseSocket();
+    const statuses: string[] = [];
+    const client = new BridgeClient({
+      pluginVersion: "1.0.0",
+      createSocket: () => socket,
+      readToken: async () => "shared-token",
+      setTimeout: timers.setTimeout,
+      clearTimeout: (handle: unknown) => {
+        if (typeof handle !== "number") return;
+        timers.clearTimeout(handle);
+      },
+      random: () => 0.5,
+    });
+    client.on("status", (status) => statuses.push(status as string));
+
+    client.start();
+    await flush();
+    client.stop();
+
+    expect(socket.closeCalls).toBe(1);
+    expect(client.status).toBe("disconnected");
+    expect(statuses).toEqual(["connecting", "disconnected"]);
   });
 
   test("fails closed when the token is missing", async () => {
@@ -308,7 +465,10 @@ describe("BridgeClient instance lifecycle", () => {
         return "shared-token";
       },
       setTimeout: timers.setTimeout,
-      clearTimeout: timers.clearTimeout,
+      clearTimeout: (handle: unknown) => {
+        if (typeof handle !== "number") return;
+        timers.clearTimeout(handle);
+      },
     });
 
     client.start();

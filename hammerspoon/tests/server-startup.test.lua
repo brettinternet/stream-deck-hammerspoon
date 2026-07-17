@@ -95,22 +95,26 @@ end
 
 local function httpFor(failure)
   local http = { stopCalls = 0 }
-  http.setInterface = function(self)
+  http.setInterface = function(self, interface)
     if failure == "interface" then
       error("interface failure")
     end
+    self.interface = interface
     self.interfaceConfigured = true
   end
-  http.setPort = function(self)
+  http.setPort = function(self, port)
     if failure == "port" then
       error("port failure")
     end
+    self.port = port
     self.portConfigured = true
   end
-  http.websocket = function(self)
+  http.websocket = function(self, path, callback)
     if failure == "websocket" then
       error("websocket failure")
     end
+    self.websocketPath = path
+    self.websocketCallback = callback
     self.websocketConfigured = true
   end
   http.maxBodySize = function(self, size)
@@ -234,6 +238,37 @@ test("cleans up after an HTTP start failure", function()
       end, "server startup failed")
     end)
     assertEqual(http.stopCalls, 1, "start failure should stop HTTP server")
+  end)
+end)
+
+test("wires HTTP startup and supports idempotent stop and restart", function()
+  withTokenFile(function(path)
+    local http = httpFor(nil)
+    local server = newServer()
+    withHs(hsWithHttp(http), function()
+      assertEqual(server:start({ port = 17321, tokenPath = path }), server)
+      assertEqual(http.interface, "localhost")
+      assertEqual(http.port, 17321)
+      assertEqual(http.websocketPath, "/streamdeck")
+      assertTrue(type(http.websocketCallback) == "function", "websocket callback must be registered")
+      assertEqual(http.bodySize, 1024, "HTTP body limit must match protocol")
+      assertEqual(http.startCalls, 1)
+      assertTrue(server.started)
+    end)
+
+    server:stop()
+    assertTrue(not server.started, "stop must clear started state")
+    assertEqual(http.stopCalls, 1)
+    server:stop()
+    assertEqual(http.stopCalls, 1, "stop must be idempotent")
+
+    withHs(hsWithHttp(http), function()
+      server:start({ port = 17322, tokenPath = path })
+    end)
+    assertEqual(http.port, 17322)
+    assertEqual(http.startCalls, 2, "restart must start HTTP again")
+    server:stop()
+    assertEqual(http.stopCalls, 2, "restart cleanup must stop HTTP")
   end)
 end)
 

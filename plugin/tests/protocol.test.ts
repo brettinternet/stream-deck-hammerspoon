@@ -202,6 +202,111 @@ describe("versioned settings schema compatibility", () => {
     ).toBeDefined();
   });
 
+  test("requires settingsSchema when settingsSchemaVersion is 1", () => {
+    expect(() => parseServerMessage(actionMessage({ settingsSchemaVersion: 1 }))).toThrow(/settingsSchema/);
+  });
+
+  test("accepts boolean fields without kind-specific constraints", () => {
+    expect(
+      parseServerMessage(
+        actionMessage({
+          settingsSchemaVersion: 1,
+          settingsSchema: [{ type: "boolean", key: "enabled", label: "Enabled", required: true, default: false }],
+        }),
+      ),
+    ).toBeDefined();
+  });
+
+  test("rejects text bounds and defaults outside lower or upper limits", () => {
+    expect(() =>
+      parseServerMessage(
+        actionMessage({
+          settingsSchemaVersion: 1,
+          settingsSchema: [{ type: "text", key: "x", minLength: 4, maxLength: 3 }],
+        }),
+      ),
+    ).toThrow(
+      'Invalid server message: settingsSchema action 0 field 0: minLength must not exceed maxLength.',
+    );
+
+    expect(() =>
+      parseServerMessage(
+        actionMessage({
+          settingsSchemaVersion: 1,
+          settingsSchema: [{ type: "text", key: "x", default: "a", minLength: 2 }],
+        }),
+      ),
+    ).toThrow(
+      'Invalid server message: settingsSchema action 0 field 0: default is outside the text length bounds.',
+    );
+
+    expect(() =>
+      parseServerMessage(
+        actionMessage({
+          settingsSchemaVersion: 1,
+          settingsSchema: [{ type: "text", key: "x", default: "abcd", maxLength: 3 }],
+        }),
+      ),
+    ).toThrow(
+      'Invalid server message: settingsSchema action 0 field 0: default is outside the text length bounds.',
+    );
+  });
+
+  test("rejects number defaults outside lower or upper limits", () => {
+    expect(() =>
+      parseServerMessage(
+        actionMessage({
+          settingsSchemaVersion: 1,
+          settingsSchema: [{ type: "number", key: "x", default: 1, min: 2 }],
+        }),
+      ),
+    ).toThrow(
+      'Invalid server message: settingsSchema action 0 field 0: default is outside the number bounds.',
+    );
+
+    expect(() =>
+      parseServerMessage(
+        actionMessage({
+          settingsSchemaVersion: 1,
+          settingsSchema: [{ type: "number", key: "x", default: 4, max: 3 }],
+        }),
+      ),
+    ).toThrow(
+      'Invalid server message: settingsSchema action 0 field 0: default is outside the number bounds.',
+    );
+  });
+
+  test("rejects duplicate select option values", () => {
+    expect(() =>
+      parseServerMessage(
+        actionMessage({
+          settingsSchemaVersion: 1,
+          settingsSchema: [
+            {
+              type: "select",
+              key: "x",
+              options: [
+                { value: "same", label: "First" },
+                { value: "same", label: "Second" },
+              ],
+            },
+          ],
+        }),
+      ),
+    ).toThrow(
+      'Invalid server message: settingsSchema action 0 field 0: duplicate select option "same".',
+    );
+  });
+
+  test("rejects duplicate object keys nested in arrays", () => {
+    const duplicateKeys = `{"protocolVersion":1,"type":"actions","requestId":"settings","actions":[{"actionId":"com.example.settings","name":"Settings","settingsSchema":[{"nested":{"value":1}},[{"arrayKey":true,"arrayK\\u0065y":false}]]}]}`;
+
+    expect(() => parseServerMessage(duplicateKeys)).toThrow(
+      "Invalid server message: duplicate object fields are not allowed.",
+    );
+  });
+
+
   test("rejects invalid explicit schemas with deterministic errors", () => {
     const invalid = [
       { settingsSchemaVersion: 1, settingsSchema: [{ type: "text", key: "x", unsupported: true }] },

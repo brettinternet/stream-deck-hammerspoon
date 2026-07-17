@@ -390,4 +390,107 @@ describe.serial("property inspector", () => {
       environment.restore();
     }
   });
+  test("renders connected actions with version 1 settings schema metadata", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(
+        28196,
+        "context-01",
+        "register",
+        "",
+        JSON.stringify({ context: "context-01", payload: { settings: {} } }),
+      );
+      const socket = FakeSocket.instances[0]!;
+      socket.open();
+      socket.message(
+        bridgeState("connected", [
+          action("schema-action", "Schema action", {
+            settingsSchema: [{ type: "string", key: "label" }],
+            settingsSchemaVersion: 1,
+          }),
+        ]),
+      );
+
+      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.actionSelect.disabled).toBe(false);
+      expect(environment.document.actionSelect.children).toEqual([
+        { value: "", textContent: "No action selected", disabled: false },
+        { value: "schema-action", textContent: "Schema action", disabled: false },
+      ]);
+    } finally {
+      environment.restore();
+    }
+  });
+
+  test("ignores supported but unsupported schema versions while retaining valid actions", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(28196, "context-01", "register", "", "{}");
+      const socket = FakeSocket.instances[0]!;
+      socket.open();
+      socket.message(
+        bridgeState("connected", [
+          action("future-two", "Future two", { settingsSchemaVersion: 2 }),
+          action("current", "Current action", { settingsSchemaVersion: 1 }),
+          action("future-sixteen", "Future sixteen", { settingsSchemaVersion: 16 }),
+        ]),
+      );
+
+      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.actionSelect.disabled).toBe(false);
+      expect(environment.document.actionSelect.children).toEqual([
+        { value: "", textContent: "No action selected", disabled: false },
+        { value: "current", textContent: "Current action", disabled: false },
+      ]);
+    } finally {
+      environment.restore();
+    }
+  });
+
+  test("rejects invalid schema versions without changing the connected rendering", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(28196, "context-01", "register", "", "{}");
+      const socket = FakeSocket.instances[0]!;
+      socket.open();
+      socket.message(bridgeState("connected", [action("known", "Known action")]));
+
+      const expectedOptions = [
+        { value: "", textContent: "No action selected", disabled: false },
+        { value: "known", textContent: "Known action", disabled: false },
+      ];
+      const invalidVersions: unknown[] = [0, 17, 1.5, "1"];
+      for (const settingsSchemaVersion of invalidVersions) {
+        socket.message(
+          bridgeState("connected", [
+            action("replacement", "Replacement", { settingsSchemaVersion }),
+            action("known", "Known action"),
+          ]),
+        );
+        expect(environment.document.connectionStatus.textContent).toBe("Connected");
+        expect(environment.document.actionSelect.disabled).toBe(false);
+        expect(environment.document.actionSelect.children).toEqual(expectedOptions);
+      }
+    } finally {
+      environment.restore();
+    }
+  });
+
+  test("renders connected state with no actions as a disabled no-actions option", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(28196, "context-01", "register", "", "{}");
+      const socket = FakeSocket.instances[0]!;
+      socket.open();
+      socket.message(bridgeState("connected", []));
+
+      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.actionSelect.disabled).toBe(true);
+      expect(environment.document.actionSelect.children).toEqual([
+        { value: "", textContent: "No actions available", disabled: false },
+      ]);
+    } finally {
+      environment.restore();
+    }
+  });
 });

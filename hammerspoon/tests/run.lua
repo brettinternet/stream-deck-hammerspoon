@@ -198,6 +198,16 @@ local function withTokenPath(callback)
     error(err, 0)
   end
 end
+local function withJson(json, callback)
+  local previous = _G.hs.json
+  _G.hs.json = json
+  local ok, err = xpcall(callback, debug.traceback)
+  _G.hs.json = previous
+  if not ok then
+    error(err, 0)
+  end
+end
+
 
 local function test(name, callback)
   local ok, err = xpcall(callback, debug.traceback)
@@ -347,6 +357,76 @@ test("versioned schema bounds use UTF-8 characters", function()
     appearance = callback,
     press = callback,
   }), "invalid UTF-8 must be rejected")
+end)
+
+test("protocol codec rejects defensive frame and JSON failures", function()
+  local originalJson = _G.hs.json
+  local validMessage = message("helloAck", { sessionId = "session" })
+
+  withJson({ decode = function()
+    error("decoder must not run for invalid frames")
+  end }, function()
+    local value, code = Protocol.decode(42)
+    assertEqual(value, nil)
+    assertEqual(code, "MALFORMED_MESSAGE")
+    value, code = Protocol.decode(string.rep("x", Protocol.MAX_FRAME_BYTES + 1))
+    assertEqual(value, nil)
+    assertEqual(code, "MALFORMED_MESSAGE")
+  end)
+
+  withJson({}, function()
+    local value, code = Protocol.decode("frame")
+    assertEqual(value, nil)
+    assertEqual(code, "INTERNAL")
+  end)
+
+  withJson({ decode = function()
+    error("decoder failure")
+  end }, function()
+    local value, code = Protocol.decode("frame")
+    assertEqual(value, nil)
+    assertEqual(code, "MALFORMED_MESSAGE")
+  end)
+
+  withJson({ decode = function()
+    return nil
+  end }, function()
+    local value, code = Protocol.decode("frame")
+    assertEqual(value, nil)
+    assertEqual(code, "MALFORMED_MESSAGE")
+  end)
+
+  withJson({}, function()
+    local value, code = Protocol.encode(validMessage)
+    assertEqual(value, nil)
+    assertEqual(code, "INTERNAL")
+  end)
+
+  withJson({ encode = function()
+    error("encoder failure")
+  end }, function()
+    local value, code = Protocol.encode(validMessage)
+    assertEqual(value, nil)
+    assertEqual(code, "INTERNAL")
+  end)
+
+  withJson({ encode = function()
+    return {}
+  end }, function()
+    local value, code = Protocol.encode(validMessage)
+    assertEqual(value, nil)
+    assertEqual(code, "INTERNAL")
+  end)
+
+  withJson({ encode = function()
+    return string.rep("x", Protocol.MAX_FRAME_BYTES + 1)
+  end }, function()
+    local value, code = Protocol.encode(validMessage)
+    assertEqual(value, nil)
+    assertEqual(code, "MALFORMED_MESSAGE")
+  end)
+
+  assertEqual(_G.hs.json, originalJson, "fake JSON module must be restored")
 end)
 
 test("protocol validation and authentication failures are explicit", function()
@@ -866,6 +946,8 @@ test("reconnect resets authentication and instance state", function()
       actionId = "com.test.reconnect",
     })))
     server:stop()
+    assertEqual(disappeared, 1, "restarting must not re-fire disappear callbacks")
+    assertTrue(next(server.instances) == nil, "reconnect teardown must leave no instances")
   end)
 end)
 
