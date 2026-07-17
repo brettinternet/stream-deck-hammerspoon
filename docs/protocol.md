@@ -397,7 +397,7 @@ v1 has no negotiation: the `hello` version is an admission check, not an offer, 
 3. reject an empty intersection with a safe `VERSION_MISMATCH`; and
 4. complete before either peer sends major-specific application messages.
 
-No implementation may send `protocolVersion > 1` until that negotiation contract, both validators, and its fixtures exist. The support policy is current major plus the immediately previous major: v1 is the initial exception and supports only v1; a future v2 release must document whether v1 remains in the window, and a future major may retire the oldest version only with a migration guide and an announced support change. A peer must never advertise a version it cannot validate and execute end to end.
+No implementation may send `protocolVersion > 1` until that negotiation contract, both validators, and its fixtures exist. The default support policy is the current major plus the immediately previous major: v1 is the initial exception and supports only v1; a future v2 release supports v2 and v1 during the transition. A later major may retire the oldest version only through an explicit announced exception with a migration guide and support-change date. A peer must never advertise a version it cannot validate and execute end to end.
 
 ### Deprecation and conformance fixtures
 
