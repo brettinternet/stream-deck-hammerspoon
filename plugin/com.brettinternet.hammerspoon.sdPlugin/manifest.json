@@ -41,6 +41,7 @@
   ],
   "Author": "Brett",
   "Category": "Hammerspoon",
+  "CategoryIcon": "imgs/category",
   "CodePath": "bin/plugin.js",
   "Description": "Control Hammerspoon actions from Stream Deck.",
   "Icon": "imgs/plugin",

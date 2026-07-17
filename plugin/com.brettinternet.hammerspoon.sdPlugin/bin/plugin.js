@@ -19579,6 +19579,7 @@ function cloneJsonValue(value) {
     }
     return value;
 }
+const HAMMERSPOON_ACTION_UUID = "com.brettinternet.hammerspoon.action";
 function escapeXml(value) {
     return value.replace(/[&<>"']/g, (character) => ({
         "&": "&amp;",
@@ -19708,6 +19709,7 @@ function isRequestStateMessage(value) {
 /** Bridges the official generic keypad action to one shared Hammerspoon connection. */
 class HammerspoonAction extends SingletonAction {
     bridge;
+    manifestId = HAMMERSPOON_ACTION_UUID;
     instances = new Map();
     synchronized = new Set();
     renderQueues = new Map();

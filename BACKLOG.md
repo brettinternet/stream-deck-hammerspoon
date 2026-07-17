@@ -185,14 +185,20 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 ## Phase 5: Developer ecosystem
 
 ### ECO-001 — Lua helper components
-- Status: ready
+- Status: done
 - Depends on: CUS-004, CUS-005
 - Acceptance: Small composable helpers reduce common action boilerplate without hiding lifecycle or globalizing instance state.
+- Commits: b9c232e, 9f0ffe8
+- Verification: `mise exec -- lua hammerspoon/tests/run.lua` (46 pass); Lua syntax/load check; `git diff --check`; independent verifier PASS on all acceptance criteria for final HEAD `9f0ffe8` (parent `b9c232e`), including stale same-ID lifecycle isolation; focused Lua smoke PASS.
+- Outcome: Added `streamdeck.helpers.perInstanceState(initializer)` with closure-scoped, context-owned state and explicit appear/disappear callbacks, plus `refreshAfter(callback)` for successful callback refreshes with return/error preservation. The multi-instance example and Lua API docs demonstrate the helpers without hiding bridge lifecycle or globalizing instance state. Stale callbacks cannot read, write, or remove a replacement lifecycle reusing an instance ID.
 
 ### ECO-002 — Example action library
-- Status: ready
+- Status: done
 - Depends on: ECO-001
 - Acceptance: Tested examples cover common Hammerspoon watchers, application state, audio, and multi-instance patterns.
+- Commits: a08346a, 28e1e0a, 1c778f0, 3aecf84, 1ae73fc, a034901, 7402685, fcba1af
+- Verification: `bun run lua:check`; `mise exec -- lua hammerspoon/tests/run.lua` (46 pass, including 19 example cases); independent verifier PASS on all four acceptance dimensions and hardware-free/documentation criteria.
+- Outcome: The documented 15-example library covers application watchers and frontmost state, input-audio mute, and independent multi-instance state with fake-Hammerspoon tests. The microphone and meeting-mode examples use the input-specific mute APIs and reject failed operations without refreshing.
 
 ### ECO-003 — Packaging and installation
 - Status: done

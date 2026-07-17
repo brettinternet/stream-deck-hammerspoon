@@ -5,7 +5,7 @@ import type {
   BridgeClient,
   BridgeProtocolError,
 } from "../src/bridge";
-import type { HammerspoonActionSettings } from "../src/actions/hammerspoon-action";
+import { HAMMERSPOON_ACTION_UUID, type HammerspoonActionSettings } from "../src/actions/hammerspoon-action";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -233,6 +233,11 @@ class FeedbackTimers {
 }
 
 describe("HammerspoonAction", () => {
+  test("uses the manifest action UUID required by the Stream Deck SDK", () => {
+    const action = makeAction(new FakeBridge());
+
+    expect(action.manifestId).toBe(HAMMERSPOON_ACTION_UUID);
+  });
   test("subscribe is idempotent and listens for status and actions", async () => {
     propertyInspectorMessages.length = 0;
     const bridge = new FakeBridge();

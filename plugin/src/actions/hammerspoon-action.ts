@@ -279,6 +279,7 @@ type HammerspoonActionOptions = {
 
 /** Bridges the official generic keypad action to one shared Hammerspoon connection. */
 export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings> {
+  public override readonly manifestId = HAMMERSPOON_ACTION_UUID;
   private readonly instances = new Map<string, TrackedInstance>();
   private readonly synchronized = new Set<string>();
   private readonly renderQueues = new Map<string, Promise<void>>();
