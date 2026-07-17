@@ -101,9 +101,12 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: The inspector renders version 1 text, number, boolean, and select controls with defaults and native constraints, preserves per-instance and opaque settings, rejects invalid edits with clear status, and reports unsupported schemas without editable controls. HammerspoonAction forwards complete JSON settings through appearance, settings updates, and keyDown.
 
 ### CUS-003 — Additional presentation fields
-- Status: ready
+- Status: done
 - Depends on: CUS-001, VSL-005
 - Acceptance: Foreground/background colors, progress, and badge fields are versioned, validated, rendered, and device-safe.
+- Commits: 2be9819d47829f48ab0b15c0c654a184670dcb0a, c83692af9a6767fb1b607de84adef8c0ed88755a, c4ce5ce9a7db282b40b7b16336adfeb24823b69a, 51ae1d7eb3496e7c61dc8451eee68d9d25927050, 9c0642705ba32e3728d3a4327cefbd2b3499212c
+- Verification: 67 plugin tests; 37 Lua bridge tests; 10 Lua startup tests; TypeScript and Lua checks; lint; build; generated JavaScript syntax checks; Stream Deck manifest validation; independent verifier PASS on all 5 criteria.
+- Outcome: Versioned appearanceVersion 1 adds bounded foreground/background colors, progress, and UTF-8 badges across the canonical schema, TypeScript/Ajv, Lua validation, and plugin rendering. The plugin emits escaped SVG decoration through supported setImage calls, clears stale decoration safely, serializes per-instance renders across status/reconnect races, and retains the previous complete appearance when clearing fails. Legacy title/state and offline fallbacks remain supported.
 
 ### CUS-004 — Success and error APIs
 - Status: ready
