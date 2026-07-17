@@ -17984,8 +17984,8 @@ function settingsSchemaError(actionIndex, fieldIndex, message) {
 }
 function stringLength(value) {
     let length = 0;
-    for (const _character of value) {
-        length += 1;
+    for (const character of value) {
+        length += character.length > 0 ? 1 : 0;
     }
     return length;
 }

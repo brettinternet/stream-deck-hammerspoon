@@ -328,8 +328,8 @@ function settingsSchemaError(actionIndex: number, fieldIndex: number, message: s
 
 function stringLength(value: string): number {
   let length = 0;
-  for (const _character of value) {
-    length += 1;
+  for (const character of value) {
+    length += character.length > 0 ? 1 : 0;
   }
   return length;
 }
