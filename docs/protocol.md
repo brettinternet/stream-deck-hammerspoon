@@ -61,7 +61,7 @@ There are exactly sixteen v1 message types:
 | Lua → Plugin | `appearance` | appearance response | identifies `instanceId`; no separate request ID |
 | Lua → Plugin | `feedback` | transient success/error feedback | identifies `instanceId` and `actionId` |
 | Lua → Plugin | `error` | asynchronous error | optional `requestId` and/or `instanceId` |
-| No other message type is part of v1. In particular, there is no wire-level settings-change, ping, pong, or plugin-to-Lua error message.
+No other message type is part of v1. In particular, there is no wire-level settings-change, ping, pong, or plugin-to-Lua error message.
 
 The state is per WebSocket connection, and the active session ID is per accepted `hello`:
 

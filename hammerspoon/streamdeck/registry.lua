@@ -293,10 +293,10 @@ local function validateDefinition(definition)
       error("Stream Deck action longPressThresholdMs must be an integer from 100 through 10000", 3)
     end
   end
-  for _, field in ipairs({ "appear", "disappear", "release", "push", "rotate" }) do
   if definition.touchTap ~= nil and type(definition.touchTap) ~= "function" then
     error("Stream Deck action touchTap must be a function", 3)
   end
+  for _, field in ipairs({ "appear", "disappear", "release", "push", "rotate" }) do
     if definition[field] ~= nil and type(definition[field]) ~= "function" then
       error("Stream Deck action " .. field .. " must be a function", 3)
     end
