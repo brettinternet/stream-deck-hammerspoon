@@ -629,6 +629,54 @@ describe("BridgeClient instance lifecycle", () => {
       }),
     ]);
   });
+  test("ignores stale disappearance after an instance action replacement", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets);
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+
+    client.upsertInstance({
+      instanceId: "reused-instance",
+      actionId: "com.example.action",
+      settings: { actionId: "com.example.action" },
+    });
+    client.upsertInstance({
+      instanceId: "reused-instance",
+      actionId: "com.example.replaced",
+      settings: { actionId: "com.example.replaced" },
+    });
+    client.removeInstance("reused-instance", "com.example.action");
+    client.upsertInstance({
+      instanceId: "reused-instance",
+      actionId: "com.example.action",
+      settings: { actionId: "com.example.action" },
+    });
+
+    expect(frames(sockets[0]).filter((frame) => ["instanceAppeared", "instanceDisappeared"].includes(frame.type as string))).toEqual([
+      expect.objectContaining({
+        type: "instanceAppeared",
+        instanceId: "reused-instance",
+        actionId: "com.example.action",
+      }),
+      expect.objectContaining({
+        type: "instanceDisappeared",
+        instanceId: "reused-instance",
+        actionId: "com.example.action",
+      }),
+      expect.objectContaining({
+        type: "instanceDisappeared",
+        instanceId: "reused-instance",
+        actionId: "com.example.replaced",
+      }),
+      expect.objectContaining({
+        type: "instanceAppeared",
+        instanceId: "reused-instance",
+        actionId: "com.example.action",
+      }),
+    ]);
+  });
 
   test("correlates feedback to visible instances and isolates listener failures", async () => {
     const sockets: FakeSocket[] = [];

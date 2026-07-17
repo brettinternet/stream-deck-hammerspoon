@@ -258,6 +258,7 @@ export class BridgeClient extends EventEmitter {
   removeInstance(instanceId: string, actionId?: string): void {
     if (!isNonEmptyString(instanceId)) return;
     const snapshot = this.instances.get(instanceId);
+    if (snapshot && isNonEmptyString(actionId) && snapshot.actionId !== actionId) return;
     this.instances.delete(instanceId);
     if (!this.authenticated) return;
     const effectiveActionId = isNonEmptyString(actionId) ? actionId : snapshot?.actionId;
