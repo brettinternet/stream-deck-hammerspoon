@@ -114,6 +114,7 @@ The first slice is one complete path, not a collection of disconnected scaffolds
 8. Stop or reload Hammerspoon, observe the plugin's disconnected title, reconnect, authenticate again, and synchronize all visible instances and their appearances.
 
 The v1 appearance contract requires `title` and `state` and optionally accepts `appearanceVersion: 1` colors, progress, badge, and a closed icon representation. Semantic bundled slugs resolve to the shipped 72×72 plugin asset, with unknown slugs using that same safe fallback; custom PNG/SVG data is canonical padded base64 and strictly bounded/validated before SDK rendering. Invalid input falls back to title/state and the shipped or manifest image.
+The plugin uses the SDK's 72×72 key profile for keypad actions. For a recognized encoder metadata profile, title-only LCD feedback uses built-in `$A1`; decorated feedback uses `$A0` with a deterministic 200×100 per-encoder full-canvas image. Missing, malformed, unknown, or controller-mismatched metadata keeps the safe key or `$A1` title-only fallback.
 
 ## Lifecycle and reconnect
 

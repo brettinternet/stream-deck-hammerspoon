@@ -19509,6 +19509,39 @@ const DEVICE_TYPE_NAMES = {
     12: "galleon-100-sd",
     13: "stream-deck-plus-xl",
 };
+const DEFAULT_RENDERING_PROFILE = { keyImageSize: 72, encoderLayout: "$A1" };
+const SUPPORTED_RENDERING_PROFILES = {
+    "keypad:stream-deck:5x3": true,
+    "keypad:stream-deck-mini:3x2": true,
+    "keypad:stream-deck-xl:8x4": true,
+    "keypad:stream-deck-pedal:3x1": true,
+    "keypad:stream-deck-plus:4x2": true,
+    "keypad:stream-deck-neo:4x2": true,
+    "keypad:stream-deck-studio:16x2": true,
+    "keypad:galleon-100-sd:3x4": true,
+    "keypad:stream-deck-plus-xl:9x4": true,
+    "encoder:stream-deck-plus:4x2": true,
+    "encoder:stream-deck-studio:16x2": true,
+    "encoder:galleon-100-sd:3x4": true,
+    "encoder:stream-deck-plus-xl:9x4": true,
+};
+function selectRenderingProfile(metadata) {
+    if (metadata === undefined) {
+        return DEFAULT_RENDERING_PROFILE;
+    }
+    const sanitized = sanitizeDeviceMetadata(metadata);
+    if (sanitized === undefined) {
+        return undefined;
+    }
+    const { controllerType, device } = sanitized;
+    const key = `${controllerType}:${device.type}:${device.size.columns}x${device.size.rows}`;
+    if (!SUPPORTED_RENDERING_PROFILES[key]) {
+        return undefined;
+    }
+    return controllerType === "encoder"
+        ? { keyImageSize: 72, encoderLayout: "$A1", encoderDecoratedLayout: "$A0" }
+        : { keyImageSize: 72 };
+}
 function extractDeviceMetadata(action) {
     try {
         const context = action;
@@ -19556,7 +19589,7 @@ function escapeXml(value) {
     })[character] ?? character);
 }
 const BUNDLED_ICON_PATH = "imgs/key.svg";
-function appearanceImage(appearance) {
+function appearanceImage(appearance, keyImageSize = 72) {
     const icon = appearance.icon;
     const hasDecoration = appearance.foregroundColor !== undefined
         || appearance.backgroundColor !== undefined
@@ -19614,8 +19647,8 @@ function appearanceImage(appearance) {
         }
     }
     const iconMarkup = icon?.kind === "bundled"
-        ? `<image href="${BUNDLED_ICON_PATH}" x="0" y="0" width="72" height="72"/>`
-        : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="0" y="0" width="72" height="72"/>`;
+        ? `<image href="${BUNDLED_ICON_PATH}" x="0" y="0" width="${keyImageSize}" height="${keyImageSize}"/>`
+        : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="0" y="0" width="${keyImageSize}" height="${keyImageSize}"/>`;
     const progressBar = progress === undefined
         ? ""
         : `<rect x="4" y="64" width="${Math.round(progress * 64)}" height="4" fill="${foreground}"/>`;
@@ -19625,7 +19658,36 @@ function appearanceImage(appearance) {
     const badgeText = badge === undefined
         ? ""
         : `<text x="68" y="14" text-anchor="end" fill="${foreground}">${escapeXml(badge)}</text>`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="${background}"/>${iconMarkup}${foregroundBorder}${progressBar}${badgeText}</svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${keyImageSize}" height="${keyImageSize}" viewBox="0 0 ${keyImageSize} ${keyImageSize}"><rect width="${keyImageSize}" height="${keyImageSize}" fill="${background}"/>${iconMarkup}${foregroundBorder}${progressBar}${badgeText}</svg>`;
+    try {
+        return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    }
+    catch {
+        return undefined;
+    }
+}
+function dialAppearanceImage(appearance) {
+    const keyImage = appearanceImage(appearance);
+    if (keyImage === undefined) {
+        return undefined;
+    }
+    const icon = appearance.icon;
+    const customIconImage = icon?.kind === "custom" ? safeAppearanceIconImage(icon) : undefined;
+    const iconMarkup = icon?.kind === "bundled"
+        ? `<image href="${BUNDLED_ICON_PATH}" x="16" y="40" width="48" height="48"/>`
+        : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="16" y="40" width="48" height="48"/>`;
+    const foreground = appearance.foregroundColor ?? "#FFFFFF";
+    const background = appearance.backgroundColor ?? "#000000";
+    const progressBar = appearance.progress === undefined
+        ? ""
+        : `<rect x="16" y="88" width="${Math.round(168 * appearance.progress)}" height="4" fill="${foreground}"/>`;
+    const foregroundBorder = appearance.foregroundColor === undefined
+        ? ""
+        : `<rect x="2" y="2" width="196" height="96" fill="none" stroke="${foreground}" stroke-width="4"/>`;
+    const badge = appearance.badge === undefined
+        ? ""
+        : `<text x="184" y="16" text-anchor="end" fill="${foreground}">${escapeXml(appearance.badge)}</text>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100"><rect width="200" height="100" fill="${background}"/>${iconMarkup}${foregroundBorder}${progressBar}${badge}</svg>`;
     try {
         return `data:image/svg+xml,${encodeURIComponent(svg)}`;
     }
@@ -19699,6 +19761,7 @@ class HammerspoonAction extends SingletonAction {
         const instanceId = ev.action.id;
         const settings = this.settingsFrom(ev.payload.settings);
         const metadata = extractDeviceMetadata(ev.action);
+        const renderingProfile = selectRenderingProfile(metadata);
         const previous = this.instances.get(instanceId);
         if (previous) {
             this.cancelFeedbackTimer(previous);
@@ -19706,6 +19769,8 @@ class HammerspoonAction extends SingletonAction {
         this.instances.set(instanceId, {
             action: ev.action,
             actionId: settings.actionId,
+            metadata,
+            renderingProfile,
             settings,
             imageApplied: previous?.imageApplied ?? false,
         });
@@ -19720,7 +19785,11 @@ class HammerspoonAction extends SingletonAction {
             });
         }
         if (isDialAction(ev.action)) {
-            await this.setDialLayout(ev.action);
+            if (await this.setDialLayout(ev.action, renderingProfile)) {
+                const current = this.instances.get(instanceId);
+                if (current)
+                    current.encoderLayout = "$A1";
+            }
         }
     }
     async onWillDisappear(ev) {
@@ -19740,11 +19809,19 @@ class HammerspoonAction extends SingletonAction {
         const instanceId = ev.action.id;
         const settings = this.settingsFrom(ev.payload.settings);
         const metadata = extractDeviceMetadata(ev.action);
+        const renderingProfile = selectRenderingProfile(metadata);
         const previous = this.instances.get(instanceId);
         if (previous?.actionId && previous.actionId !== settings.actionId) {
             this.bridge.removeInstance(instanceId, previous.actionId);
         }
-        this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: previous?.imageApplied ?? false });
+        this.instances.set(instanceId, {
+            action: ev.action,
+            actionId: settings.actionId,
+            metadata,
+            renderingProfile,
+            settings,
+            imageApplied: previous?.imageApplied ?? false,
+        });
         this.synchronized.delete(instanceId);
         this.cancelFeedbackTimer(previous);
         await this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
@@ -19755,6 +19832,13 @@ class HammerspoonAction extends SingletonAction {
                 settings: settings,
                 metadata,
             });
+        }
+        if (isDialAction(ev.action)) {
+            if (await this.setDialLayout(ev.action, renderingProfile)) {
+                const current = this.instances.get(instanceId);
+                if (current)
+                    current.encoderLayout = "$A1";
+            }
         }
     }
     async onKeyDown(ev) {
@@ -19844,7 +19928,7 @@ class HammerspoonAction extends SingletonAction {
             if (instance.action.isKey() && !(await this.clearImage(instance))) {
                 return;
             }
-            await this.setActionTitle(instance.action, "Select action");
+            await this.setActionTitle(instance.action, "Select action", instance.renderingProfile);
             if (instance.action.isKey()) {
                 await this.setState(instance.action, 0);
             }
@@ -19854,13 +19938,13 @@ class HammerspoonAction extends SingletonAction {
             if (instance.action.isKey() && !(await this.clearImage(instance))) {
                 return;
             }
-            await this.setActionTitle(instance.action, "Hammerspoon\nOffline");
+            await this.setActionTitle(instance.action, "Hammerspoon\nOffline", instance.renderingProfile);
             if (instance.action.isKey()) {
                 await this.setState(instance.action, 0);
             }
             return;
         }
-        await this.setActionTitle(instance.action, "Hammerspoon");
+        await this.setActionTitle(instance.action, "Hammerspoon", instance.renderingProfile);
         if (instance.action.isKey()) {
             await this.setState(instance.action, 0);
         }
@@ -19895,12 +19979,14 @@ class HammerspoonAction extends SingletonAction {
             return;
         }
         if (isDialAction(instance.action)) {
+            if (!(await this.setDialTitle(instance.action, appearance.title, instance.renderingProfile, appearance))) {
+                return;
+            }
             instance.lastAppearance = appearance;
             this.synchronized.add(appearance.instanceId);
-            await this.setDialTitle(instance.action, appearance.title);
             return;
         }
-        const image = appearanceImage(appearance);
+        const image = appearanceImage(appearance, instance.renderingProfile?.keyImageSize ?? 72);
         if (appearance.icon !== undefined && image === undefined) {
             await this.alert(instance.action);
             return;
@@ -19910,7 +19996,7 @@ class HammerspoonAction extends SingletonAction {
         }
         instance.lastAppearance = appearance;
         this.synchronized.add(appearance.instanceId);
-        await this.setActionTitle(instance.action, appearance.title);
+        await this.setActionTitle(instance.action, appearance.title, instance.renderingProfile);
         await this.setState(instance.action, appearance.state);
     }
     async renderFeedback(feedback) {
@@ -19919,7 +20005,7 @@ class HammerspoonAction extends SingletonAction {
             return;
         }
         this.cancelFeedbackTimer(instance);
-        await this.setActionTitle(instance.action, feedback.message);
+        await this.setActionTitle(instance.action, feedback.message, instance.renderingProfile);
         try {
             if (feedback.kind === "success") {
                 if (instance.action.isKey()) {
@@ -19999,27 +20085,76 @@ class HammerspoonAction extends SingletonAction {
         }
         return false;
     }
-    async setActionTitle(action, title) {
+    async setActionTitle(action, title, renderingProfile) {
         if (isDialAction(action)) {
-            await this.setDialTitle(action, title);
-            return;
+            return this.setDialTitle(action, title, renderingProfile);
         }
         await this.setTitle(action, title);
+        return true;
     }
-    async setDialLayout(action) {
+    async setDialLayout(action, renderingProfile, layout = renderingProfile?.encoderLayout ?? "$A1") {
+        const instance = this.instances.get(action.id);
+        if (instance?.action === action && instance.encoderLayout === layout) {
+            return true;
+        }
         try {
-            await action.setFeedbackLayout("$A1");
+            await action.setFeedbackLayout(layout);
+            const current = this.instances.get(action.id);
+            if (current?.action === action) {
+                current.encoderLayout = layout;
+            }
+            return true;
         }
         catch {
             await this.alert(action);
+            return false;
         }
     }
-    async setDialTitle(action, title) {
+    async setDialTitle(action, title, renderingProfile, appearance) {
+        const hasDecoration = appearance !== undefined && (appearance.icon !== undefined
+            || appearance.foregroundColor !== undefined
+            || appearance.backgroundColor !== undefined
+            || appearance.progress !== undefined
+            || appearance.badge !== undefined);
+        const layout = hasDecoration && renderingProfile?.encoderDecoratedLayout !== undefined
+            ? renderingProfile.encoderDecoratedLayout
+            : renderingProfile?.encoderLayout ?? "$A1";
         try {
-            await action.setFeedback({ title });
+            if (hasDecoration && layout === "$A0") {
+                const image = dialAppearanceImage(appearance);
+                if (image === undefined) {
+                    await this.alert(action);
+                    return false;
+                }
+                if (!(await this.setDialLayout(action, renderingProfile, layout))) {
+                    await this.setDialTitle(action, title, { keyImageSize: 72, encoderLayout: "$A1" });
+                    return false;
+                }
+                try {
+                    await action.setFeedback({ "full-canvas": image, title });
+                    return true;
+                }
+                catch {
+                    await this.alert(action);
+                    await this.setDialTitle(action, title, { keyImageSize: 72, encoderLayout: "$A1" });
+                    return false;
+                }
+            }
+            if (!(await this.setDialLayout(action, renderingProfile, layout))) {
+                return false;
+            }
+            try {
+                await action.setFeedback({ title });
+                return true;
+            }
+            catch {
+                await this.alert(action);
+                return false;
+            }
         }
         catch {
             await this.alert(action);
+            return false;
         }
     }
     async setImage(action, image) {

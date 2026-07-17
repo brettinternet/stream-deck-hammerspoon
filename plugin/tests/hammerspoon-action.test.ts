@@ -30,7 +30,10 @@ class FakeAction {
   constructor(
     readonly id: string,
     private readonly key = true,
-  ) {}
+    context?: { controllerType?: unknown; device?: { type?: unknown; size?: { columns?: unknown; rows?: unknown } } },
+  ) {
+    Object.assign(this, context);
+  }
 
   isDial(): boolean {
     return !this.key;
@@ -432,6 +435,135 @@ describe("HammerspoonAction", () => {
     await flush();
     expect(dial.layouts).toEqual(["$A1"]);
     expect(dial.feedbacks).toContainEqual({ title: "LCD value" });
+  });
+
+
+  test("selects supported device rendering and falls back safely for unknown metadata", async () => {
+    const bridge = new FakeBridge();
+    bridge.status = "connected";
+    const adapter = makeAction(bridge);
+    adapter.subscribe();
+    const supported = new FakeAction("supported-encoder", false, {
+      controllerType: "Encoder",
+      device: { type: 7, size: { columns: 4, rows: 2 } },
+    });
+    const unknown = new FakeAction("unknown-encoder", false, {
+      controllerType: "Encoder",
+      device: { type: 99, size: { columns: 4, rows: 2 } },
+    });
+
+    await adapter.onWillAppear(appear(supported, { actionId: "action.supported" }));
+    await adapter.onWillAppear(appear(unknown, { actionId: "action.unknown" }));
+    expect(supported.layouts).toEqual(["$A1"]);
+    expect(unknown.layouts).toEqual(["$A1"]);
+    expect(bridge.upserts[0].metadata).toEqual({
+      controllerType: "encoder",
+      device: { type: "stream-deck-plus", size: { columns: 4, rows: 2 } },
+    });
+    expect(bridge.upserts[1].metadata).toEqual({
+      controllerType: "encoder",
+      device: { type: "unknown", size: { columns: 4, rows: 2 } },
+    });
+
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "supported-encoder",
+      actionId: "action.supported",
+      title: "Supported LCD",
+      state: 0,
+    });
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "unknown-encoder",
+      actionId: "action.unknown",
+      title: "Fallback LCD",
+      state: 0,
+    });
+    await flush();
+    expect(supported.feedbacks).toContainEqual({ title: "Supported LCD" });
+    expect(unknown.feedbacks).toContainEqual({ title: "Fallback LCD" });
+  });
+  test("renders decorated supported encoder appearances on the 200x100 LCD canvas", async () => {
+    const bridge = new FakeBridge();
+    bridge.status = "connected";
+    const adapter = makeAction(bridge);
+    adapter.subscribe();
+    const dial = new FakeAction("decorated-encoder", false, {
+      controllerType: "Encoder",
+      device: { type: 7, size: { columns: 4, rows: 2 } },
+    });
+
+    await adapter.onWillAppear(appear(dial, { actionId: "action.decorated" }));
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "decorated-encoder",
+      actionId: "action.decorated",
+      title: "Decorated LCD",
+      state: 1,
+      appearanceVersion: 1,
+      foregroundColor: "#FFFFFF",
+      backgroundColor: "#202020",
+      progress: 0.5,
+      badge: "ON",
+      icon: { kind: "bundled", name: "hammerspoon" },
+    });
+    await flush();
+
+    expect(dial.layouts).toEqual(["$A1", "$A0"]);
+    const decoratedFeedback = dial.feedbacks.at(-1);
+    expect(decoratedFeedback).toMatchObject({ title: "Decorated LCD" });
+    const canvas = decoratedFeedback?.["full-canvas"];
+    expect(typeof canvas).toBe("string");
+    expect(decodeURIComponent(canvas as string)).toContain(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">',
+    );
+    expect(decodeURIComponent(canvas as string)).toContain(
+      '<rect x="16" y="88" width="84" height="4" fill="#FFFFFF"/>',
+    );
+
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "decorated-encoder",
+      actionId: "action.decorated",
+      title: "Plain LCD",
+      state: 0,
+    });
+    await flush();
+    expect(dial.layouts).toEqual(["$A1", "$A0", "$A1"]);
+    expect(dial.feedbacks.at(-1)).toEqual({ title: "Plain LCD" });
+  });
+  test("renders supported keypad metadata with the 72x72 key profile", async () => {
+    const bridge = new FakeBridge();
+    bridge.status = "connected";
+    const adapter = makeAction(bridge);
+    adapter.subscribe();
+    const key = new FakeAction("supported-key", true, {
+      controllerType: "Keypad",
+      device: { type: 0, size: { columns: 5, rows: 3 } },
+    });
+
+    await adapter.onWillAppear(appear(key, { actionId: "action.key" }));
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "supported-key",
+      actionId: "action.key",
+      title: "Key",
+      state: 1,
+      appearanceVersion: 1,
+      backgroundColor: "#202020",
+    });
+    await flush();
+
+    const image = key.calls.images.at(-1);
+    expect(image).toStartWith("data:image/svg+xml,");
+    expect(decodeURIComponent(image!.slice("data:image/svg+xml,".length))).toContain(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72">',
+    );
   });
   test("preserves custom settings through appear, settings updates, and keyDown", async () => {
     const bridge = new FakeBridge();
