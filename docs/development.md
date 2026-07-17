@@ -168,7 +168,25 @@ Check that `~/.hammerspoon/streamdeck/` is a link or copy of the repository's `h
 
 ## Logs and diagnostics
 
-Use the official Stream Deck application/plugin logs and Hammerspoon Console for diagnostics. Safe protocol error codes/messages and connection state may be logged; shared tokens, hello payloads, and session IDs must never be logged. Capture timestamps, plugin version, protocol version, port, and the safe error code when reporting a problem, but redact token paths if they reveal sensitive environment details. The server is loopback-only, Bonjour is disabled, and `hs.httpserver` effectively permits one WebSocket client; a second client is not a supported development setup.
+Use the official Stream Deck application/plugin logs and Hammerspoon Console for diagnostics. `BridgeClient.diagnostics` is a local, redacted snapshot and the `diagnostics` event publishes the same shape whenever a new failure is observed:
+
+```json
+{
+  "version": 1,
+  "status": "disconnected",
+  "protocolVersion": 1,
+  "pluginVersion": "0.1.0",
+  "port": 17321,
+  "retryInMs": 250,
+  "latest": {
+    "area": "auth",
+    "code": "AUTH_FAILED",
+    "at": "2026-07-17T00:00:00.000Z"
+  }
+}
+```
+
+`area` identifies `auth`, `schema`, `reconnect`, `registry`, or `callback`. Auth/schema causes are retained over a generic disconnect, while reconnect diagnostics expose bounded retry delay. Plugin versions are restricted to a short safe character set, timestamps are UTC, and optional diagnostic log lines use the `bridge-status <JSON>` prefix, stay under 384 bytes, and suppress repeated area/code pairs. The snapshot and log line never contain token or hello payloads, session/correlation IDs, URLs or token paths, callback/malformed text, or stack traces. Safe protocol error codes/messages and connection state may be logged; shared tokens, hello payloads, and session IDs must never be logged. Capture timestamps, plugin version, protocol version, port, and the safe error code when reporting a problem, but redact token paths if they reveal sensitive environment details. The server is loopback-only, Bonjour is disabled, and `hs.httpserver` effectively permits one WebSocket client; a second client is not a supported development setup.
 
 ## Hardware-free development
 

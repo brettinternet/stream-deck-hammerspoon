@@ -824,3 +824,86 @@ describe("BridgeClient instance lifecycle", () => {
     expect(client.status).toBe("disconnected");
   });
 });
+describe("BridgeClient redacted diagnostics", () => {
+  test("publishes auth failures without token material", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets, new ManualTimers(), "");
+    client.start();
+    await flush();
+
+    expect(client.diagnostics.latest).toMatchObject({ area: "auth", code: "TOKEN_UNAVAILABLE" });
+    expect(JSON.stringify(client.diagnostics)).not.toContain("shared-token");
+    client.stop();
+  });
+
+  test("covers schema, registry, callback, and reconnect failures with safe output", async () => {
+    const sockets: FakeSocket[] = [];
+    const timers = new ManualTimers();
+    const { client } = makeClient(sockets, timers);
+    client.on("diagnostics", (value) => {
+      expect(JSON.stringify(value)).not.toContain("secret");
+    });
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+
+    sockets[0].receive("malformed-secret-frame");
+    expect(client.diagnostics.latest).toMatchObject({ area: "schema", code: "MALFORMED_MESSAGE" });
+    sockets[0].receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "error",
+      code: "UNKNOWN_ACTION",
+      message: "registry-secret",
+      instanceId: "instance-secret",
+    }));
+    expect(client.diagnostics.latest).toMatchObject({ area: "registry", code: "UNKNOWN_ACTION" });
+    sockets[0].receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "error",
+      code: "CALLBACK_FAILED",
+      message: "callback-secret",
+      instanceId: "instance-secret",
+    }));
+    expect(client.diagnostics.latest).toMatchObject({ area: "callback", code: "CALLBACK_FAILED" });
+
+    sockets[0].peerClose();
+    expect(client.diagnostics.latest).toMatchObject({ area: "reconnect", code: "RECONNECTING" });
+    expect(client.diagnostics.retryInMs).toBe(250);
+    expect(client.diagnostics.port).toBe(17321);
+    expect(client.diagnostics.protocolVersion).toBe(1);
+    expect(client.diagnostics.pluginVersion).toBe("1.0.0");
+    expect(JSON.stringify(client.diagnostics)).not.toMatch(/secret|session-|message|instanceId/);
+    client.stop();
+  });
+
+  test("bounds and suppresses repeated diagnostic log lines", async () => {
+    const sockets: FakeSocket[] = [];
+    const timers = new ManualTimers();
+    const logs: string[] = [];
+    const client = new BridgeClient({
+      pluginVersion: "plugin version/1.0.0",
+      createSocket: () => {
+        throw new Error("socket secret");
+      },
+      readToken: async () => "token secret",
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+      random: () => 0.5,
+      now: () => new Date("2026-07-17T00:00:00.000Z"),
+      logger: (line) => logs.push(line),
+    });
+    client.start();
+    await flush();
+    timers.runNext();
+    await flush();
+    expect(logs.every((line) => line.startsWith("bridge-status "))).toBe(true);
+    expect(logs.every((line) => JSON.parse(line.slice(14)).version === 1)).toBe(true);
+    expect(logs).toHaveLength(3);
+    expect(logs.every((line) => line.length <= 384)).toBe(true);
+    expect(logs.every((line) => !line.includes("secret"))).toBe(true);
+    expect(client.diagnostics.pluginVersion).toBe("pluginversion1.0.0");
+    client.stop();
+    expect(sockets).toEqual([]);
+  });
+});

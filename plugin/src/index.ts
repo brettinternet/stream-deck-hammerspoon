@@ -9,6 +9,7 @@ streamDeck.logger.info(`Starting Hammerspoon Stream Deck plugin v${PLUGIN_VERSIO
 const bridge = new BridgeClient({
   url: "ws://localhost:17321/streamdeck",
   pluginVersion: PLUGIN_VERSION,
+  logger: (line) => streamDeck.logger.info(line),
 });
 const hammerspoonAction = new HammerspoonAction(bridge);
 hammerspoonAction.subscribe();

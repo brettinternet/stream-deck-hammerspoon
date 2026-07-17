@@ -367,6 +367,8 @@ The v1 error code set is closed:
 
 For a malformed frame that cannot be parsed as JSON, Lua may be unable to attach correlation fields; when it can send a valid error envelope, it uses `MALFORMED_MESSAGE` with no correlation. The plugin applies the same safe rule to malformed Lua messages locally; no undocumented error type is emitted.
 
+The plugin's local `BridgeClient.diagnostics` snapshot and `diagnostics` event are not wire messages. They expose only bounded status metadata (`version`, connection `status`, `protocolVersion`, sanitized `pluginVersion`, loopback `port`, bounded `retryInMs`, and latest `area`/`code`/UTC timestamp); they never expose error text, payloads, URLs, tokens, paths, or session/correlation IDs.
+
 ## Ordering, acknowledgements, and correlation
 
 - The plugin sends `hello` first and waits for `helloAck.sessionId`; it stores that value only in memory and injects it into every subsequent plugin → Lua application message.

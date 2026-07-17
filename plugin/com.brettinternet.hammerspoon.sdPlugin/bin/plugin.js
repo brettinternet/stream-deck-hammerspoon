@@ -18964,15 +18964,57 @@ function frameToString(data) {
         return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("utf8");
     return String(data);
 }
-function safeError(error) {
-    if (error && typeof error === "object") {
-        const candidate = error;
-        return {
-            code: isNonEmptyString(candidate.code) ? candidate.code : "MALFORMED_MESSAGE",
-            message: isNonEmptyString(candidate.message) ? candidate.message : "Invalid protocol message.",
-        };
+const SAFE_PROTOCOL_MESSAGES = {
+    AUTH_REQUIRED: "Authentication is required.",
+    AUTH_FAILED: "Authentication failed.",
+    VERSION_MISMATCH: "Protocol version mismatch.",
+    MALFORMED_MESSAGE: "Malformed protocol message.",
+    UNKNOWN_TYPE: "Unknown protocol message type.",
+    INVALID_FIELD: "Invalid protocol field.",
+    INVALID_STATE: "Invalid protocol state.",
+    UNKNOWN_ACTION: "Unknown action.",
+    STALE_INSTANCE: "Stale instance.",
+    CALLBACK_FAILED: "Action callback failed.",
+    INTERNAL: "Internal server error.",
+};
+const MAX_DIAGNOSTIC_LINE = 384;
+function safeProtocolCode(value) {
+    return typeof value === "string" && Object.hasOwn(SAFE_PROTOCOL_MESSAGES, value)
+        ? value
+        : "MALFORMED_MESSAGE";
+}
+function diagnosticCategory(code, hasInstance = false) {
+    if (code === "AUTH_REQUIRED" || code === "AUTH_FAILED" || code === "TOKEN_UNAVAILABLE")
+        return "auth";
+    if (code === "UNKNOWN_ACTION" || code === "STALE_INSTANCE" || code === "INVALID_STATE")
+        return "registry";
+    if (code === "CALLBACK_FAILED" || (code === "INTERNAL" && hasInstance))
+        return "callback";
+    if (code === "SOCKET_FAILED" || code === "DISCONNECTED" || code === "RECONNECTING")
+        return "reconnect";
+    return "schema";
+}
+function sanitizePluginVersion(value) {
+    const sanitized = value.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 32);
+    return sanitized || "unknown";
+}
+function portFromUrl(value) {
+    try {
+        const parsed = new URL(value);
+        const port = Number(parsed.port || (parsed.protocol === "wss:" ? 443 : 80));
+        return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 17321;
     }
-    return { code: "MALFORMED_MESSAGE", message: "Invalid protocol message." };
+    catch {
+        return 17321;
+    }
+}
+function safeError(error) {
+    let candidateCode;
+    if (error !== null && typeof error === "object" && "code" in error) {
+        candidateCode = error.code;
+    }
+    const code = safeProtocolCode(candidateCode);
+    return { code, message: SAFE_PROTOCOL_MESSAGES[code] };
 }
 class BridgeClient extends EventEmitter$1 {
     url;
@@ -18986,6 +19028,10 @@ class BridgeClient extends EventEmitter$1 {
     scheduleTimeout;
     cancelTimeout;
     random;
+    now;
+    logger;
+    port;
+    safePluginVersion;
     socket;
     socketGeneration = 0;
     reconnectTimer;
@@ -18995,11 +19041,19 @@ class BridgeClient extends EventEmitter$1 {
     sessionId;
     nextRequestId = 0;
     pendingActions = new Set();
+    latestDiagnostic;
+    retryInMs;
+    loggedDiagnosticKeys = new Set();
+    preserveFailureCause = false;
     constructor(options) {
         super();
         this.url = options.url ?? DEFAULT_URL;
         this.tokenPath = options.tokenPath ?? DEFAULT_TOKEN_PATH;
         this.pluginVersion = options.pluginVersion;
+        this.safePluginVersion = sanitizePluginVersion(options.pluginVersion);
+        this.port = portFromUrl(this.url);
+        this.now = options.now ?? (() => new Date());
+        this.logger = options.logger ?? (() => { });
         this.createSocket = options.createSocket ?? ((url) => new WebSocket(url));
         this.readToken = options.readToken ?? ((tokenPath) => readFile(tokenPath, "utf8"));
         this.scheduleTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
@@ -19011,6 +19065,18 @@ class BridgeClient extends EventEmitter$1 {
     }
     get actions() {
         return this._actions.map(copyAction);
+    }
+    get diagnostics() {
+        const status = {
+            version: 1,
+            status: this._status,
+            protocolVersion: PROTOCOL_VERSION,
+            pluginVersion: this.safePluginVersion,
+            port: this.port,
+            ...(this.retryInMs === undefined ? {} : { retryInMs: this.retryInMs }),
+            ...(this.latestDiagnostic === undefined ? {} : { latest: { ...this.latestDiagnostic } }),
+        };
+        return status;
     }
     start() {
         if (this.started)
@@ -19183,6 +19249,8 @@ class BridgeClient extends EventEmitter$1 {
         if (!this.started)
             return;
         this.clearReconnectTimer();
+        this.preserveFailureCause = false;
+        this.retryInMs = undefined;
         this.authenticated = false;
         this.sessionId = undefined;
         this.setStatus("connecting");
@@ -19198,8 +19266,10 @@ class BridgeClient extends EventEmitter$1 {
                 throw new Error("Token unavailable.");
         }
         catch {
-            if (this.isCurrent(generation))
+            if (this.isCurrent(generation)) {
+                this.emitDiagnostic("auth", "TOKEN_UNAVAILABLE", undefined, true);
                 this.connectionFailed(generation);
+            }
             return;
         }
         if (!this.isCurrent(generation))
@@ -19209,6 +19279,7 @@ class BridgeClient extends EventEmitter$1 {
             socket = this.createSocket(this.url);
         }
         catch {
+            this.emitDiagnostic("reconnect", "SOCKET_FAILED");
             this.connectionFailed(generation);
             return;
         }
@@ -19252,14 +19323,18 @@ class BridgeClient extends EventEmitter$1 {
             message = parseServerMessage(frame);
         }
         catch (error) {
-            this.emitProtocolError(safeError(error));
+            const safe = safeError(error);
+            this.emitProtocolError(safe);
+            this.emitDiagnostic("schema", safeProtocolCode(safe.code), undefined, !this.authenticated);
             if (!this.authenticated)
                 this.closeCurrentSocket(generation);
             return;
         }
         if (message.type === "helloAck") {
             if (this.authenticated || this._status !== "authenticating") {
-                this.emitProtocolError({ code: "INVALID_STATE", message: "Unexpected authentication acknowledgement." });
+                const error = { code: "INVALID_STATE", message: SAFE_PROTOCOL_MESSAGES.INVALID_STATE };
+                this.emitProtocolError(error);
+                this.emitDiagnostic("auth", "INVALID_STATE", undefined, true);
                 return;
             }
             this.sessionId = message.sessionId;
@@ -19274,7 +19349,9 @@ class BridgeClient extends EventEmitter$1 {
                 this.handleRemoteError(message);
             }
             else {
-                this.emitProtocolError({ code: "AUTH_REQUIRED", message: "Authentication acknowledgement required." });
+                const error = { code: "AUTH_REQUIRED", message: SAFE_PROTOCOL_MESSAGES.AUTH_REQUIRED };
+                this.emitProtocolError(error);
+                this.emitDiagnostic("auth", "AUTH_REQUIRED", undefined, true);
                 this.closeCurrentSocket(generation);
             }
             return;
@@ -19296,7 +19373,9 @@ class BridgeClient extends EventEmitter$1 {
     }
     handleActions(message) {
         if (!this.pendingActions.delete(message.requestId)) {
-            this.emitProtocolError({ code: "INVALID_STATE", message: "Unexpected action registry response." });
+            const error = { code: "INVALID_STATE", message: SAFE_PROTOCOL_MESSAGES.INVALID_STATE };
+            this.emitProtocolError(error);
+            this.emitDiagnostic("registry", "INVALID_STATE");
             return;
         }
         this._actions = message.actions.map(copyAction);
@@ -19346,16 +19425,19 @@ class BridgeClient extends EventEmitter$1 {
         }
     }
     handleRemoteError(message) {
+        const code = safeProtocolCode(message.code);
         const error = {
-            code: message.code,
-            message: message.message,
+            code,
+            message: SAFE_PROTOCOL_MESSAGES[code],
             ...(message.requestId === undefined ? {} : { requestId: message.requestId }),
             ...(message.instanceId === undefined ? {} : { instanceId: message.instanceId }),
         };
         if (message.requestId)
             this.pendingActions.delete(message.requestId);
         this.emitProtocolError(error);
-        if (!this.authenticated && ["AUTH_REQUIRED", "AUTH_FAILED", "VERSION_MISMATCH"].includes(message.code)) {
+        const preserveCause = !this.authenticated && ["AUTH_REQUIRED", "AUTH_FAILED", "VERSION_MISMATCH"].includes(code);
+        this.emitDiagnostic(diagnosticCategory(code, message.instanceId !== undefined), code, undefined, preserveCause);
+        if (!this.authenticated && ["AUTH_REQUIRED", "AUTH_FAILED", "VERSION_MISMATCH"].includes(code)) {
             this.closeCurrentSocket(this.socketGeneration);
         }
     }
@@ -19406,6 +19488,7 @@ class BridgeClient extends EventEmitter$1 {
             return true;
         }
         catch {
+            this.emitDiagnostic("reconnect", "SOCKET_FAILED");
             this.connectionFailed(this.socketGeneration);
             return false;
         }
@@ -19418,8 +19501,10 @@ class BridgeClient extends EventEmitter$1 {
         this.authenticated = false;
         this.sessionId = undefined;
         this.pendingActions.clear();
-        this.socket = undefined;
         this.setStatus("disconnected");
+        this.socket = undefined;
+        if (!this.preserveFailureCause)
+            this.emitDiagnostic("reconnect", "DISCONNECTED");
         for (const [instanceId, snapshot] of this.instances) {
             if (snapshot.actionId) {
                 this.emit("appearance", {
@@ -19441,6 +19526,12 @@ class BridgeClient extends EventEmitter$1 {
         this.reconnectAttempt += 1;
         const jitter = 0.5 + Math.max(0, Math.min(1, this.random()));
         const delay = Math.min(MAX_RECONNECT_MS, Math.round(baseDelay * jitter));
+        if (this.preserveFailureCause) {
+            this.retryInMs = delay;
+        }
+        else {
+            this.emitDiagnostic("reconnect", "RECONNECTING", delay);
+        }
         this.reconnectTimer = this.scheduleTimeout(() => {
             this.reconnectTimer = undefined;
             this.connect();
@@ -19487,6 +19578,44 @@ class BridgeClient extends EventEmitter$1 {
             return;
         this._status = status;
         this.emit("status", status);
+    }
+    emitDiagnostic(area, code, retryInMs, preserveCause = false) {
+        if (preserveCause)
+            this.preserveFailureCause = true;
+        this.retryInMs = retryInMs === undefined
+            ? undefined
+            : Math.max(0, Math.min(MAX_RECONNECT_MS, Math.floor(retryInMs)));
+        let at = new Date(0).toISOString();
+        try {
+            const timestamp = this.now();
+            if (timestamp instanceof Date && Number.isFinite(timestamp.getTime()))
+                at = timestamp.toISOString();
+        }
+        catch {
+            // Keep a fixed safe UTC timestamp when the injected clock fails.
+        }
+        this.latestDiagnostic = { area, code, at };
+        const status = this.diagnostics;
+        const encoded = JSON.stringify(status);
+        const safeFallback = JSON.stringify({
+            version: 1,
+            status: status.status,
+            protocolVersion: status.protocolVersion,
+            pluginVersion: status.pluginVersion,
+            port: status.port,
+        });
+        const line = `bridge-status ${encoded.length + 14 <= MAX_DIAGNOSTIC_LINE ? encoded : safeFallback}`;
+        const key = `${area}:${code}`;
+        if (!this.loggedDiagnosticKeys.has(key)) {
+            this.loggedDiagnosticKeys.add(key);
+            try {
+                this.logger(line);
+            }
+            catch {
+                // Diagnostics logging must not affect transport processing.
+            }
+        }
+        this.emit("diagnostics", this.diagnostics);
     }
     emitProtocolError(error) {
         this.emit("protocolError", error);
@@ -20220,6 +20349,7 @@ streamDeck.logger.info(`Starting Hammerspoon Stream Deck plugin v${PLUGIN_VERSIO
 const bridge = new BridgeClient({
     url: "ws://localhost:17321/streamdeck",
     pluginVersion: PLUGIN_VERSION,
+    logger: (line) => streamDeck.logger.info(line),
 });
 const hammerspoonAction = new HammerspoonAction(bridge);
 hammerspoonAction.subscribe();

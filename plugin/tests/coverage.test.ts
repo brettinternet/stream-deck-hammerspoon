@@ -189,7 +189,7 @@ describe("focused BridgeClient and protocol coverage", () => {
     expect(errors).toEqual([
       {
         code: "AUTH_FAILED",
-        message: "Token rejected",
+        message: "Authentication failed.",
         requestId: "auth-request",
         instanceId: "instance-1",
       },
@@ -230,7 +230,7 @@ describe("focused BridgeClient and protocol coverage", () => {
     expect(errors).toEqual([
       {
         code: "CALLBACK_FAILED",
-        message: "Unable to list actions",
+        message: "Action callback failed.",
         requestId: firstRequestId,
       },
     ]);

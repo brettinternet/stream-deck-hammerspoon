@@ -18,9 +18,26 @@ import {
   type JsonSettings,
   type JsonValue,
   type ServerMessage,
+  type ProtocolErrorCode,
 } from "./protocol.js";
 
 export type BridgeStatus = "disconnected" | "connecting" | "authenticating" | "connected";
+export type BridgeDiagnosticArea = "auth" | "schema" | "reconnect" | "registry" | "callback";
+export type BridgeDiagnosticCode = ProtocolErrorCode | "TOKEN_UNAVAILABLE" | "SOCKET_FAILED" | "DISCONNECTED" | "RECONNECTING";
+export interface BridgeDiagnosticLatest {
+  area: BridgeDiagnosticArea;
+  code: BridgeDiagnosticCode;
+  at: string;
+}
+export interface BridgeDiagnosticStatus {
+  version: 1;
+  status: BridgeStatus;
+  protocolVersion: typeof PROTOCOL_VERSION;
+  pluginVersion: string;
+  port: number;
+  retryInMs?: number;
+  latest?: BridgeDiagnosticLatest;
+}
 
 export interface BridgeAction {
   actionId: string;
@@ -70,6 +87,8 @@ export interface BridgeClientOptions {
   setTimeout?: (callback: () => void, delay: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
   random?: () => number;
+  now?: () => Date;
+  logger?: (line: string) => void;
 }
 
 export interface BridgeSocket {
@@ -173,15 +192,57 @@ function frameToString(data: unknown): string {
   return String(data);
 }
 
-function safeError(error: unknown): BridgeProtocolError {
-  if (error && typeof error === "object") {
-    const candidate = error as { code?: unknown; message?: unknown };
-    return {
-      code: isNonEmptyString(candidate.code) ? candidate.code : "MALFORMED_MESSAGE",
-      message: isNonEmptyString(candidate.message) ? candidate.message : "Invalid protocol message.",
-    };
+const SAFE_PROTOCOL_MESSAGES: Readonly<Record<ProtocolErrorCode, string>> = {
+  AUTH_REQUIRED: "Authentication is required.",
+  AUTH_FAILED: "Authentication failed.",
+  VERSION_MISMATCH: "Protocol version mismatch.",
+  MALFORMED_MESSAGE: "Malformed protocol message.",
+  UNKNOWN_TYPE: "Unknown protocol message type.",
+  INVALID_FIELD: "Invalid protocol field.",
+  INVALID_STATE: "Invalid protocol state.",
+  UNKNOWN_ACTION: "Unknown action.",
+  STALE_INSTANCE: "Stale instance.",
+  CALLBACK_FAILED: "Action callback failed.",
+  INTERNAL: "Internal server error.",
+};
+const MAX_DIAGNOSTIC_LINE = 384;
+
+function safeProtocolCode(value: unknown): ProtocolErrorCode {
+  return typeof value === "string" && Object.hasOwn(SAFE_PROTOCOL_MESSAGES, value)
+    ? value as ProtocolErrorCode
+    : "MALFORMED_MESSAGE";
+}
+
+function diagnosticCategory(code: BridgeDiagnosticCode, hasInstance = false): BridgeDiagnosticArea {
+  if (code === "AUTH_REQUIRED" || code === "AUTH_FAILED" || code === "TOKEN_UNAVAILABLE") return "auth";
+  if (code === "UNKNOWN_ACTION" || code === "STALE_INSTANCE" || code === "INVALID_STATE") return "registry";
+  if (code === "CALLBACK_FAILED" || (code === "INTERNAL" && hasInstance)) return "callback";
+  if (code === "SOCKET_FAILED" || code === "DISCONNECTED" || code === "RECONNECTING") return "reconnect";
+  return "schema";
+}
+
+function sanitizePluginVersion(value: string): string {
+  const sanitized = value.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 32);
+  return sanitized || "unknown";
+}
+
+function portFromUrl(value: string): number {
+  try {
+    const parsed = new URL(value);
+    const port = Number(parsed.port || (parsed.protocol === "wss:" ? 443 : 80));
+    return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 17321;
+  } catch {
+    return 17321;
   }
-  return { code: "MALFORMED_MESSAGE", message: "Invalid protocol message." };
+}
+
+function safeError(error: unknown): BridgeProtocolError {
+  let candidateCode: unknown;
+  if (error !== null && typeof error === "object" && "code" in error) {
+    candidateCode = error.code;
+  }
+  const code = safeProtocolCode(candidateCode);
+  return { code, message: SAFE_PROTOCOL_MESSAGES[code] };
 }
 
 export class BridgeClient extends EventEmitter {
@@ -197,6 +258,10 @@ export class BridgeClient extends EventEmitter {
   private readonly scheduleTimeout: (callback: () => void, delay: number) => unknown;
   private readonly cancelTimeout: (handle: unknown) => void;
   private readonly random: () => number;
+  private readonly now: () => Date;
+  private readonly logger: (line: string) => void;
+  private readonly port: number;
+  private readonly safePluginVersion: string;
   private socket: BridgeSocket | undefined;
   private socketGeneration = 0;
   private reconnectTimer: TimerHandle;
@@ -206,12 +271,20 @@ export class BridgeClient extends EventEmitter {
   private sessionId: string | undefined;
   private nextRequestId = 0;
   private readonly pendingActions = new Set<string>();
+  private latestDiagnostic: BridgeDiagnosticLatest | undefined;
+  private retryInMs: number | undefined;
+  private readonly loggedDiagnosticKeys = new Set<string>();
+  private preserveFailureCause = false;
 
   constructor(options: BridgeClientOptions) {
     super();
     this.url = options.url ?? DEFAULT_URL;
     this.tokenPath = options.tokenPath ?? DEFAULT_TOKEN_PATH;
     this.pluginVersion = options.pluginVersion;
+    this.safePluginVersion = sanitizePluginVersion(options.pluginVersion);
+    this.port = portFromUrl(this.url);
+    this.now = options.now ?? (() => new Date());
+    this.logger = options.logger ?? (() => {});
     this.createSocket = options.createSocket ?? ((url) => new WebSocket(url) as unknown as BridgeSocket);
     this.readToken = options.readToken ?? ((tokenPath) => nodeReadFile(tokenPath, "utf8"));
     this.scheduleTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
@@ -225,6 +298,18 @@ export class BridgeClient extends EventEmitter {
 
   get actions(): BridgeAction[] {
     return this._actions.map(copyAction);
+  }
+  get diagnostics(): BridgeDiagnosticStatus {
+    const status: BridgeDiagnosticStatus = {
+      version: 1,
+      status: this._status,
+      protocolVersion: PROTOCOL_VERSION,
+      pluginVersion: this.safePluginVersion,
+      port: this.port,
+      ...(this.retryInMs === undefined ? {} : { retryInMs: this.retryInMs }),
+      ...(this.latestDiagnostic === undefined ? {} : { latest: { ...this.latestDiagnostic } }),
+    };
+    return status;
   }
 
   start(): void {
@@ -409,6 +494,8 @@ export class BridgeClient extends EventEmitter {
   private connect(): void {
     if (!this.started) return;
     this.clearReconnectTimer();
+    this.preserveFailureCause = false;
+    this.retryInMs = undefined;
     this.authenticated = false;
     this.sessionId = undefined;
     this.setStatus("connecting");
@@ -423,7 +510,10 @@ export class BridgeClient extends EventEmitter {
       token = (Buffer.isBuffer(value) ? value.toString("utf8") : value).trim();
       if (!token) throw new Error("Token unavailable.");
     } catch {
-      if (this.isCurrent(generation)) this.connectionFailed(generation);
+      if (this.isCurrent(generation)) {
+        this.emitDiagnostic("auth", "TOKEN_UNAVAILABLE", undefined, true);
+        this.connectionFailed(generation);
+      }
       return;
     }
 
@@ -432,6 +522,7 @@ export class BridgeClient extends EventEmitter {
     try {
       socket = this.createSocket(this.url);
     } catch {
+      this.emitDiagnostic("reconnect", "SOCKET_FAILED");
       this.connectionFailed(generation);
       return;
     }
@@ -473,14 +564,18 @@ export class BridgeClient extends EventEmitter {
     try {
       message = parseServerMessage(frame);
     } catch (error) {
-      this.emitProtocolError(safeError(error));
+      const safe = safeError(error);
+      this.emitProtocolError(safe);
+      this.emitDiagnostic("schema", safeProtocolCode(safe.code), undefined, !this.authenticated);
       if (!this.authenticated) this.closeCurrentSocket(generation);
       return;
     }
 
     if (message.type === "helloAck") {
       if (this.authenticated || this._status !== "authenticating") {
-        this.emitProtocolError({ code: "INVALID_STATE", message: "Unexpected authentication acknowledgement." });
+        const error = { code: "INVALID_STATE", message: SAFE_PROTOCOL_MESSAGES.INVALID_STATE };
+        this.emitProtocolError(error);
+        this.emitDiagnostic("auth", "INVALID_STATE", undefined, true);
         return;
       }
       this.sessionId = message.sessionId;
@@ -495,7 +590,9 @@ export class BridgeClient extends EventEmitter {
       if (message.type === "error") {
         this.handleRemoteError(message);
       } else {
-        this.emitProtocolError({ code: "AUTH_REQUIRED", message: "Authentication acknowledgement required." });
+        const error = { code: "AUTH_REQUIRED", message: SAFE_PROTOCOL_MESSAGES.AUTH_REQUIRED };
+        this.emitProtocolError(error);
+        this.emitDiagnostic("auth", "AUTH_REQUIRED", undefined, true);
         this.closeCurrentSocket(generation);
       }
       return;
@@ -519,7 +616,9 @@ export class BridgeClient extends EventEmitter {
 
   private handleActions(message: ActionsMessage): void {
     if (!this.pendingActions.delete(message.requestId)) {
-      this.emitProtocolError({ code: "INVALID_STATE", message: "Unexpected action registry response." });
+      const error = { code: "INVALID_STATE", message: SAFE_PROTOCOL_MESSAGES.INVALID_STATE };
+      this.emitProtocolError(error);
+      this.emitDiagnostic("registry", "INVALID_STATE");
       return;
     }
     this._actions = message.actions.map(copyAction);
@@ -569,15 +668,18 @@ export class BridgeClient extends EventEmitter {
   }
 
   private handleRemoteError(message: ServerErrorMessage): void {
+    const code = safeProtocolCode(message.code);
     const error: BridgeProtocolError = {
-      code: message.code,
-      message: message.message,
+      code,
+      message: SAFE_PROTOCOL_MESSAGES[code],
       ...(message.requestId === undefined ? {} : { requestId: message.requestId }),
       ...(message.instanceId === undefined ? {} : { instanceId: message.instanceId }),
     };
     if (message.requestId) this.pendingActions.delete(message.requestId);
     this.emitProtocolError(error);
-    if (!this.authenticated && ["AUTH_REQUIRED", "AUTH_FAILED", "VERSION_MISMATCH"].includes(message.code)) {
+    const preserveCause = !this.authenticated && ["AUTH_REQUIRED", "AUTH_FAILED", "VERSION_MISMATCH"].includes(code);
+    this.emitDiagnostic(diagnosticCategory(code, message.instanceId !== undefined), code, undefined, preserveCause);
+    if (!this.authenticated && ["AUTH_REQUIRED", "AUTH_FAILED", "VERSION_MISMATCH"].includes(code)) {
       this.closeCurrentSocket(this.socketGeneration);
     }
   }
@@ -624,6 +726,7 @@ export class BridgeClient extends EventEmitter {
       this.socket.send(serializeClientMessage(outbound));
       return true;
     } catch {
+      this.emitDiagnostic("reconnect", "SOCKET_FAILED");
       this.connectionFailed(this.socketGeneration);
       return false;
     }
@@ -635,8 +738,9 @@ export class BridgeClient extends EventEmitter {
     this.authenticated = false;
     this.sessionId = undefined;
     this.pendingActions.clear();
-    this.socket = undefined;
     this.setStatus("disconnected");
+    this.socket = undefined;
+    if (!this.preserveFailureCause) this.emitDiagnostic("reconnect", "DISCONNECTED");
     for (const [instanceId, snapshot] of this.instances) {
       if (snapshot.actionId) {
         this.emit("appearance", {
@@ -658,6 +762,11 @@ export class BridgeClient extends EventEmitter {
     this.reconnectAttempt += 1;
     const jitter = 0.5 + Math.max(0, Math.min(1, this.random()));
     const delay = Math.min(MAX_RECONNECT_MS, Math.round(baseDelay * jitter));
+    if (this.preserveFailureCause) {
+      this.retryInMs = delay;
+    } else {
+      this.emitDiagnostic("reconnect", "RECONNECTING", delay);
+    }
     this.reconnectTimer = this.scheduleTimeout(() => {
       this.reconnectTimer = undefined;
       this.connect();
@@ -707,6 +816,46 @@ export class BridgeClient extends EventEmitter {
     if (this._status === status) return;
     this._status = status;
     this.emit("status", status);
+  }
+
+  private emitDiagnostic(
+    area: BridgeDiagnosticArea,
+    code: BridgeDiagnosticCode,
+    retryInMs?: number,
+    preserveCause = false,
+  ): void {
+    if (preserveCause) this.preserveFailureCause = true;
+    this.retryInMs = retryInMs === undefined
+      ? undefined
+      : Math.max(0, Math.min(MAX_RECONNECT_MS, Math.floor(retryInMs)));
+    let at = new Date(0).toISOString();
+    try {
+      const timestamp = this.now();
+      if (timestamp instanceof Date && Number.isFinite(timestamp.getTime())) at = timestamp.toISOString();
+    } catch {
+      // Keep a fixed safe UTC timestamp when the injected clock fails.
+    }
+    this.latestDiagnostic = { area, code, at };
+    const status = this.diagnostics;
+    const encoded = JSON.stringify(status);
+    const safeFallback = JSON.stringify({
+      version: 1,
+      status: status.status,
+      protocolVersion: status.protocolVersion,
+      pluginVersion: status.pluginVersion,
+      port: status.port,
+    });
+    const line = `bridge-status ${encoded.length + 14 <= MAX_DIAGNOSTIC_LINE ? encoded : safeFallback}`;
+    const key = `${area}:${code}`;
+    if (!this.loggedDiagnosticKeys.has(key)) {
+      this.loggedDiagnosticKeys.add(key);
+      try {
+        this.logger(line);
+      } catch {
+        // Diagnostics logging must not affect transport processing.
+      }
+    }
+    this.emit("diagnostics", this.diagnostics);
   }
 
   private emitProtocolError(error: BridgeProtocolError): void {
