@@ -187,9 +187,12 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Acceptance: Redacted status output identifies auth, schema, reconnect, registry, and callback failures without secrets or stack traces.
 
 ### ECO-005 — Protocol compatibility policy
-- Status: ready
+- Status: done
 - Depends on: FND-006, VSL-006
 - Acceptance: Policy defines additive/minor and breaking/major changes, negotiation, deprecation, fixtures, and supported-version windows.
+- Commits: 7e3e24a40d5840b1915b38250cce22eb7e747e4f, ad46b5d4e2c7eb910a70d6350cbfb47169d3f929
+- Verification: `bun run check`; `bun run test`; independent verifier criterion-by-criterion PASS.
+- Outcome: Defined the v1 exact-version posture, additive/minor and breaking/major change classes, explicit future negotiation rules, deprecation lifecycle, positive fixture ownership under `protocol/examples/`, and current-plus-previous major support windows. Contributor workflow now requires compatibility classification and synchronized schema, fixture, and validator updates.
 
 ### ECO-006 — Contributor documentation
 - Status: ready
