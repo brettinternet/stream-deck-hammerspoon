@@ -125,51 +125,51 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Bridge and action adapters key snapshots, settings, appearances, and lifecycle events by Stream Deck instance ID. Same-action placements retain independent profile/device settings through updates and reconnect replay; Lua contexts rebuild independently from replayed settings, disappear cleanly, reject stale input/appearance, and preserve other visible instances. Explicit stale action removals cannot erase a newer binding.
 
 ### CUS-006 — Better icon handling
-- Status: waiting
+- Status: ready
 - Depends on: CUS-003
 - Acceptance: Semantic bundled icons and validated custom SVG/image inputs render at supported sizes with safe fallbacks.
 
 ## Phase 4: Extended Stream Deck support
 
 ### EXT-001 — Key release
-- Status: waiting
+- Status: ready
 - Depends on: CUS-005
 - Acceptance: Release events preserve instance identity/order and invoke optional protected Lua callbacks.
 
 ### EXT-002 — Long press
-- Status: waiting
+- Status: ready
 - Depends on: EXT-001
 - Acceptance: Configurable deterministic thresholds distinguish tap and long press without duplicate callbacks.
 
 ### EXT-003 — Stream Deck+ encoders
-- Status: waiting
+- Status: ready
 - Depends on: EXT-005, CUS-005
 - Acceptance: Rotate and push events use versioned payloads, independent contexts, SDK-compliant layouts, and hardware-free tests.
 
 ### EXT-004 — Stream Deck+ touchscreen
-- Status: waiting
+- Status: ready
 - Depends on: EXT-003
 - Acceptance: Touch/tap events and LCD updates are validated, instance-aware, and tested behind SDK interfaces.
 
 ### EXT-005 — Device metadata
-- Status: waiting
+- Status: ready
 - Depends on: CUS-005
 - Acceptance: Context exposes stable, privacy-bounded device/controller metadata without leaking SDK objects into protocol modules.
 
 ### EXT-006 — Device-aware rendering
-- Status: waiting
+- Status: ready
 - Depends on: EXT-005, CUS-003
 - Acceptance: Presentation adapts deterministically to supported key/LCD sizes and falls back safely for unknown devices.
 
 ## Phase 5: Developer ecosystem
 
 ### ECO-001 — Lua helper components
-- Status: waiting
+- Status: ready
 - Depends on: CUS-004, CUS-005
 - Acceptance: Small composable helpers reduce common action boilerplate without hiding lifecycle or globalizing instance state.
 
 ### ECO-002 — Example action library
-- Status: waiting
+- Status: ready
 - Depends on: ECO-001
 - Acceptance: Tested examples cover common Hammerspoon watchers, application state, audio, and multi-instance patterns.
 
@@ -182,7 +182,7 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Added a Bun release command that builds and validates the pinned Stream Deck package, normalizes plugin and Lua archive metadata for repeatable bytes without leaving tracked build output changed, writes versioned artifacts and SHA256SUMS/RELEASE.json, and documents verified installation and uninstall flows.
 
 ### ECO-004 — Diagnostics
-- Status: waiting
+- Status: ready
 - Depends on: CUS-004, VSL-006
 - Acceptance: Redacted status output identifies auth, schema, reconnect, registry, and callback failures without secrets or stack traces.
 
@@ -192,6 +192,6 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Acceptance: Policy defines additive/minor and breaking/major changes, negotiation, deprecation, fixtures, and supported-version windows.
 
 ### ECO-006 — Contributor documentation
-- Status: waiting
+- Status: ready
 - Depends on: ECO-003, ECO-004, ECO-005
 - Acceptance: Contributor guide covers architecture changes, release workflow, protocol review, security reporting, and hardware-free verification.
