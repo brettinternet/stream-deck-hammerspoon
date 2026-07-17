@@ -17216,6 +17216,73 @@ var $defs = {
 		description: "Application-owned JSON object. Keys and values are opaque to protocol v1.",
 		additionalProperties: true
 	},
+	deviceMetadata: {
+		type: "object",
+		properties: {
+			controllerType: {
+				type: "string",
+				"enum": [
+					"keypad",
+					"encoder"
+				]
+			},
+			device: {
+				type: "object",
+				properties: {
+					type: {
+						type: "string",
+						"enum": [
+							"stream-deck",
+							"stream-deck-mini",
+							"stream-deck-xl",
+							"stream-deck-mobile",
+							"corsair-g-keys",
+							"stream-deck-pedal",
+							"corsair-voyager",
+							"stream-deck-plus",
+							"scuf-controller",
+							"stream-deck-neo",
+							"stream-deck-studio",
+							"virtual-stream-deck",
+							"galleon-100-sd",
+							"stream-deck-plus-xl",
+							"unknown"
+						]
+					},
+					size: {
+						type: "object",
+						properties: {
+							columns: {
+								type: "integer",
+								minimum: 1,
+								maximum: 64
+							},
+							rows: {
+								type: "integer",
+								minimum: 1,
+								maximum: 64
+							}
+						},
+						required: [
+							"columns",
+							"rows"
+						],
+						additionalProperties: false
+					}
+				},
+				required: [
+					"type",
+					"size"
+				],
+				additionalProperties: false
+			}
+		},
+		required: [
+			"controllerType",
+			"device"
+		],
+		additionalProperties: false
+	},
 	settingsFieldBase: {
 		type: "object",
 		required: [
@@ -17602,6 +17669,9 @@ var $defs = {
 					},
 					settings: {
 						$ref: "#/$defs/settings"
+					},
+					metadata: {
+						$ref: "#/$defs/deviceMetadata"
 					}
 				},
 				required: [
@@ -17992,6 +18062,65 @@ var protocolSchema = {
 };
 
 const PROTOCOL_VERSION = 1;
+const DEVICE_SIZE_MIN = 1;
+const DEVICE_SIZE_MAX = 64;
+const DEVICE_TYPE_VALUES = {
+    "stream-deck": true,
+    "stream-deck-mini": true,
+    "stream-deck-xl": true,
+    "stream-deck-mobile": true,
+    "corsair-g-keys": true,
+    "stream-deck-pedal": true,
+    "corsair-voyager": true,
+    "stream-deck-plus": true,
+    "scuf-controller": true,
+    "stream-deck-neo": true,
+    "stream-deck-studio": true,
+    "virtual-stream-deck": true,
+    "galleon-100-sd": true,
+    "stream-deck-plus-xl": true,
+    unknown: true,
+};
+function isPlainObject(value) {
+    if (!isObject(value))
+        return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+}
+function hasOnlyKeys(value, keys) {
+    const allowed = new Set(keys);
+    return Object.keys(value).every((key) => allowed.has(key));
+}
+function sanitizeDeviceMetadata(value) {
+    if (!isPlainObject(value) || !hasOnlyKeys(value, ["controllerType", "device"]))
+        return undefined;
+    const controllerType = value.controllerType;
+    const device = value.device;
+    if ((controllerType !== "keypad" && controllerType !== "encoder")
+        || !isPlainObject(device)
+        || !hasOnlyKeys(device, ["type", "size"])
+        || typeof device.type !== "string"
+        || !DEVICE_TYPE_VALUES[device.type]
+        || !isPlainObject(device.size)
+        || !hasOnlyKeys(device.size, ["columns", "rows"])
+        || typeof device.size.columns !== "number"
+        || !Number.isInteger(device.size.columns)
+        || device.size.columns < DEVICE_SIZE_MIN
+        || device.size.columns > DEVICE_SIZE_MAX
+        || typeof device.size.rows !== "number"
+        || !Number.isInteger(device.size.rows)
+        || device.size.rows < DEVICE_SIZE_MIN
+        || device.size.rows > DEVICE_SIZE_MAX) {
+        return undefined;
+    }
+    return {
+        controllerType,
+        device: {
+            type: device.type,
+            size: { columns: device.size.columns, rows: device.size.rows },
+        },
+    };
+}
 const CLIENT_MESSAGE_TYPES = {
     hello: true,
     listActions: true,
@@ -18589,8 +18718,13 @@ function serializeClientMessage(message) {
     if (!validateProtocolMessage(message)) {
         throw schemaError("client");
     }
-    if (message.type === "instanceAppeared" && !isJsonValue(message.settings)) {
-        throw new Error("Invalid client message: settings must contain JSON values.");
+    if (message.type === "instanceAppeared") {
+        if (!isJsonValue(message.settings)) {
+            throw new Error("Invalid client message: settings must contain JSON values.");
+        }
+        if (message.metadata !== undefined && sanitizeDeviceMetadata(message.metadata) === undefined) {
+            throw new Error("Invalid client message: metadata is malformed or out of bounds.");
+        }
     }
     try {
         const encoded = JSON.stringify(message);
@@ -18630,6 +18764,15 @@ function copySettings(settings) {
         copied[key] = copyJsonValue(value);
     }
     return copied;
+}
+function copyDeviceMetadata(metadata) {
+    return {
+        controllerType: metadata.controllerType,
+        device: {
+            type: metadata.device.type,
+            size: { columns: metadata.device.size.columns, rows: metadata.device.size.rows },
+        },
+    };
 }
 function copyAction(action) {
     return {
@@ -18737,7 +18880,12 @@ class BridgeClient extends EventEmitter$1 {
         if (configuredActionId)
             settings.actionId = configuredActionId;
         const previous = this.instances.get(input.instanceId);
-        const snapshot = { actionId: configuredActionId, settings };
+        const suppliedMetadata = input.metadata === undefined ? previous?.metadata : sanitizeDeviceMetadata(input.metadata);
+        const snapshot = {
+            actionId: configuredActionId,
+            settings,
+            ...(suppliedMetadata === undefined ? {} : { metadata: copyDeviceMetadata(suppliedMetadata) }),
+        };
         this.instances.set(input.instanceId, snapshot);
         if (this.authenticated
             && previous?.actionId
@@ -19027,6 +19175,7 @@ class BridgeClient extends EventEmitter$1 {
             instanceId,
             actionId: snapshot.actionId,
             settings: copySettings(snapshot.settings),
+            ...(snapshot.metadata === undefined ? {} : { metadata: copyDeviceMetadata(snapshot.metadata) }),
         });
     }
     send(message) {
@@ -19134,6 +19283,46 @@ class BridgeClient extends EventEmitter$1 {
     }
 }
 
+const DEVICE_TYPE_NAMES = {
+    0: "stream-deck",
+    1: "stream-deck-mini",
+    2: "stream-deck-xl",
+    3: "stream-deck-mobile",
+    4: "corsair-g-keys",
+    5: "stream-deck-pedal",
+    6: "corsair-voyager",
+    7: "stream-deck-plus",
+    8: "scuf-controller",
+    9: "stream-deck-neo",
+    10: "stream-deck-studio",
+    11: "virtual-stream-deck",
+    12: "galleon-100-sd",
+    13: "stream-deck-plus-xl",
+};
+function extractDeviceMetadata(action) {
+    try {
+        const context = action;
+        const device = context.device;
+        if (!device)
+            return undefined;
+        const deviceType = typeof device.type === "number" ? (DEVICE_TYPE_NAMES[device.type] ?? "unknown") : "unknown";
+        const controllerType = context.controllerType === "Keypad"
+            ? "keypad"
+            : context.controllerType === "Encoder"
+                ? "encoder"
+                : undefined;
+        return sanitizeDeviceMetadata({
+            controllerType,
+            device: {
+                type: deviceType,
+                size: { columns: device.size?.columns, rows: device.size?.rows },
+            },
+        });
+    }
+    catch {
+        return undefined;
+    }
+}
 function cloneJsonValue(value) {
     if (Array.isArray(value)) {
         return value.map(cloneJsonValue);
@@ -19292,6 +19481,7 @@ class HammerspoonAction extends SingletonAction {
         }
         const instanceId = ev.action.id;
         const settings = this.settingsFrom(ev.payload.settings);
+        const metadata = extractDeviceMetadata(ev.action);
         const previous = this.instances.get(instanceId);
         if (previous) {
             this.cancelFeedbackTimer(previous);
@@ -19309,6 +19499,7 @@ class HammerspoonAction extends SingletonAction {
                 instanceId,
                 actionId: settings.actionId,
                 settings: settings,
+                metadata,
             });
         }
     }
@@ -19328,6 +19519,7 @@ class HammerspoonAction extends SingletonAction {
         }
         const instanceId = ev.action.id;
         const settings = this.settingsFrom(ev.payload.settings);
+        const metadata = extractDeviceMetadata(ev.action);
         const previous = this.instances.get(instanceId);
         if (previous?.actionId && previous.actionId !== settings.actionId) {
             this.bridge.removeInstance(instanceId, previous.actionId);
@@ -19341,6 +19533,7 @@ class HammerspoonAction extends SingletonAction {
                 instanceId,
                 actionId: settings.actionId,
                 settings: settings,
+                metadata,
             });
         }
     }
