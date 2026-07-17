@@ -74,7 +74,11 @@ local function isInteger(value)
 end
 
 local function isBoundedString(value, maximum)
-  return nonEmptyString(value) and #value <= maximum
+  if not nonEmptyString(value) then
+    return false
+  end
+  local length = utf8.len(value)
+  return length ~= nil and length <= maximum
 end
 
 local function validateSettingsField(field, fieldIndex, seenKeys)
@@ -137,7 +141,8 @@ local function validateSettingsField(field, fieldIndex, seenKeys)
     end
     local default = rawget(field, "default")
     if default ~= nil then
-      if type(default) ~= "string" or (minimum ~= nil and #default < minimum) or (maximum ~= nil and #default > maximum) then
+      local length = type(default) == "string" and utf8.len(default) or nil
+      if length == nil or (minimum ~= nil and length < minimum) or (maximum ~= nil and length > maximum) then
         error("Stream Deck action settingsSchema field " .. fieldIndex .. " default is invalid", 4)
       end
     end

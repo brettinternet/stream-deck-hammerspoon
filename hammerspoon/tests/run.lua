@@ -317,6 +317,38 @@ test("versioned settings schemas validate kinds, bounds, defaults, and errors", 
   end
 end)
 
+test("versioned schema bounds use UTF-8 characters", function()
+  local registry = Registry.new()
+  local callback = function() end
+  local repeated = string.rep("é", 64)
+  registry:register({
+    id = "com.test.utf8",
+    name = "UTF-8 settings",
+    settingsSchemaVersion = 1,
+    settingsSchema = {
+      { type = "text", key = repeated, label = repeated, default = string.rep("é", 4), maxLength = 4 },
+    },
+    appearance = callback,
+    press = callback,
+  })
+  assertFalse(pcall(registry.register, registry, {
+    id = "com.test.utf8-too-long",
+    name = "UTF-8 invalid settings",
+    settingsSchemaVersion = 1,
+    settingsSchema = {{ type = "boolean", key = string.rep("é", 65) }},
+    appearance = callback,
+    press = callback,
+  }), "UTF-8 character limits must match the JSON Schema")
+  assertFalse(pcall(registry.register, registry, {
+    id = "com.test.utf8-invalid",
+    name = "Invalid UTF-8 settings",
+    settingsSchemaVersion = 1,
+    settingsSchema = {{ type = "boolean", key = string.char(0xff) }},
+    appearance = callback,
+    press = callback,
+  }), "invalid UTF-8 must be rejected")
+end)
+
 test("protocol validation and authentication failures are explicit", function()
   local valid, code = Protocol.validate({})
   assertFalse(valid)

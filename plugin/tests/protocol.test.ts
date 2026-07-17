@@ -228,4 +228,24 @@ describe("versioned settings schema compatibility", () => {
       ),
     ).toBeDefined();
   });
+
+  test("uses Unicode character bounds for versioned fields", () => {
+    const key = "é".repeat(64);
+    expect(
+      parseServerMessage(
+        actionMessage({
+          settingsSchemaVersion: 1,
+          settingsSchema: [{ type: "text", key, label: key, default: "é".repeat(4), maxLength: 4 }],
+        }),
+      ),
+    ).toBeDefined();
+    expect(() =>
+      parseServerMessage(
+        actionMessage({
+          settingsSchemaVersion: 1,
+          settingsSchema: [{ type: "boolean", key: "é".repeat(65) }],
+        }),
+      ),
+    ).toThrow();
+  });
 });

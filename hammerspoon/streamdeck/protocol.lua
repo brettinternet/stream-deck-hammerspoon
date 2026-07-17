@@ -152,7 +152,11 @@ local MAX_SETTINGS_OPTIONS = 64
 local MAX_SETTINGS_OPTION_VALUE_LENGTH = 256
 
 local function boundedString(value, maximum)
-  return isNonEmptyString(value) and #value <= maximum
+  if not isNonEmptyString(value) then
+    return false
+  end
+  local length = utf8.len(value)
+  return length ~= nil and length <= maximum
 end
 
 local function validateSettingsField(field, seenKeys)
@@ -181,13 +185,15 @@ local function validateSettingsField(field, seenKeys)
   local fieldKey = rawget(field, "key")
   if seenKeys[fieldKey] then return false end
   seenKeys[fieldKey] = true
-
   if kind == "text" then
     local minimum, maximum, default = rawget(field, "minLength"), rawget(field, "maxLength"), rawget(field, "default")
     if minimum ~= nil and (not isInteger(minimum) or minimum < 0 or minimum > MAX_SETTINGS_TEXT_LENGTH) then return false end
     if maximum ~= nil and (not isInteger(maximum) or maximum < 0 or maximum > MAX_SETTINGS_TEXT_LENGTH) then return false end
     if minimum ~= nil and maximum ~= nil and minimum > maximum then return false end
-    if default ~= nil and (type(default) ~= "string" or (minimum ~= nil and #default < minimum) or (maximum ~= nil and #default > maximum)) then return false end
+    if default ~= nil then
+      local length = type(default) == "string" and utf8.len(default) or nil
+      if length == nil or (minimum ~= nil and length < minimum) or (maximum ~= nil and length > maximum) then return false end
+    end
   elseif kind == "number" then
     local minimum, maximum, step, default = rawget(field, "min"), rawget(field, "max"), rawget(field, "step"), rawget(field, "default")
     if minimum ~= nil and (not isFiniteNumber(minimum) or minimum < -MAX_SETTINGS_NUMBER or minimum > MAX_SETTINGS_NUMBER) then return false end

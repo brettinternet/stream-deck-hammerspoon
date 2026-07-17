@@ -97,7 +97,7 @@ An action definition is a table with these fields:
 | `id` | yes | non-empty string | Explicit, stable action ID. It must be unique within this Hammerspoon process. |
 | `name` | yes | non-empty string | Human-readable action name shown when choosing the action in Stream Deck. |
 | `settingsSchema` | no | table | Optional settings schema supplied to the plugin's property inspector. |
-| `settingsSchemaVersion` | no | positive integer | Settings descriptor version. Version 1 enables bounded validation; omitted versions remain legacy opaque arrays and newer versions are preserved without rendering. |
+| `settingsSchemaVersion` | no | integer 1–16 | Settings descriptor version. Version 1 enables bounded validation; omitted versions remain legacy opaque arrays and newer bounded versions are preserved without rendering. |
 | `appearance` | yes | function | Computes the current title and binary state for a context. |
 | `press` | yes | function | Handles a key-down event for a context. |
 | `appear` | no | function | Runs when a new visible instance appears or a restored context is rebuilt after reconnect. |
