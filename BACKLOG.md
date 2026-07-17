@@ -117,9 +117,12 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Per-instance context success/error methods emit versioned feedback with safe UTF-8 messages and 100–10,000 ms durations. Lua and TypeScript validators agree on code-point bounds; the plugin correlates feedback by instance/action, shows message plus success/alert indicators, restores appearance after expiry, and isolates stale lifecycle, emitter, listener, SDK, and timer failures.
 
 ### CUS-005 — Per-instance state
-- Status: ready
+- Status: done
 - Depends on: VSL-003, VSL-006
 - Acceptance: Multiple placements of one action retain independent settings/state across profiles, devices, reconnects, and disappearance.
+- Commits: b3e0d9fe43198d32075909b693e9754c916edea0, 140d3ac
+- Verification: 32 plugin tests; 41 Lua bridge tests; TypeScript check; Lua syntax check; independent verifier PASS on all 5 acceptance aspects.
+- Outcome: Bridge and action adapters key snapshots, settings, appearances, and lifecycle events by Stream Deck instance ID. Same-action placements retain independent profile/device settings through updates and reconnect replay; Lua contexts rebuild independently from replayed settings, disappear cleanly, reject stale input/appearance, and preserve other visible instances. Explicit stale action removals cannot erase a newer binding.
 
 ### CUS-006 — Better icon handling
 - Status: waiting
