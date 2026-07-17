@@ -175,9 +175,12 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Optional `instanceAppeared.metadata` carries a closed, protocol-owned controller/device DTO with lowercase enums, unknown-device fallback, and bounded dimensions. Hammerspoon contexts expose defensive `getDevice()` snapshots; repeated announcements update metadata without rerunning `appear`, and BridgeClient retains independent metadata through reconnect replay. SDK identifiers, names, connection state, actions, coordinates, and SDK objects never cross protocol modules.
 
 ### EXT-006 — Device-aware rendering
-- Status: ready
+- Status: done
 - Depends on: EXT-005, CUS-003
 - Acceptance: Presentation adapts deterministically to supported key/LCD sizes and falls back safely for unknown devices.
+- Commits: 298fbc53adaf395084569b1fa84339b5909b3916
+- Verification: `bun run check`; `bun run test` (87 plugin tests, 45 Lua bridge tests, 10 Lua startup tests); focused rendering tests (21 pass); generated plugin `node --check`; `bun run validate`; independent verifier PASS on all 6 criteria.
+- Outcome: Per-instance sanitized device metadata selects the SDK-backed 72×72 keypad profile or 200×100 encoder LCD profile. Recognized decorated encoders use `$A0` full-canvas SVG feedback and plain/fallback output uses `$A1`; unknown, missing, malformed, or mismatched metadata remains safe and does not alert solely for metadata. Layout transitions clear stale canvas feedback, failures remain atomic, lifecycle/reconnect serialization is preserved, and shipped artifacts/docs are synchronized.
 
 ## Phase 5: Developer ecosystem
 
