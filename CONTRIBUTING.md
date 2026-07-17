@@ -18,11 +18,12 @@ Do not use npm/npx to install dependencies or run project scripts. Lua developme
 ## Change workflow
 
 1. Describe the behavior and the contract boundary it changes.
-2. Update the canonical protocol schema and its conformance coverage together when changing a message.
-3. Keep authentication first-message-only, loopback-only, and fail-closed. Never put the shared token in settings, source control, command arguments, screenshots, or logs.
-4. Keep callbacks protected and action IDs explicit; reject duplicates and malformed or stale identifiers according to the protocol/API docs.
-5. Keep TypeScript/UI changes inside the official plugin model. The official Stream Deck application must remain running for install, restart, and hardware checks.
-6. Update the relevant documentation when a command, limitation, security property, or public API changes.
+2. Classify the change as additive/minor or breaking/major using the [protocol compatibility policy](docs/protocol.md#versioning-and-compatibility-policy).
+3. Update the canonical protocol schema, `protocol/examples/` positive fixtures, and both validator/conformance suites together when changing a message.
+4. Keep authentication first-message-only, loopback-only, and fail-closed. Never put the shared token in settings, source control, command arguments, screenshots, or logs.
+5. Keep callbacks protected and action IDs explicit; reject duplicates and malformed or stale identifiers according to the protocol/API docs.
+6. Keep TypeScript/UI changes inside the official plugin model. The official Stream Deck application must remain running for install, restart, and hardware checks.
+7. Update the relevant documentation when a command, limitation, security property, public API, or compatibility promise changes.
 
 ## Checks
 

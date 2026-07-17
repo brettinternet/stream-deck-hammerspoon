@@ -361,17 +361,49 @@ sequenceDiagram
     Note over P: Offline title cleared only for synchronized valid instances
 ```
 
-## Versioning and compatibility
+## Versioning and compatibility policy
 
-v1 has no capability negotiation and no downgrade path. Both directions require `protocolVersion: 1`. A peer that receives another version sends `VERSION_MISMATCH` when it can form a safe error and closes; the other peer remains offline/retries rather than guessing a schema.
+`protocolVersion` is the wire-level major version. Documentation uses `vMAJOR.MINOR` labels: the major is the on-wire compatibility boundary, while the minor identifies additive contract revisions that remain valid for the same major. The schema filename and `$id` include the major (`protocol-v1.json`); a minor revision does not create a second schema.
 
-Within version 1, compatibility is additive:
+### Current v1 posture
 
-- Unknown envelope and payload fields are ignored.
-- Existing required fields, field types, message meanings, error codes, and `state` values cannot be changed under version 1.
-- A new message type, a new required field, a changed field type, or a new interpretation of an existing field requires a new protocol version (and corresponding schema).
-- Receivers must not forward unknown fields into Lua settings or use them to alter callback semantics.
-- Unknown action IDs and stale instance IDs are normal synchronization failures, not version negotiation; they produce the safe errors above and never trigger a guessed fallback action.
+- `protocolVersion: 1` is exact today. Both peers must send `1` on every message.
+- Unknown envelope and payload fields are ignored, but unknown message types are rejected as `UNKNOWN_TYPE`; an ignored field must not be forwarded into Lua settings or change callback semantics.
+- There is no wire-level capability negotiation or downgrade path. A version mismatch produces `VERSION_MISMATCH` when a safe error can be sent, then the connection closes. No peer may guess a compatible schema or silently fall back.
+- The current supported-version window is `{v1}`. A v1 implementation must continue to accept every compatible v1 minor revision and must not emit fields that change the meaning of an existing v1 field.
+
+### Additive/minor changes
+
+An additive/minor change may add an optional field to an existing message, add a bounded versioned payload such as `appearanceVersion`, or add documentation and fixtures without changing existing behavior. The change is compatible only when an older receiver can ignore it safely.
+
+Minor changes must not:
+
+- add a required field, change a field type or meaning, tighten an existing bound, remove a field, or change an error code;
+- add a message type under v1, because v1 dispatch rejects unknown types; or
+- make an existing receiver depend on an optional field or an unknown enum/value.
+
+Each additive field needs bounded schema validation, an explicit owner, and a safe absence behavior. The sender continues to include all v1 required fields, and the receiver preserves the old behavior when the optional field is absent.
+
+### Breaking/major changes
+
+A breaking change increments the major version and creates a new canonical schema. This includes changing required fields, types, meanings, validation bounds, message types, error semantics, authentication rules, correlation rules, or the interpretation of an existing value. A major change must not be smuggled into a v1 minor revision or hidden behind permissive parsing.
+
+### Negotiation and supported-version window
+
+v1 has no negotiation: the `hello` version is an admission check, not an offer, and `helloAck` does not select a version. Before implementing a future major, the protocol must define and schema-validate a backward-compatible capability exchange in `hello`/`helloAck`. That exchange must:
+
+1. offer the sender's supported major versions;
+2. select the highest common major explicitly;
+3. reject an empty intersection with a safe `VERSION_MISMATCH`; and
+4. complete before either peer sends major-specific application messages.
+
+No implementation may send `protocolVersion > 1` until that negotiation contract, both validators, and its fixtures exist. The support policy is current major plus the immediately previous major: v1 is the initial exception and supports only v1; a future v2 release must document whether v1 remains in the window, and a future major may retire the oldest version only with a migration guide and an announced support change. A peer must never advertise a version it cannot validate and execute end to end.
+
+### Deprecation and conformance fixtures
+
+Deprecate fields or message behavior in the protocol document and schema description before removing them. Keep deprecated behavior for the lifetime of its supported major window, stop adding new callers, and remove it only in the next major with a migration note. Deprecation must not weaken validation or make an unknown type acceptable.
+
+`protocol/examples/` is the checked-in positive fixture set. Each fixture is a JSON conversation for one protocol major and must retain the required fields, representative optional fields, and correlation/session ordering relevant to the example. A protocol change updates or adds a fixture and adds both TypeScript and Lua coverage for valid input, malformed input, version mismatch, unknown types, and deprecated behavior when applicable. Reviewers classify the change as additive/minor or breaking/major before accepting schema, validator, and fixture updates together.
 
 ## Schema ownership and validation
 
