@@ -132,15 +132,21 @@ function server.new(registry, protocol, contextFactory)
     return ok
   end
 
-  function object:_emitAppearance(instanceId, actionId, title, state)
-    return self:_queue({
+  function object:_emitAppearance(instanceId, actionId, title, state, appearance)
+    local message = {
       protocolVersion = self.protocol.VERSION,
       type = "appearance",
       instanceId = instanceId,
       actionId = actionId,
       title = title,
       state = state,
-    })
+    }
+    if appearance and appearance.appearanceVersion ~= nil then message.appearanceVersion = appearance.appearanceVersion end
+    if appearance and appearance.foregroundColor ~= nil then message.foregroundColor = appearance.foregroundColor end
+    if appearance and appearance.backgroundColor ~= nil then message.backgroundColor = appearance.backgroundColor end
+    if appearance and appearance.progress ~= nil then message.progress = appearance.progress end
+    if appearance and appearance.badge ~= nil then message.badge = appearance.badge end
+    return self:_queue(message)
   end
 
   function object:_emitError(code, instanceId)
@@ -153,8 +159,8 @@ function server.new(registry, protocol, contextFactory)
       actionId = actionId,
       settings = settings,
       definition = definition,
-      emitAppearance = function(contextInstanceId, contextActionId, title, state)
-        return self:_emitAppearance(contextInstanceId, contextActionId, title, state)
+      emitAppearance = function(contextInstanceId, contextActionId, title, state, appearance)
+        return self:_emitAppearance(contextInstanceId, contextActionId, title, state, appearance)
       end,
       emitError = function(code, contextInstanceId)
         return self:_emitError(code, contextInstanceId)

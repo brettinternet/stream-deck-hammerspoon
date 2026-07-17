@@ -12,13 +12,14 @@ type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string
 type ActionCalls = {
   titles: string[];
   states: Array<0 | 1>;
+  images: Array<string | undefined>;
   alerts: number;
 };
-
 class FakeAction {
-  readonly calls: ActionCalls = { titles: [], states: [], alerts: 0 };
+  readonly calls: ActionCalls = { titles: [], states: [], images: [], alerts: 0 };
   rejectTitle = false;
   rejectState = false;
+  rejectImage = false;
   rejectAlert = false;
 
   constructor(
@@ -41,6 +42,13 @@ class FakeAction {
     this.calls.states.push(state);
     if (this.rejectState) {
       throw new Error("setState failed");
+    }
+  }
+
+  async setImage(image?: string): Promise<void> {
+    this.calls.images.push(image);
+    if (this.rejectImage) {
+      throw new Error("setImage failed");
     }
   }
 
@@ -144,12 +152,13 @@ describe("HammerspoonAction", () => {
     const configured = new FakeAction("configured");
 
     await adapter.onWillAppear(appear(missing));
-    expect(missing.calls).toEqual({ titles: ["Select action"], states: [0], alerts: 0 });
+    expect(missing.calls).toEqual({ titles: ["Select action"], states: [0], images: [], alerts: 0 });
 
     await adapter.onWillAppear(appear(configured, { actionId: "action.offline" }));
     expect(configured.calls).toEqual({
       titles: ["Hammerspoon\nOffline"],
       states: [0],
+      images: [],
       alerts: 0,
     });
     expect(bridge.upserts).toEqual([
@@ -161,6 +170,7 @@ describe("HammerspoonAction", () => {
     expect(unsynchronized.calls).toEqual({
       titles: ["Hammerspoon\nOffline"],
       states: [0],
+      images: [],
       alerts: 0,
     });
     expect(bridge.upserts).toEqual([
@@ -187,6 +197,7 @@ describe("HammerspoonAction", () => {
     expect(configured.calls).toEqual({
       titles: ["Hammerspoon\nOffline", "Playing"],
       states: [0, 1],
+      images: [],
       alerts: 0,
     });
   });
@@ -232,16 +243,16 @@ describe("HammerspoonAction", () => {
     const bridge = new FakeBridge();
     const adapter = makeAction(bridge);
     const unconfigured = new FakeAction("unconfigured");
-    const configured = new FakeAction("configured");
-
     await adapter.onWillAppear(appear(unconfigured));
     await adapter.onKeyDown(keyDown(unconfigured));
     expect(unconfigured.calls).toEqual({
       titles: ["Select action", "Select action"],
       states: [0, 0],
+      images: [],
       alerts: 0,
     });
 
+    const configured = new FakeAction("configured");
     const configuredSettings = { actionId: "action.id" };
     await adapter.onWillAppear(appear(configured, configuredSettings));
     await adapter.onKeyDown(keyDown(configured));
@@ -360,6 +371,75 @@ describe("HammerspoonAction", () => {
     expect(action.calls.alerts).toBe(1);
   });
 
+  test("renders bounded presentation decorations and falls back safely", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const action = new FakeAction("decorated");
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "decorated",
+      actionId: "action.id",
+      title: "Ready",
+      state: 1,
+      appearanceVersion: 1,
+      foregroundColor: "#FFFFFF",
+      backgroundColor: "#202020",
+      progress: 0.5,
+      badge: "<&'\"",
+    });
+    await flush();
+
+    expect(action.calls.images).toHaveLength(1);
+    const image = action.calls.images[0];
+    expect(image).toStartWith("data:image/svg+xml,");
+    expect(decodeURIComponent(image!.slice("data:image/svg+xml,".length))).toContain(
+      '<rect width="72" height="72" fill="#202020"/>',
+    );
+    expect(decodeURIComponent(image!.slice("data:image/svg+xml,".length))).toContain(
+      '<rect x="4" y="64" width="32" height="4" fill="#FFFFFF"/>',
+    );
+    expect(decodeURIComponent(image!.slice("data:image/svg+xml,".length))).toContain("&lt;&amp;&apos;&quot;");
+    expect(decodeURIComponent(image!.slice("data:image/svg+xml,".length))).not.toContain("<&'\"");
+    expect(action.calls.titles).toEqual(["Hammerspoon\nOffline", "Ready"]);
+    expect(action.calls.states).toEqual([0, 1]);
+
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "decorated",
+      actionId: "action.id",
+      title: "Plain",
+      state: 0,
+    });
+    await flush();
+    expect(action.calls.images).toEqual([image, undefined]);
+    expect(action.calls.titles.at(-1)).toBe("Plain");
+
+    const failed = new FakeAction("failed");
+    failed.rejectImage = true;
+    await adapter.onWillAppear(appear(failed, { actionId: "action.id" }));
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "failed",
+      actionId: "action.id",
+      title: "Fallback",
+      state: 1,
+      appearanceVersion: 1,
+      backgroundColor: "#000000",
+    });
+    await flush();
+    expect(failed.calls.images).toHaveLength(1);
+    expect(failed.calls.titles).toEqual(["Hammerspoon\nOffline", "Fallback"]);
+    expect(failed.calls.states).toEqual([0, 1]);
+    expect(failed.calls.alerts).toBe(1);
+  });
+
+
   test("best-effort rendering alerts swallow setTitle, setState, and showAlert failures", async () => {
     const bridge = new FakeBridge();
     const adapter = makeAction(bridge);
@@ -372,7 +452,7 @@ describe("HammerspoonAction", () => {
 
     await adapter.onWillAppear(appear(titleFailure));
     await adapter.onWillAppear(appear(stateFailure));
-    expect(titleFailure.calls).toEqual({ titles: ["Select action"], states: [0], alerts: 1 });
-    expect(stateFailure.calls).toEqual({ titles: ["Select action"], states: [0], alerts: 1 });
+    expect(titleFailure.calls).toEqual({ titles: ["Select action"], states: [0], images: [], alerts: 1 });
+    expect(stateFailure.calls).toEqual({ titles: ["Select action"], states: [0], images: [], alerts: 1 });
   });
 });

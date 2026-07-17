@@ -71,6 +71,15 @@ const appearance: ServerMessage = {
   state: 0,
 };
 
+const extendedAppearance: ServerMessage = {
+  ...appearance,
+  appearanceVersion: 1,
+  foregroundColor: "#FFFFFF",
+  backgroundColor: "#000000",
+  progress: 0.5,
+  badge: "OK",
+};
+
 const requestAppearance: ClientMessage = {
   protocolVersion: 1,
   type: "requestAppearance",
@@ -106,11 +115,12 @@ describe("protocol examples", () => {
     expect(parseServerMessage(JSON.stringify(actions))).toEqual(actions);
   });
 
-  test("round-trips every appearance example message", () => {
+  test("round-trips legacy and versioned appearance messages", () => {
     for (const message of [instanceAppeared, requestAppearance, keyDown, instanceDisappeared]) {
       expect(JSON.parse(serializeClientMessage(message))).toEqual(message);
     }
     expect(parseServerMessage(JSON.stringify(appearance))).toEqual(appearance);
+    expect(parseServerMessage(JSON.stringify(extendedAppearance))).toEqual(extendedAppearance);
   });
 });
 
@@ -143,6 +153,13 @@ describe("protocol direction and validation", () => {
       { ...appearance, state: true },
       { ...appearance, instanceId: "" },
       { ...appearance, actionId: undefined },
+      { ...extendedAppearance, appearanceVersion: 2 },
+      { ...extendedAppearance, foregroundColor: "#fff" },
+      { ...extendedAppearance, backgroundColor: "red" },
+      { ...extendedAppearance, progress: -0.01 },
+      { ...extendedAppearance, progress: 1.01 },
+      { ...extendedAppearance, badge: "12345" },
+      { ...appearance, progress: 0.5 },
     ];
 
     for (const message of malformedAppearances) {

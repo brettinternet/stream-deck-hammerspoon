@@ -221,7 +221,7 @@ Unknown actions and stale instances produce the corresponding asynchronous error
 
 ### `appearance` (Lua → plugin)
 
-Required fields: `protocolVersion`, `type: "appearance"`, `instanceId`, `actionId`, `title`, `state`. v1 permits no appearance properties other than these fields and envelope extensions. `state` must be integer `0` or `1`; `title` must be a JSON string. The plugin applies the title and Stream Deck state to the matching visible instance. `showOk` and `showAlert` are feedback mechanisms only when a callback result warrants them; they are not protocol messages.
+Required fields: `protocolVersion`, `type: "appearance"`, `instanceId`, `actionId`, `title`, `state`. `state` must be integer `0` or `1`; `title` must be a JSON string. The optional presentation fields are enabled only by `appearanceVersion: 1`: `foregroundColor` and `backgroundColor` are six-digit `#RRGGBB` strings, `progress` is a number from `0` through `1`, and `badge` is a UTF-8 string of at most four characters (an empty badge clears it). Any presentation field without `appearanceVersion: 1` is invalid. The plugin renders the extended fields as a bounded SVG image through the SDK's `setImage`; if that capability is unavailable or fails, it deterministically retains the plain title/state rendering.
 
 ```json
 {
@@ -230,11 +230,16 @@ Required fields: `protocolVersion`, `type: "appearance"`, `instanceId`, `actionI
   "instanceId": "deck-instance-01",
   "actionId": "com.example.volumeUp",
   "title": "Volume +",
-  "state": 0
+  "state": 0,
+  "appearanceVersion": 1,
+  "foregroundColor": "#FFFFFF",
+  "backgroundColor": "#202020",
+  "progress": 0.5,
+  "badge": "½"
 }
 ```
 
-The plugin discards a malformed appearance, an appearance with an unknown action, or an appearance for an instance no longer visible. It does not render a partial appearance and cannot send a plugin-to-Lua error in v1. A valid late appearance must not overwrite a different current action or instance.
+The plugin discards a malformed appearance, an appearance with an unknown action, or an appearance for an instance no longer visible. It does not render malformed fields or a partial invalid appearance and cannot send a plugin-to-Lua error in v1. A valid late appearance must not overwrite a different current action or instance.
 
 ## Errors
 

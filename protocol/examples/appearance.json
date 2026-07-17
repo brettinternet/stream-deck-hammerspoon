@@ -34,6 +34,19 @@
   },
   {
     "protocolVersion": 1,
+    "type": "appearance",
+    "instanceId": "deck-instance-01",
+    "actionId": "com.example.volumeUp",
+    "title": "Volume +",
+    "state": 1,
+    "appearanceVersion": 1,
+    "foregroundColor": "#FFFFFF",
+    "backgroundColor": "#202020",
+    "progress": 0.5,
+    "badge": "½"
+  },
+  {
+    "protocolVersion": 1,
     "type": "keyDown",
     "instanceId": "deck-instance-01",
     "sessionId": "opaque-session-01",

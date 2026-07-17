@@ -495,6 +495,92 @@ test("protocol validation and authentication failures are explicit", function()
   end)
 end)
 
+test("versioned appearance fields validate and render safely", function()
+  local appearance = {
+    title = "Ready",
+    state = "active",
+    appearanceVersion = 1,
+    foregroundColor = "#FFFFFF",
+    backgroundColor = "#202020",
+    progress = 0.5,
+    badge = "<&",
+  }
+  local valid, code = Protocol.validate(message("appearance", {
+    instanceId = "instance",
+    actionId = "action",
+    title = appearance.title,
+    state = 1,
+    appearanceVersion = appearance.appearanceVersion,
+    foregroundColor = appearance.foregroundColor,
+    backgroundColor = appearance.backgroundColor,
+    progress = appearance.progress,
+    badge = appearance.badge,
+  }))
+  assertTrue(valid, code or "valid appearance fields must pass")
+
+  local invalidFields = {
+    { appearanceVersion = 2 },
+    { appearanceVersion = 1, foregroundColor = "#FFF" },
+    { appearanceVersion = 1, backgroundColor = "red" },
+    { appearanceVersion = 1, progress = -0.01 },
+    { appearanceVersion = 1, progress = 1.01 },
+    { appearanceVersion = 1, badge = string.rep("x", 5) },
+    { progress = 0.5 },
+  }
+  for _, fields in ipairs(invalidFields) do
+    local invalid = {
+      instanceId = "instance",
+      actionId = "action",
+      title = "Invalid",
+      state = 0,
+    }
+    for key, value in pairs(fields) do
+      invalid[key] = value
+    end
+    local invalidValid = Protocol.validate(message("appearance", invalid))
+    assertFalse(invalidValid, "invalid appearance fields must be rejected")
+  end
+
+  for _, messageType in ipairs({ "instanceDisappeared", "keyDown", "requestAppearance" }) do
+    local missingActionId, missingCode = Protocol.validate(message(messageType, {
+      sessionId = "session",
+      instanceId = "instance",
+    }))
+    assertFalse(missingActionId, messageType .. " must require actionId")
+    assertEqual(missingCode, "INVALID_FIELD")
+  end
+
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.presentation",
+    name = "Presentation",
+    appearance = function() return appearance end,
+    press = function() end,
+  })
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    authenticate(server, path)
+    local responses = exchange(server, message("instanceAppeared", {
+      instanceId = "presentation",
+      actionId = "com.test.presentation",
+      settings = {},
+    }))
+    assertEqual(responses[1].type, "appearance")
+    assertEqual(responses[1].appearanceVersion, 1)
+    assertEqual(responses[1].foregroundColor, "#FFFFFF")
+    assertEqual(responses[1].backgroundColor, "#202020")
+    assertEqual(responses[1].progress, 0.5)
+    assertEqual(responses[1].badge, "<&")
+
+    appearance.progress = 2
+    assertError("CALLBACK_FAILED", exchange(server, message("requestAppearance", {
+      instanceId = "presentation",
+      actionId = "com.test.presentation",
+    })))
+    server:stop()
+  end)
+end)
+
 test("unknown actions return an invocation error", function()
   local registry = Registry.new()
   registry:register({

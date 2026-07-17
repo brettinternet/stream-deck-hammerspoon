@@ -8,6 +8,7 @@ import {
   PROTOCOL_VERSION,
   parseServerMessage,
   serializeClientMessage,
+  type AppearanceFields,
   type ClientMessage,
   type JsonSettings,
   type JsonValue,
@@ -22,8 +23,7 @@ export interface BridgeAction {
   settingsSchema?: JsonValue[];
   settingsSchemaVersion?: number;
 }
-
-export interface BridgeAppearance {
+export interface BridgeAppearance extends AppearanceFields {
   type: "appearance";
   protocolVersion: typeof PROTOCOL_VERSION;
   instanceId: string;
@@ -399,10 +399,14 @@ export class BridgeClient extends EventEmitter {
       actionId: message.actionId,
       title: message.title,
       state: message.state,
+      ...(message.appearanceVersion === undefined ? {} : { appearanceVersion: message.appearanceVersion }),
+      ...(message.foregroundColor === undefined ? {} : { foregroundColor: message.foregroundColor }),
+      ...(message.backgroundColor === undefined ? {} : { backgroundColor: message.backgroundColor }),
+      ...(message.progress === undefined ? {} : { progress: message.progress }),
+      ...(message.badge === undefined ? {} : { badge: message.badge }),
     };
     this.emit("appearance", appearance);
   }
-
   private handleRemoteError(message: ServerErrorMessage): void {
     const error: BridgeProtocolError = {
       code: message.code,

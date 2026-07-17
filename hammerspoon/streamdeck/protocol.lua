@@ -159,6 +159,18 @@ local function boundedString(value, maximum)
   return length ~= nil and length <= maximum
 end
 
+local function isAppearanceColor(value)
+  return type(value) == "string" and value:match("^#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]$") ~= nil
+end
+
+local function isAppearanceBadge(value)
+  if type(value) ~= "string" then
+    return false
+  end
+  local length = utf8.len(value)
+  return length ~= nil and length <= 4
+end
+
 local function validateSettingsField(field, seenKeys)
   if not isObject(field) or not boundedString(rawget(field, "key"), MAX_SETTINGS_KEY_LENGTH) then
     return false
@@ -311,6 +323,21 @@ function protocol.validate(message)
     if ok then ok, code = required(message, "actionId", isNonEmptyString) end
     if ok then ok, code = required(message, "title", function(value) return type(value) == "string" end) end
     if ok then ok, code = required(message, "state", function(value) return isInteger(value) and (value == 0 or value == 1) end) end
+    if ok then
+      local appearanceVersion = rawget(message, "appearanceVersion")
+      local foregroundColor = rawget(message, "foregroundColor")
+      local backgroundColor = rawget(message, "backgroundColor")
+      local progress = rawget(message, "progress")
+      local badge = rawget(message, "badge")
+      local hasExtendedFields = foregroundColor ~= nil or backgroundColor ~= nil or progress ~= nil or badge ~= nil
+      ok = appearanceVersion == nil or (isInteger(appearanceVersion) and appearanceVersion == 1)
+      if ok and hasExtendedFields then ok = appearanceVersion == 1 end
+      if ok and foregroundColor ~= nil then ok = isAppearanceColor(foregroundColor) end
+      if ok and backgroundColor ~= nil then ok = isAppearanceColor(backgroundColor) end
+      if ok and progress ~= nil then ok = isFiniteNumber(progress) and progress >= 0 and progress <= 1 end
+      if ok and badge ~= nil then ok = isAppearanceBadge(badge) end
+      if not ok then code = "INVALID_FIELD" end
+    end
   elseif messageType == "error" then
     ok, code = required(message, "code", function(value) return type(value) == "string" and errorCodes[value] end)
     if ok then ok, code = required(message, "message", isNonEmptyString) end

@@ -3,9 +3,8 @@ import streamDeck, {
   type KeyAction,
   type SendToPluginEvent,
 } from "@elgato/streamdeck";
-import type { BridgeClient } from "../bridge.js";
+import type { BridgeAppearance, BridgeClient } from "../bridge.js";
 import type { JsonSettings } from "../protocol.js";
-
 type JsonObject = { [key: string]: JsonValue };
 type JsonPrimitive = boolean | number | string | null | undefined;
 type JsonValue = JsonObject | JsonPrimitive | JsonValue[];
@@ -26,6 +25,65 @@ function cloneJsonValue(value: JsonValue): JsonValue {
 
 export const HAMMERSPOON_ACTION_UUID = "com.brettinternet.hammerspoon.action";
 
+function escapeXml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&apos;",
+  })[character] ?? character);
+}
+
+
+function appearanceImage(appearance: BridgeAppearance): string | undefined {
+  const hasDecoration = appearance.foregroundColor !== undefined
+    || appearance.backgroundColor !== undefined
+    || appearance.progress !== undefined
+    || appearance.badge !== undefined;
+  if (appearance.appearanceVersion !== 1 || !hasDecoration) {
+    return undefined;
+  }
+  if (
+    (appearance.foregroundColor !== undefined &&
+      (typeof appearance.foregroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(appearance.foregroundColor))) ||
+    (appearance.backgroundColor !== undefined &&
+      (typeof appearance.backgroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(appearance.backgroundColor))) ||
+    (appearance.progress !== undefined &&
+      (typeof appearance.progress !== "number" ||
+        !Number.isFinite(appearance.progress) ||
+        appearance.progress < 0 ||
+        appearance.progress > 1))
+  ) {
+    return undefined;
+  }
+  const foreground = appearance.foregroundColor ?? "#FFFFFF";
+  const background = appearance.backgroundColor ?? "#000000";
+  const progress = appearance.progress;
+  const badge = appearance.badge;
+  if (badge !== undefined && typeof badge !== "string") {
+    return undefined;
+  }
+  if (typeof badge === "string" && [...badge].length > 4) {
+    return undefined;
+  }
+  const progressBar = progress === undefined
+    ? ""
+    : `<rect x="4" y="64" width="${Math.round(progress * 64)}" height="4" fill="${foreground}"/>`;
+  const foregroundBorder = appearance.foregroundColor === undefined
+    ? ""
+    : `<rect x="2" y="2" width="68" height="68" fill="none" stroke="${foreground}" stroke-width="4"/>`;
+  const badgeText = badge === undefined
+    ? ""
+    : `<text x="68" y="14" text-anchor="end" fill="${foreground}">${escapeXml(badge)}</text>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="${background}"/>${foregroundBorder}${progressBar}${badgeText}</svg>`;
+  try {
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  } catch {
+    return undefined;
+  }
+}
+
 export type HammerspoonActionSettings = JsonObject & {
   actionId?: string;
 };
@@ -34,6 +92,7 @@ type TrackedInstance = {
   action: KeyAction<HammerspoonActionSettings>;
   actionId?: string;
   settings: HammerspoonActionSettings;
+  imageApplied: boolean;
 };
 
 type RequestStateMessage = {
@@ -88,9 +147,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       return;
     }
 
-    const settings = this.settingsFrom(ev.payload.settings);
     const instanceId = ev.action.id;
-    this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings });
+    const settings = this.settingsFrom(ev.payload.settings);
+    this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: this.instances.get(instanceId)?.imageApplied ?? false });
     this.synchronized.delete(instanceId);
     await this.renderInstance(instanceId);
     if (settings.actionId) {
@@ -123,8 +182,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     if (previous?.actionId && previous.actionId !== settings.actionId) {
       this.bridge.removeInstance(instanceId, previous.actionId);
     }
-
-    this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings });
+    this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: previous?.imageApplied ?? false });
     this.synchronized.delete(instanceId);
     await this.renderInstance(instanceId);
     if (settings.actionId) {
@@ -167,12 +225,14 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
 
     if (!instance.actionId) {
+      await this.clearImage(instance);
       await this.setTitle(instance.action, "Select action");
       await this.setState(instance.action, 0);
       return;
     }
 
     if (this.bridge.status !== "connected" || !this.synchronized.has(instanceId)) {
+      await this.clearImage(instance);
       await this.setTitle(instance.action, "Hammerspoon\nOffline");
       await this.setState(instance.action, 0);
       return;
@@ -188,20 +248,42 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
   }
 
-  private renderAppearance(appearance: {
-    instanceId: string;
-    actionId: string;
-    title: string;
-    state: 0 | 1;
-  }): void {
+  private async renderAppearance(appearance: BridgeAppearance): Promise<void> {
     const instance = this.instances.get(appearance.instanceId);
     if (!instance || instance.actionId !== appearance.actionId) {
       return;
     }
-    this.synchronized.add(appearance.instanceId);
-    void this.setTitle(instance.action, appearance.title);
-    void this.setState(instance.action, appearance.state);
+    const image = appearanceImage(appearance);
+    if (image !== undefined) {
+      await this.clearImage(instance);
+      if (await this.setImage(instance.action, image)) {
+        instance.imageApplied = true;
+      }
+    } else if (instance.imageApplied) {
+      await this.clearImage(instance);
+    }
+    await this.setTitle(instance.action, appearance.title);
+    await this.setState(instance.action, appearance.state);
   }
+
+  private async clearImage(instance: TrackedInstance): Promise<void> {
+    if (!instance.imageApplied) {
+      return;
+    }
+    if (await this.setImage(instance.action, undefined)) {
+      instance.imageApplied = false;
+    }
+  }
+  private async setImage(action: KeyAction<HammerspoonActionSettings>, image: string | undefined): Promise<boolean> {
+    try {
+      await action.setImage(image);
+      return true;
+    } catch {
+      await this.alert(action);
+      return false;
+    }
+  }
+
   private async setTitle(action: KeyAction<HammerspoonActionSettings>, title: string): Promise<void> {
     try {
       await action.setTitle(title);
@@ -217,6 +299,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       await this.alert(action);
     }
   }
+
 
   private async alert(action: KeyAction<HammerspoonActionSettings>): Promise<void> {
     try {

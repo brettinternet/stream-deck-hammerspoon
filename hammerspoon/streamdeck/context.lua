@@ -7,6 +7,18 @@ local function callbackTraceback(message)
   return tostring(message)
 end
 
+local function isAppearanceColor(value)
+  return type(value) == "string" and value:match("^#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]$") ~= nil
+end
+
+local function isAppearanceBadge(value)
+  if type(value) ~= "string" then
+    return false
+  end
+  local length = utf8.len(value)
+  return length ~= nil and length <= 4
+end
+
 local function isAppearance(value)
   if type(value) ~= "table" then
     return false
@@ -17,8 +29,34 @@ local function isAppearance(value)
   if value.state ~= "active" and value.state ~= "inactive" then
     return false
   end
+  local hasExtendedFields = value.foregroundColor ~= nil
+    or value.backgroundColor ~= nil
+    or value.progress ~= nil
+    or value.badge ~= nil
+  if value.appearanceVersion ~= nil and value.appearanceVersion ~= 1 then
+    return false
+  end
+  if hasExtendedFields and value.appearanceVersion ~= 1 then
+    return false
+  end
+  if value.foregroundColor ~= nil and not isAppearanceColor(value.foregroundColor) then
+    return false
+  end
+  if value.backgroundColor ~= nil and not isAppearanceColor(value.backgroundColor) then
+    return false
+  end
+  if value.progress ~= nil and (type(value.progress) ~= "number" or value.progress ~= value.progress
+      or value.progress == math.huge or value.progress == -math.huge
+      or value.progress < 0 or value.progress > 1) then
+    return false
+  end
+  if value.badge ~= nil and not isAppearanceBadge(value.badge) then
+    return false
+  end
   for key in pairs(value) do
-    if key ~= "title" and key ~= "state" then
+    if key ~= "title" and key ~= "state" and key ~= "appearanceVersion"
+        and key ~= "foregroundColor" and key ~= "backgroundColor"
+        and key ~= "progress" and key ~= "badge" then
       return false
     end
   end
@@ -45,7 +83,6 @@ function context.new(options)
     emitAppearance = options.emitAppearance,
     emitError = options.emitError,
   }
-
   local function reportCallbackFailure()
     pcall(object.emitError, "CALLBACK_FAILED", object.instanceId)
   end
@@ -83,7 +120,7 @@ function context.new(options)
     end
 
     local state = appearance.state == "active" and 1 or 0
-    local emitted = pcall(self.emitAppearance, self.instanceId, self.actionId, appearance.title, state)
+    local emitted = pcall(self.emitAppearance, self.instanceId, self.actionId, appearance.title, state, appearance)
     if not emitted then
       pcall(self.emitError, "INTERNAL", self.instanceId)
       return false

@@ -302,6 +302,14 @@
         }
       ]
     },
+    "appearanceColor": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "appearanceBadge": {
+      "type": "string",
+      "maxLength": 4
+    },
     "appearance": {
       "allOf": [
         { "$ref": "#/$defs/message" },
@@ -312,10 +320,27 @@
             "instanceId": { "$ref": "#/$defs/id" },
             "actionId": { "$ref": "#/$defs/id" },
             "title": { "type": "string" },
-            "state": { "type": "integer", "enum": [0, 1] }
+            "state": { "type": "integer", "enum": [0, 1] },
+            "appearanceVersion": { "const": 1 },
+            "foregroundColor": { "$ref": "#/$defs/appearanceColor" },
+            "backgroundColor": { "$ref": "#/$defs/appearanceColor" },
+            "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+            "badge": { "$ref": "#/$defs/appearanceBadge" }
           },
           "required": ["instanceId", "actionId", "title", "state"],
           "additionalProperties": true
+        },
+        {
+          "if": {
+            "type": "object",
+            "anyOf": [
+              { "required": ["foregroundColor"] },
+              { "required": ["backgroundColor"] },
+              { "required": ["progress"] },
+              { "required": ["badge"] }
+            ]
+          },
+          "then": { "type": "object", "required": ["appearanceVersion"] }
         }
       ]
     },

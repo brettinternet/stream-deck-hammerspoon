@@ -17697,6 +17697,14 @@ var $defs = {
 			}
 		]
 	},
+	appearanceColor: {
+		type: "string",
+		pattern: "^#[0-9A-Fa-f]{6}$"
+	},
+	appearanceBadge: {
+		type: "string",
+		maxLength: 4
+	},
 	appearance: {
 		allOf: [
 			{
@@ -17723,6 +17731,23 @@ var $defs = {
 							0,
 							1
 						]
+					},
+					appearanceVersion: {
+						"const": 1
+					},
+					foregroundColor: {
+						$ref: "#/$defs/appearanceColor"
+					},
+					backgroundColor: {
+						$ref: "#/$defs/appearanceColor"
+					},
+					progress: {
+						type: "number",
+						minimum: 0,
+						maximum: 1
+					},
+					badge: {
+						$ref: "#/$defs/appearanceBadge"
 					}
 				},
 				required: [
@@ -17732,6 +17757,39 @@ var $defs = {
 					"state"
 				],
 				additionalProperties: true
+			},
+			{
+				"if": {
+					type: "object",
+					anyOf: [
+						{
+							required: [
+								"foregroundColor"
+							]
+						},
+						{
+							required: [
+								"backgroundColor"
+							]
+						},
+						{
+							required: [
+								"progress"
+							]
+						},
+						{
+							required: [
+								"badge"
+							]
+						}
+					]
+				},
+				then: {
+					type: "object",
+					required: [
+						"appearanceVersion"
+					]
+				}
 			}
 		]
 	},
@@ -18380,6 +18438,11 @@ class BridgeClient extends EventEmitter$1 {
             actionId: message.actionId,
             title: message.title,
             state: message.state,
+            ...(message.appearanceVersion === undefined ? {} : { appearanceVersion: message.appearanceVersion }),
+            ...(message.foregroundColor === undefined ? {} : { foregroundColor: message.foregroundColor }),
+            ...(message.backgroundColor === undefined ? {} : { backgroundColor: message.backgroundColor }),
+            ...(message.progress === undefined ? {} : { progress: message.progress }),
+            ...(message.badge === undefined ? {} : { badge: message.badge }),
         };
         this.emit("appearance", appearance);
     }
@@ -18543,6 +18606,61 @@ function cloneJsonValue(value) {
     }
     return value;
 }
+function escapeXml(value) {
+    return value.replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&apos;",
+    })[character] ?? character);
+}
+function appearanceImage(appearance) {
+    const hasDecoration = appearance.foregroundColor !== undefined
+        || appearance.backgroundColor !== undefined
+        || appearance.progress !== undefined
+        || appearance.badge !== undefined;
+    if (appearance.appearanceVersion !== 1 || !hasDecoration) {
+        return undefined;
+    }
+    if ((appearance.foregroundColor !== undefined &&
+        (typeof appearance.foregroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(appearance.foregroundColor))) ||
+        (appearance.backgroundColor !== undefined &&
+            (typeof appearance.backgroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(appearance.backgroundColor))) ||
+        (appearance.progress !== undefined &&
+            (typeof appearance.progress !== "number" ||
+                !Number.isFinite(appearance.progress) ||
+                appearance.progress < 0 ||
+                appearance.progress > 1))) {
+        return undefined;
+    }
+    const foreground = appearance.foregroundColor ?? "#FFFFFF";
+    const background = appearance.backgroundColor ?? "#000000";
+    const progress = appearance.progress;
+    const badge = appearance.badge;
+    if (badge !== undefined && typeof badge !== "string") {
+        return undefined;
+    }
+    if (typeof badge === "string" && [...badge].length > 4) {
+        return undefined;
+    }
+    const progressBar = progress === undefined
+        ? ""
+        : `<rect x="4" y="64" width="${Math.round(progress * 64)}" height="4" fill="${foreground}"/>`;
+    const foregroundBorder = appearance.foregroundColor === undefined
+        ? ""
+        : `<rect x="2" y="2" width="68" height="68" fill="none" stroke="${foreground}" stroke-width="4"/>`;
+    const badgeText = badge === undefined
+        ? ""
+        : `<text x="68" y="14" text-anchor="end" fill="${foreground}">${escapeXml(badge)}</text>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="${background}"/>${foregroundBorder}${progressBar}${badgeText}</svg>`;
+    try {
+        return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    }
+    catch {
+        return undefined;
+    }
+}
 function isRequestStateMessage(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value) && value.type === "requestState";
 }
@@ -18588,9 +18706,9 @@ class HammerspoonAction extends SingletonAction {
         if (!ev.action.isKey()) {
             return;
         }
-        const settings = this.settingsFrom(ev.payload.settings);
         const instanceId = ev.action.id;
-        this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings });
+        const settings = this.settingsFrom(ev.payload.settings);
+        this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: this.instances.get(instanceId)?.imageApplied ?? false });
         this.synchronized.delete(instanceId);
         await this.renderInstance(instanceId);
         if (settings.actionId) {
@@ -18620,7 +18738,7 @@ class HammerspoonAction extends SingletonAction {
         if (previous?.actionId && previous.actionId !== settings.actionId) {
             this.bridge.removeInstance(instanceId, previous.actionId);
         }
-        this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings });
+        this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: previous?.imageApplied ?? false });
         this.synchronized.delete(instanceId);
         await this.renderInstance(instanceId);
         if (settings.actionId) {
@@ -18657,11 +18775,13 @@ class HammerspoonAction extends SingletonAction {
             return;
         }
         if (!instance.actionId) {
+            await this.clearImage(instance);
             await this.setTitle(instance.action, "Select action");
             await this.setState(instance.action, 0);
             return;
         }
         if (this.bridge.status !== "connected" || !this.synchronized.has(instanceId)) {
+            await this.clearImage(instance);
             await this.setTitle(instance.action, "Hammerspoon\nOffline");
             await this.setState(instance.action, 0);
             return;
@@ -18674,14 +18794,41 @@ class HammerspoonAction extends SingletonAction {
             void this.renderInstance(instanceId);
         }
     }
-    renderAppearance(appearance) {
+    async renderAppearance(appearance) {
         const instance = this.instances.get(appearance.instanceId);
         if (!instance || instance.actionId !== appearance.actionId) {
             return;
         }
-        this.synchronized.add(appearance.instanceId);
-        void this.setTitle(instance.action, appearance.title);
-        void this.setState(instance.action, appearance.state);
+        const image = appearanceImage(appearance);
+        if (image !== undefined) {
+            await this.clearImage(instance);
+            if (await this.setImage(instance.action, image)) {
+                instance.imageApplied = true;
+            }
+        }
+        else if (instance.imageApplied) {
+            await this.clearImage(instance);
+        }
+        await this.setTitle(instance.action, appearance.title);
+        await this.setState(instance.action, appearance.state);
+    }
+    async clearImage(instance) {
+        if (!instance.imageApplied) {
+            return;
+        }
+        if (await this.setImage(instance.action, undefined)) {
+            instance.imageApplied = false;
+        }
+    }
+    async setImage(action, image) {
+        try {
+            await action.setImage(image);
+            return true;
+        }
+        catch {
+            await this.alert(action);
+            return false;
+        }
     }
     async setTitle(action, title) {
         try {

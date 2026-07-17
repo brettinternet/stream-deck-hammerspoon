@@ -9,6 +9,17 @@ export type JsonObject = { [key: string]: JsonValue };
 export type JsonSettings = JsonObject;
 export type Settings = JsonSettings;
 export type WireState = 0 | 1;
+export const APPEARANCE_VERSION = 1 as const;
+export type AppearanceVersion = typeof APPEARANCE_VERSION;
+
+export interface AppearanceFields {
+  appearanceVersion?: AppearanceVersion;
+  foregroundColor?: string;
+  backgroundColor?: string;
+  progress?: number;
+  badge?: string;
+}
+
 export type State = WireState;
 
 export interface WireMessage {
@@ -111,7 +122,7 @@ export interface RequestAppearanceMessage extends AuthenticatedClientMessage {
   actionId: string;
 }
 
-export interface AppearanceMessage extends WireMessage {
+export interface AppearanceMessage extends WireMessage, AppearanceFields {
   type: "appearance";
   instanceId: string;
   actionId: string;
