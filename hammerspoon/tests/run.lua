@@ -31,6 +31,44 @@ local function fileExists(path)
   return true
 end
 
+local pendingTimers = {}
+local function fakeDoAfter(delay, callback)
+  local timer = { delay = delay, callback = callback, stopped = false }
+  function timer:stop()
+    self.stopped = true
+  end
+  pendingTimers[#pendingTimers + 1] = timer
+  return timer
+end
+
+local function runPendingTimer()
+  for index, timer in ipairs(pendingTimers) do
+    if not timer.stopped then
+      table.remove(pendingTimers, index)
+      timer.callback()
+      return timer.delay
+    end
+  end
+  return nil
+end
+
+local function clearPendingTimers()
+  pendingTimers = {}
+end
+
+local function nextPendingDelay()
+  for _, timer in ipairs(pendingTimers) do
+    if not timer.stopped then
+      return timer.delay
+    end
+  end
+  return nil
+end
+
+local fakeTimer = {
+  doAfter = fakeDoAfter,
+}
+
 _G.hs = {
   json = {
     encode = fakeEncode,
@@ -49,6 +87,7 @@ _G.hs = {
       return "00000000-0000-4000-8000-000000000001"
     end,
   },
+  timer = fakeTimer,
   audiodevice = {},
   httpserver = {
     new = function()
@@ -722,6 +761,180 @@ test("multiple instances keep independent settings and callbacks", function()
     server:stop()
   end)
 end)
+
+test("long press configuration validates and defaults deterministically", function()
+  local callback = function() end
+  local function definition(id, extra)
+    local value = {
+      id = id,
+      name = id,
+      appearance = callback,
+      press = callback,
+    }
+    for key, item in pairs(extra or {}) do
+      value[key] = item
+    end
+    return value
+  end
+  local registry = Registry.new()
+  assertFalse(pcall(registry.register, registry, definition("com.test.long-callback-not-function", {
+    longPress = true,
+  })))
+  assertFalse(pcall(registry.register, registry, definition("com.test.threshold-without-callback", {
+    longPressThresholdMs = 500,
+  })))
+  assertFalse(pcall(registry.register, registry, definition("com.test.threshold-too-short", {
+    longPress = callback,
+    longPressThresholdMs = 99,
+  })))
+  assertFalse(pcall(registry.register, registry, definition("com.test.threshold-fraction", {
+    longPress = callback,
+    longPressThresholdMs = 100.5,
+  })))
+  assertFalse(pcall(registry.register, registry, definition("com.test.threshold-too-long", {
+    longPress = callback,
+    longPressThresholdMs = 10001,
+  })))
+  local defaulted = definition("com.test.threshold-default", { longPress = callback })
+  registry:register(defaulted)
+  clearPendingTimers()
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    authenticate(server, path)
+    exchange(server, message("instanceAppeared", {
+      instanceId = "default-threshold",
+      actionId = "com.test.threshold-default",
+      settings = {},
+    }))
+    exchange(server, message("keyDown", {
+      instanceId = "default-threshold",
+      actionId = "com.test.threshold-default",
+    }))
+    assertEqual(nextPendingDelay(), 0.5, "longPress must use the documented default threshold")
+    exchange(server, message("keyUp", {
+      instanceId = "default-threshold",
+      actionId = "com.test.threshold-default",
+    }))
+    server:stop()
+  end)
+  clearPendingTimers()
+end)
+
+test("long press classifies tap and long transitions once and cancels safely", function()
+  clearPendingTimers()
+  local pressed = 0
+  local longPressed = 0
+  local released = 0
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.long-press",
+    name = "Long press",
+    longPressThresholdMs = 750,
+    appearance = function() return { title = "Ready", state = "inactive" } end,
+    press = function() pressed = pressed + 1 end,
+    longPress = function() longPressed = longPressed + 1 end,
+    release = function() released = released + 1 end,
+  })
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    authenticate(server, path)
+    exchange(server, message("instanceAppeared", {
+      instanceId = "long-instance",
+      actionId = "com.test.long-press",
+      settings = {},
+    }))
+
+    exchange(server, message("keyDown", {
+      instanceId = "long-instance",
+      actionId = "com.test.long-press",
+    }))
+    assertEqual(nextPendingDelay(), 0.75, "configured threshold must be scheduled in seconds")
+    exchange(server, message("keyUp", {
+      instanceId = "long-instance",
+      actionId = "com.test.long-press",
+    }))
+    exchange(server, message("keyUp", {
+      instanceId = "long-instance",
+      actionId = "com.test.long-press",
+    }))
+    assertEqual(pressed, 1, "tap must invoke press once")
+    assertEqual(longPressed, 0, "tap must not invoke longPress")
+    assertEqual(released, 1, "duplicate keyUp must not duplicate release")
+
+    exchange(server, message("keyDown", {
+      instanceId = "long-instance",
+      actionId = "com.test.long-press",
+    }))
+    assertEqual(runPendingTimer(), 0.75)
+    assertEqual(longPressed, 1, "threshold must invoke longPress once")
+    exchange(server, message("keyUp", {
+      instanceId = "long-instance",
+      actionId = "com.test.long-press",
+    }))
+    assertEqual(pressed, 1, "long press must not invoke tap press")
+    assertEqual(longPressed, 1, "long press must not duplicate callback")
+    assertEqual(released, 2, "release remains available after longPress")
+
+    exchange(server, message("keyDown", {
+      instanceId = "long-instance",
+      actionId = "com.test.long-press",
+    }))
+    exchange(server, message("instanceAppeared", {
+      instanceId = "long-instance",
+      actionId = "com.test.long-press",
+      settings = {},
+    }))
+    assertEqual(runPendingTimer(), nil, "settings replacement must cancel pending longPress")
+    exchange(server, message("keyUp", {
+      instanceId = "long-instance",
+      actionId = "com.test.long-press",
+    }))
+    assertEqual(pressed, 1, "cancelled sequence must not become a tap")
+    server:stop()
+  end)
+  clearPendingTimers()
+end)
+
+
+test("long press callback errors stay isolated from release", function()
+  clearPendingTimers()
+  local released = 0
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.long-press-error",
+    name = "Long press error",
+    longPressThresholdMs = 100,
+    appearance = function() return { title = "Ready", state = "inactive" } end,
+    press = function() error("tap must not run") end,
+    longPress = function() error("intentional long press failure") end,
+    release = function() released = released + 1 end,
+  })
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    authenticate(server, path)
+    exchange(server, message("instanceAppeared", {
+      instanceId = "long-error",
+      actionId = "com.test.long-press-error",
+      settings = {},
+    }))
+    exchange(server, message("keyDown", {
+      instanceId = "long-error",
+      actionId = "com.test.long-press-error",
+    }))
+    runPendingTimer()
+    local callbackError = fakeHttp.sent[#fakeHttp.sent]
+    assertEqual(fakeDecode(callbackError).code, "CALLBACK_FAILED")
+    exchange(server, message("keyUp", {
+      instanceId = "long-error",
+      actionId = "com.test.long-press-error",
+    }))
+    assertEqual(released, 1, "release must still run after longPress failure")
+    server:stop()
+  end)
+  clearPendingTimers()
+end)
+
+
 
 test("settings replay rebuilds independent contexts after reconnect", function()
   local pressed = {}

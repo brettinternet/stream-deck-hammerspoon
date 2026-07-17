@@ -8,6 +8,8 @@ local allowedFields = {
   appearance = true,
   press = true,
   release = true,
+  longPress = true,
+  longPressThresholdMs = true,
   appear = true,
   disappear = true,
 }
@@ -69,6 +71,8 @@ local MAX_SETTINGS_TEXT_LENGTH = 4096
 local MAX_SETTINGS_NUMBER = 1000000000000
 local MAX_SETTINGS_OPTIONS = 64
 local MAX_SETTINGS_OPTION_VALUE_LENGTH = 256
+local MIN_LONG_PRESS_THRESHOLD_MS = 100
+local MAX_LONG_PRESS_THRESHOLD_MS = 10000
 
 local function isInteger(value)
   return type(value) == "number" and value == math.floor(value)
@@ -272,11 +276,26 @@ local function validateDefinition(definition)
   if type(definition.press) ~= "function" then
     error("Stream Deck action press must be a function", 3)
   end
+  if definition.longPress ~= nil and type(definition.longPress) ~= "function" then
+    error("Stream Deck action longPress must be a function", 3)
+  end
+  if definition.longPressThresholdMs ~= nil then
+    if definition.longPress == nil then
+      error("Stream Deck action longPressThresholdMs requires longPress", 3)
+    end
+    local threshold = definition.longPressThresholdMs
+    if not isInteger(threshold)
+        or threshold < MIN_LONG_PRESS_THRESHOLD_MS
+        or threshold > MAX_LONG_PRESS_THRESHOLD_MS then
+      error("Stream Deck action longPressThresholdMs must be an integer from 100 through 10000", 3)
+    end
+  end
   for _, field in ipairs({ "appear", "disappear", "release" }) do
     if definition[field] ~= nil and type(definition[field]) ~= "function" then
       error("Stream Deck action " .. field .. " must be a function", 3)
     end
   end
+
 end
 
 function registry.new()

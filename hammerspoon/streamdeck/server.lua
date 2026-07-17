@@ -183,10 +183,86 @@ function server.new(registry, protocol, contextFactory)
       end,
     })
   end
+
+  local function cancelLongPress(instance)
+    if instance.longPressTimer ~= nil then
+      local timer = instance.longPressTimer
+      instance.longPressTimer = nil
+      pcall(function()
+        if type(timer.stop) == "function" then
+          timer:stop()
+        end
+      end)
+    end
+    instance.pressed = false
+    instance.longPressTriggered = false
+  end
+
+  function object:_beginPress(instance)
+    cancelLongPress(instance)
+    if instance.definition.longPress == nil then
+      instance:invoke("press")
+      return
+    end
+
+    instance.pressed = true
+    local hsapi = rawget(_G, "hs")
+    local timerApi = hsapi and hsapi.timer
+    if not timerApi or type(timerApi.doAfter) ~= "function" then
+      instance.pressed = false
+      instance:invoke("press")
+      return
+    end
+
+    local thresholdMs = instance.definition.longPressThresholdMs or 500
+    local callback = function()
+      if self.instances[instance.instanceId] ~= instance or not instance.pressed then
+        return
+      end
+      instance.longPressTimer = nil
+      instance.longPressTriggered = true
+      instance:invoke("longPress")
+    end
+    local ok, timer = pcall(timerApi.doAfter, thresholdMs / 1000, callback)
+    if not ok or timer == nil then
+      instance.pressed = false
+      instance:invoke("press")
+      return
+    end
+    instance.longPressTimer = timer
+  end
+
+  function object:_endPress(instance)
+    if instance.definition.longPress == nil then
+      instance:invoke("release")
+      return
+    end
+    if not instance.pressed then
+      return
+    end
+    local longPressTriggered = instance.longPressTriggered == true
+    cancelLongPress(instance)
+    if not longPressTriggered then
+      instance:invoke("press")
+    end
+    instance:invoke("release")
+  end
+
+  function object:_cancelPress(instance)
+    cancelLongPress(instance)
+  end
+
+  local function cancelInstancePress(instance)
+    if instance then
+      object:_cancelPress(instance)
+    end
+  end
+
   function object:_clearInstances()
     local instances = self.instances
     self.instances = {}
     for _, instance in pairs(instances) do
+      cancelInstancePress(instance)
       instance:invoke("disappear")
     end
   end
@@ -263,6 +339,7 @@ function server.new(registry, protocol, contextFactory)
         return
       end
       if existing then
+        cancelInstancePress(existing)
         existing:updateSettings(message.settings)
         existing:refresh()
       else
@@ -289,6 +366,7 @@ function server.new(registry, protocol, contextFactory)
         return
       end
       self.instances[message.instanceId] = nil
+      cancelInstancePress(instance)
       instance:invoke("disappear")
       return
     end
@@ -305,9 +383,9 @@ function server.new(registry, protocol, contextFactory)
         return
       end
       if message.type == "keyDown" then
-        instance:invoke("press")
+        self:_beginPress(instance)
       elseif message.type == "keyUp" then
-        instance:invoke("release")
+        self:_endPress(instance)
       else
         instance:refresh()
       end
