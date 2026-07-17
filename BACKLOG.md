@@ -222,6 +222,9 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Defined the v1 exact-version posture, additive/minor and breaking/major change classes, explicit future negotiation rules, deprecation lifecycle, positive fixture ownership under `protocol/examples/`, and current-plus-previous major support windows. Contributor workflow now requires compatibility classification and synchronized schema, fixture, and validator updates.
 
 ### ECO-006 — Contributor documentation
-- Status: ready
+- Status: done
 - Depends on: ECO-003, ECO-004, ECO-005
 - Acceptance: Contributor guide covers architecture changes, release workflow, protocol review, security reporting, and hardware-free verification.
+- Commits: 71b051f
+- Verification: `git diff --check 71b051f^ 71b051f`; independent verifier PASS on all five acceptance criteria; focused Markdown-link inspection passed.
+- Outcome: CONTRIBUTING.md now documents architecture boundaries and source/artifact ownership, protocol compatibility/schema/fixture/validator review, reproducible release/checksum/install workflow, private security reporting and redaction, and hardware-free versus hardware-required verification.
