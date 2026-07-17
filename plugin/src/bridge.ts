@@ -566,7 +566,7 @@ export class BridgeClient extends EventEmitter {
     } catch (error) {
       const safe = safeError(error);
       this.emitProtocolError(safe);
-      this.emitDiagnostic("schema", safeProtocolCode(safe.code), undefined, !this.authenticated);
+      this.emitDiagnostic("schema", safeProtocolCode(safe.code), undefined, true);
       if (!this.authenticated) this.closeCurrentSocket(generation);
       return;
     }
@@ -677,7 +677,7 @@ export class BridgeClient extends EventEmitter {
     };
     if (message.requestId) this.pendingActions.delete(message.requestId);
     this.emitProtocolError(error);
-    const preserveCause = !this.authenticated && ["AUTH_REQUIRED", "AUTH_FAILED", "VERSION_MISMATCH"].includes(code);
+    const preserveCause = ["AUTH_REQUIRED", "AUTH_FAILED", "VERSION_MISMATCH"].includes(code);
     this.emitDiagnostic(diagnosticCategory(code, message.instanceId !== undefined), code, undefined, preserveCause);
     if (!this.authenticated && ["AUTH_REQUIRED", "AUTH_FAILED", "VERSION_MISMATCH"].includes(code)) {
       this.closeCurrentSocket(this.socketGeneration);
@@ -824,7 +824,11 @@ export class BridgeClient extends EventEmitter {
     retryInMs?: number,
     preserveCause = false,
   ): void {
-    if (preserveCause) this.preserveFailureCause = true;
+    if (preserveCause) {
+      this.preserveFailureCause = true;
+    } else if (area !== "reconnect") {
+      this.preserveFailureCause = false;
+    }
     this.retryInMs = retryInMs === undefined
       ? undefined
       : Math.max(0, Math.min(MAX_RECONNECT_MS, Math.floor(retryInMs)));

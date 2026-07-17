@@ -876,6 +876,48 @@ describe("BridgeClient redacted diagnostics", () => {
     expect(JSON.stringify(client.diagnostics)).not.toMatch(/secret|session-|message|instanceId/);
     client.stop();
   });
+  test("retains a schema cause across a later transport reconnect", async () => {
+    const sockets: FakeSocket[] = [];
+    const timers = new ManualTimers();
+    const { client } = makeClient(sockets, timers);
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+
+    sockets[0].receive("malformed-secret-frame");
+    sockets[0].peerClose();
+
+    expect(client.diagnostics.latest).toMatchObject({ area: "schema", code: "MALFORMED_MESSAGE" });
+    expect(client.diagnostics.retryInMs).toBe(250);
+    client.stop();
+  });
+  test("retains an authenticated auth cause across a later transport reconnect", async () => {
+    const sockets: FakeSocket[] = [];
+    const timers = new ManualTimers();
+    const { client } = makeClient(sockets, timers);
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+
+    sockets[0].receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "error",
+      code: "AUTH_REQUIRED",
+      message: "auth-secret",
+      requestId: "request-secret",
+      instanceId: "instance-secret",
+    }));
+    sockets[0].peerClose();
+
+    expect(client.diagnostics.latest).toMatchObject({ area: "auth", code: "AUTH_REQUIRED" });
+    expect(client.diagnostics.retryInMs).toBe(250);
+    expect(JSON.stringify(client.diagnostics)).not.toMatch(/secret|requestId|instanceId/);
+    client.stop();
+  });
+
+
 
   test("bounds and suppresses repeated diagnostic log lines", async () => {
     const sockets: FakeSocket[] = [];
