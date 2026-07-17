@@ -508,6 +508,42 @@ describe("BridgeClient instance lifecycle", () => {
     ]);
   });
 
+  test("correlates feedback to visible instances and isolates listener failures", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets);
+    const feedback: unknown[] = [];
+    client.on("feedback", () => {
+      throw new Error("feedback listener failed");
+    });
+    client.on("feedback", (value) => feedback.push(value));
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+    client.upsertInstance({ instanceId: "live", actionId: "com.example.action", settings: {} });
+    sockets[0].receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "feedback",
+      instanceId: "stale",
+      actionId: "com.example.action",
+      kind: "error",
+      message: "Nope",
+      durationMs: 250,
+    }));
+    sockets[0].receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "feedback",
+      instanceId: "live",
+      actionId: "com.example.action",
+      kind: "success",
+      message: "Done",
+      durationMs: 250,
+    }));
+    expect(feedback).toEqual([
+      expect.objectContaining({ instanceId: "live", kind: "success", message: "Done", durationMs: 250 }),
+    ]);
+  });
+
   test("ignores empty frames but reports malformed non-empty frames", async () => {
     const sockets: FakeSocket[] = [];
     const { client } = makeClient(sockets);

@@ -130,6 +130,17 @@ export interface AppearanceMessage extends WireMessage, AppearanceFields {
   state: WireState;
 }
 
+export type FeedbackKind = "success" | "error";
+
+export interface FeedbackMessage extends WireMessage {
+  type: "feedback";
+  instanceId: string;
+  actionId: string;
+  kind: FeedbackKind;
+  message: string;
+  durationMs: number;
+}
+
 
 export type ProtocolErrorCode =
   | "AUTH_REQUIRED"
@@ -162,6 +173,7 @@ export type InstanceAppeared = InstanceAppearedMessage;
 export type InstanceDisappeared = InstanceDisappearedMessage;
 export type KeyDown = KeyDownMessage;
 export type RequestAppearance = RequestAppearanceMessage;
+export type Feedback = FeedbackMessage;
 export type Appearance = AppearanceMessage;
 
 export type ClientMessage =
@@ -176,6 +188,7 @@ export type ServerMessage =
   | HelloAckMessage
   | ActionsMessage
   | AppearanceMessage
+  | FeedbackMessage
   | ErrorMessage;
 
 type ClientMessageType = ClientMessage["type"];
@@ -194,6 +207,7 @@ const SERVER_MESSAGE_TYPES: Record<ServerMessageType, true> = {
   helloAck: true,
   actions: true,
   appearance: true,
+  feedback: true,
   error: true,
 };
 
@@ -393,6 +407,26 @@ function validateSettingsSchema(action: ActionDefinition, actionIndex: number): 
   });
 }
 
+function validateFeedback(message: FeedbackMessage): void {
+  if (message.message.length > 256) {
+    throw new Error("Invalid server message: feedback message exceeds 256 characters.");
+  }
+  for (const character of message.message) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      ((codePoint >= 0 && codePoint <= 0x1f) || (codePoint >= 0x7f && codePoint <= 0x9f))
+    ) {
+      throw new Error("Invalid server message: feedback message contains control characters.");
+    }
+  }
+  try {
+    encodeURIComponent(message.message);
+  } catch {
+    throw new Error("Invalid server message: feedback message must contain valid Unicode.");
+  }
+}
+
 function schemaError(direction: "server" | "client"): Error {
   const details = ajv.errorsText(validateProtocolMessage.errors, { separator: "; " });
   return new Error(
@@ -474,6 +508,9 @@ export function parseServerMessage(data: string): ServerMessage {
       }
       actionIds.add(action.actionId);
     }
+  }
+  if (parsed.type === "feedback") {
+    validateFeedback(parsed as FeedbackMessage);
   }
 
   return parsed as ServerMessage;

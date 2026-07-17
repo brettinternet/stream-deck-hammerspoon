@@ -22,6 +22,7 @@ class FakeAction {
   rejectImage = false;
   rejectImageClear = false;
   imageDelay?: Promise<void>;
+  okCount = 0;
   rejectAlert = false;
 
   constructor(
@@ -62,6 +63,10 @@ class FakeAction {
     if (this.rejectAlert) {
       throw new Error("showAlert failed");
     }
+  }
+
+  async showOk(): Promise<void> {
+    this.okCount += 1;
   }
 }
 
@@ -128,6 +133,29 @@ async function flush(): Promise<void> {
   await Promise.resolve();
   await new Promise<void>((resolve) => setImmediate(resolve));
   await Promise.resolve();
+}
+
+class FeedbackTimers {
+  private nextId = 1;
+  private readonly callbacks = new Map<number, () => void>();
+
+  readonly setTimeout = (callback: () => void): number => {
+    const id = this.nextId++;
+    this.callbacks.set(id, callback);
+    return id;
+  };
+
+  readonly clearTimeout = (handle: unknown): void => {
+    if (typeof handle === "number") this.callbacks.delete(handle);
+  };
+
+  runNext(): void {
+    const callback = this.callbacks.values().next().value as (() => void) | undefined;
+    if (!callback) return;
+    const id = this.callbacks.keys().next().value as number;
+    this.callbacks.delete(id);
+    callback();
+  }
 }
 
 describe("HammerspoonAction", () => {
@@ -576,4 +604,52 @@ describe("HammerspoonAction", () => {
     expect(titleFailure.calls).toEqual({ titles: ["Select action"], states: [0], images: [], alerts: 1 });
     expect(stateFailure.calls).toEqual({ titles: ["Select action"], states: [0], images: [], alerts: 1 });
   });
+  test("renders correlated feedback and restores the last appearance after expiry", async () => {
+    const bridge = new FakeBridge();
+    bridge.status = "connected";
+    const timers = new FeedbackTimers();
+    const adapter = new HammerspoonAction(bridge as unknown as BridgeClient, timers);
+    adapter.subscribe();
+    const action = new FakeAction("feedback-instance");
+    await adapter.onWillAppear(appear(action, { actionId: "com.example.feedback" }));
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "feedback-instance",
+      actionId: "com.example.feedback",
+      title: "Ready",
+      state: 1,
+    });
+    await flush();
+    bridge.emit("feedback", {
+      type: "feedback",
+      protocolVersion: 1,
+      instanceId: "feedback-instance",
+      actionId: "com.example.feedback",
+      kind: "success",
+      message: "Saved",
+      durationMs: 250,
+    });
+    await flush();
+    expect(action.calls.titles).toContain("Saved");
+    expect(action.okCount).toBe(1);
+    timers.runNext();
+    await flush();
+    expect(action.calls.titles.at(-1)).toBe("Ready");
+
+    await adapter.onWillDisappear(disappear(action));
+    const callsBeforeStale = structuredClone(action.calls);
+    bridge.emit("feedback", {
+      type: "feedback",
+      protocolVersion: 1,
+      instanceId: "feedback-instance",
+      actionId: "com.example.feedback",
+      kind: "error",
+      message: "Stale",
+      durationMs: 250,
+    });
+    await flush();
+    expect(action.calls).toEqual(callsBeforeStale);
+  });
+
 });

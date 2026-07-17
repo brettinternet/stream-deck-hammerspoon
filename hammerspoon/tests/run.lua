@@ -1038,5 +1038,132 @@ test("reconnect resets authentication and instance state", function()
   end)
 end)
 
+test("feedback validates safe bounds and correlates instance actions", function()
+  local valid = message("feedback", {
+    instanceId = "feedback-instance",
+    actionId = "com.test.feedback",
+    kind = "success",
+    message = "Completed",
+    durationMs = 250,
+  })
+  local validResult, validCode = Protocol.validate(valid)
+  assertTrue(validResult, validCode or "valid feedback must pass")
+
+  local invalid = {
+    message("feedback", {
+      instanceId = "feedback-instance",
+      actionId = "com.test.feedback",
+      kind = "success",
+      message = "bad" .. string.char(0),
+      durationMs = 250,
+    }),
+    message("feedback", {
+      instanceId = "feedback-instance",
+      actionId = "com.test.feedback",
+      kind = "warning",
+      message = "bad",
+      durationMs = 250,
+    }),
+    message("feedback", {
+      instanceId = "feedback-instance",
+      actionId = "com.test.feedback",
+      kind = "error",
+      message = "bad",
+      durationMs = 99,
+    }),
+    message("feedback", {
+      instanceId = "feedback-instance",
+      actionId = "com.test.feedback",
+      kind = "error",
+      message = string.rep("x", 257),
+      durationMs = 10001,
+    }),
+  }
+  for _, candidate in ipairs(invalid) do
+    local candidateResult = Protocol.validate(candidate)
+    assertFalse(candidateResult, "invalid feedback must fail validation")
+  end
+end)
+
+test("context feedback emission is isolated from callback and emitters", function()
+  local emitted = {}
+  local errors = {}
+  local instance = Context.new({
+    instanceId = "feedback-instance",
+    actionId = "com.test.feedback",
+    settings = {},
+    definition = {},
+    emitAppearance = function() end,
+    emitError = function(code, instanceId)
+      errors[#errors + 1] = { code = code, instanceId = instanceId }
+    end,
+    emitFeedback = function(instanceId, actionId, kind, feedbackMessage, durationMs)
+      emitted[#emitted + 1] = {
+        instanceId = instanceId,
+        actionId = actionId,
+        kind = kind,
+        message = feedbackMessage,
+        durationMs = durationMs,
+      }
+      return true
+    end,
+  })
+  assertTrue(instance:success("Saved", 250))
+  assertEqual(emitted[1].instanceId, "feedback-instance")
+  assertEqual(emitted[1].actionId, "com.test.feedback")
+  assertEqual(emitted[1].kind, "success")
+  assertFalse(instance:error("bad" .. string.char(1), 250))
+  assertFalse(instance:error("bad", 99))
+  assertEqual(#errors, 0, "invalid feedback must not expose callback errors")
+
+  local failing = Context.new({
+    instanceId = "failing-feedback",
+    actionId = "com.test.feedback",
+    settings = {},
+    definition = {},
+    emitAppearance = function() end,
+    emitError = function(code, instanceId)
+      errors[#errors + 1] = { code = code, instanceId = instanceId }
+    end,
+    emitFeedback = function()
+      error("feedback emitter failed")
+    end,
+  })
+  assertFalse(failing:error("Failed", 250))
+  assertEqual(errors[#errors].code, "INTERNAL")
+  assertEqual(errors[#errors].instanceId, "failing-feedback")
+end)
+
+test("server emits feedback without breaking callback loop", function()
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.feedback",
+    name = "Feedback",
+    appearance = function() return { title = "Ready", state = "inactive" } end,
+    press = function(context)
+      assertTrue(context:success("Done", 250))
+    end,
+  })
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    authenticate(server, path)
+    exchange(server, message("instanceAppeared", {
+      instanceId = "feedback-instance",
+      actionId = "com.test.feedback",
+      settings = {},
+    }))
+    local responses = exchange(server, message("keyDown", {
+      instanceId = "feedback-instance",
+      actionId = "com.test.feedback",
+    }))
+    assertEqual(responses[1].type, "feedback")
+    assertEqual(responses[1].instanceId, "feedback-instance")
+    assertEqual(responses[1].actionId, "com.test.feedback")
+    assertEqual(responses[1].message, "Done")
+    assertEqual(responses[1].durationMs, 250)
+    server:stop()
+  end)
+end)
+
 passed = passed + dofile("hammerspoon/tests/examples.lua")
 io.write("Lua bridge tests passed: " .. passed .. "\n")

@@ -84,8 +84,8 @@ The runtime flow is:
 4. Hammerspoon validates the hello and, even when an earlier session was marked authenticated, accepts it by clearing prior instance contexts, generates a fresh non-empty in-memory opaque `sessionId`, and returns it in the required `helloAck.sessionId`.
 5. The plugin sends that exact `sessionId` on every subsequent application message: `listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, and `requestAppearance`. Missing or stale IDs are rejected before any action or callback is invoked.
 6. Stream Deck instance lifecycle events become `instanceAppeared` and `instanceDisappeared`; key presses become `keyDown` events. Appearance refreshes become `requestAppearance`. A repeated `instanceAppeared` for the same instance/action is a settings refresh and does not run `appear` again.
-7. Lua computes presentation and sends `appearance`, or sends an asynchronous `error` with a safe code/message.
-8. The plugin applies the v1 `title` and `state` to the Stream Deck key. `showOk`/`showAlert` are feedback only when the callback result warrants them.
+7. Lua computes presentation and sends `appearance`, or sends an asynchronous `error` with a safe code/message. Callback code may also emit validated, instance/action-correlated `feedback` with a bounded safe message and duration.
+8. The plugin applies the v1 `title` and `state` to the Stream Deck key. Feedback temporarily sets the safe message as the title and calls `showOk` or `showAlert`, then restores the previous appearance after expiry.
 
 Every protocol message has `protocolVersion: 1` and a `type`. After `helloAck`, every plugin-to-Lua application message carries the current `sessionId`; `hello` carries the token but no session ID, and `helloAck` returns the newly generated ID. Unknown fields are ignored. Malformed messages and unknown types are rejected. TypeScript validates against the canonical JSON Schema with Ajv; Lua mirrors strict required/type checks because it cannot execute that JSON Schema directly.
 

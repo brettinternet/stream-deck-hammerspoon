@@ -17187,6 +17187,9 @@ var oneOf = [
 		$ref: "#/$defs/appearance"
 	},
 	{
+		$ref: "#/$defs/feedback"
+	},
+	{
 		$ref: "#/$defs/error"
 	}
 ];
@@ -17793,6 +17796,56 @@ var $defs = {
 			}
 		]
 	},
+	feedback: {
+		allOf: [
+			{
+				$ref: "#/$defs/message"
+			},
+			{
+				type: "object",
+				properties: {
+					type: {
+						"const": "feedback"
+					},
+					instanceId: {
+						$ref: "#/$defs/id"
+					},
+					actionId: {
+						$ref: "#/$defs/id"
+					},
+					kind: {
+						type: "string",
+						"enum": [
+							"success",
+							"error"
+						]
+					},
+					message: {
+						$ref: "#/$defs/feedbackText"
+					},
+					durationMs: {
+						type: "number",
+						minimum: 100,
+						maximum: 10000
+					}
+				},
+				required: [
+					"instanceId",
+					"actionId",
+					"kind",
+					"message",
+					"durationMs"
+				],
+				additionalProperties: true
+			}
+		]
+	},
+	feedbackText: {
+		type: "string",
+		minLength: 1,
+		maxLength: 256,
+		pattern: "^[^\\u0000-\\u001F\\u007F-\\u009F]+$"
+	},
 	error: {
 		allOf: [
 			{
@@ -17861,6 +17914,7 @@ const SERVER_MESSAGE_TYPES = {
     helloAck: true,
     actions: true,
     appearance: true,
+    feedback: true,
     error: true,
 };
 const ajv = new Ajv2020({ allErrors: true });
@@ -18040,6 +18094,24 @@ function validateSettingsSchema(action, actionIndex) {
         else if (field.type === "boolean") ;
     });
 }
+function validateFeedback(message) {
+    if (message.message.length > 256) {
+        throw new Error("Invalid server message: feedback message exceeds 256 characters.");
+    }
+    for (const character of message.message) {
+        const codePoint = character.codePointAt(0);
+        if (codePoint !== undefined &&
+            ((codePoint >= 0 && codePoint <= 0x1f) || (codePoint >= 0x7f && codePoint <= 0x9f))) {
+            throw new Error("Invalid server message: feedback message contains control characters.");
+        }
+    }
+    try {
+        encodeURIComponent(message.message);
+    }
+    catch {
+        throw new Error("Invalid server message: feedback message must contain valid Unicode.");
+    }
+}
 function schemaError(direction) {
     const details = ajv.errorsText(validateProtocolMessage.errors, { separator: "; " });
     return new Error(`Invalid ${direction} message: failed protocol schema validation${details ? `: ${details}` : ""}.`);
@@ -18112,6 +18184,9 @@ function parseServerMessage(data) {
             }
             actionIds.add(action.actionId);
         }
+    }
+    if (parsed.type === "feedback") {
+        validateFeedback(parsed);
     }
     return parsed;
 }
@@ -18428,6 +18503,9 @@ class BridgeClient extends EventEmitter$1 {
             case "appearance":
                 this.handleAppearance(message);
                 break;
+            case "feedback":
+                this.handleFeedback(message);
+                break;
             case "error":
                 this.handleRemoteError(message);
                 break;
@@ -18460,6 +18538,28 @@ class BridgeClient extends EventEmitter$1 {
             ...(message.badge === undefined ? {} : { badge: message.badge }),
         };
         this.emit("appearance", appearance);
+    }
+    handleFeedback(message) {
+        const instance = this.instances.get(message.instanceId);
+        if (!instance || instance.actionId !== message.actionId || !this.isKnownAction(message.actionId))
+            return;
+        const feedback = {
+            type: "feedback",
+            protocolVersion: PROTOCOL_VERSION,
+            instanceId: message.instanceId,
+            actionId: message.actionId,
+            kind: message.kind,
+            message: message.message,
+            durationMs: message.durationMs,
+        };
+        for (const listener of this.listeners("feedback")) {
+            try {
+                listener(feedback);
+            }
+            catch {
+                // A feedback listener must not break transport processing or other listeners.
+            }
+        }
     }
     handleRemoteError(message) {
         const error = {
@@ -18694,10 +18794,14 @@ class HammerspoonAction extends SingletonAction {
     instances = new Map();
     synchronized = new Set();
     renderQueues = new Map();
+    scheduleTimeout;
+    cancelTimeout;
     subscribed = false;
-    constructor(bridge) {
+    constructor(bridge, options = {}) {
         super();
         this.bridge = bridge;
+        this.scheduleTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
+        this.cancelTimeout = options.clearTimeout ?? ((handle) => clearTimeout(handle));
     }
     /** Subscribes this action adapter to bridge lifecycle and rendering events. */
     subscribe() {
@@ -18708,6 +18812,9 @@ class HammerspoonAction extends SingletonAction {
         this.bridge.on("status", (status) => {
             if (status !== "connected") {
                 this.synchronized.clear();
+                for (const instance of this.instances.values()) {
+                    this.cancelFeedbackTimer(instance);
+                }
             }
             this.renderStatus();
             void this.sendBridgeState();
@@ -18717,6 +18824,9 @@ class HammerspoonAction extends SingletonAction {
         });
         this.bridge.on("appearance", (appearance) => {
             void this.enqueueRender(appearance.instanceId, () => this.renderAppearance(appearance));
+        });
+        this.bridge.on("feedback", (feedback) => {
+            void this.enqueueRender(feedback.instanceId, () => this.renderFeedback(feedback));
         });
         this.bridge.on("protocolError", (error) => {
             if (error.instanceId) {
@@ -18733,7 +18843,16 @@ class HammerspoonAction extends SingletonAction {
         }
         const instanceId = ev.action.id;
         const settings = this.settingsFrom(ev.payload.settings);
-        this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: this.instances.get(instanceId)?.imageApplied ?? false });
+        const previous = this.instances.get(instanceId);
+        if (previous) {
+            this.cancelFeedbackTimer(previous);
+        }
+        this.instances.set(instanceId, {
+            action: ev.action,
+            actionId: settings.actionId,
+            settings,
+            imageApplied: previous?.imageApplied ?? false,
+        });
         this.synchronized.delete(instanceId);
         await this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
         if (settings.actionId) {
@@ -18747,6 +18866,7 @@ class HammerspoonAction extends SingletonAction {
     async onWillDisappear(ev) {
         const instanceId = ev.action.id;
         const instance = this.instances.get(instanceId);
+        this.cancelFeedbackTimer(instance);
         this.instances.delete(instanceId);
         this.synchronized.delete(instanceId);
         if (instance?.actionId) {
@@ -18765,6 +18885,7 @@ class HammerspoonAction extends SingletonAction {
         }
         this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: previous?.imageApplied ?? false });
         this.synchronized.delete(instanceId);
+        this.cancelFeedbackTimer(previous);
         await this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
         if (settings.actionId) {
             this.bridge.upsertInstance({
@@ -18847,6 +18968,7 @@ class HammerspoonAction extends SingletonAction {
             await this.renderInstance(appearance.instanceId);
             return;
         }
+        instance.lastAppearance = appearance;
         this.synchronized.add(appearance.instanceId);
         const image = appearanceImage(appearance);
         if (image !== undefined) {
@@ -18862,6 +18984,60 @@ class HammerspoonAction extends SingletonAction {
         }
         await this.setTitle(instance.action, appearance.title);
         await this.setState(instance.action, appearance.state);
+    }
+    async renderFeedback(feedback) {
+        const instance = this.instances.get(feedback.instanceId);
+        if (!instance || instance.actionId !== feedback.actionId || this.bridge.status !== "connected") {
+            return;
+        }
+        this.cancelFeedbackTimer(instance);
+        await this.setTitle(instance.action, feedback.message);
+        try {
+            if (feedback.kind === "success") {
+                await instance.action.showOk();
+            }
+            else {
+                await instance.action.showAlert();
+            }
+        }
+        catch {
+            // Stream Deck feedback is best-effort when an instance is disappearing.
+        }
+        try {
+            instance.feedbackTimer = this.scheduleTimeout(() => {
+                if (this.instances.get(feedback.instanceId) !== instance) {
+                    return;
+                }
+                instance.feedbackTimer = undefined;
+                void this.enqueueRender(feedback.instanceId, () => this.restoreInstance(feedback.instanceId, instance));
+            }, feedback.durationMs);
+        }
+        catch {
+            // A failed timer must not affect the bridge or callback loop.
+        }
+    }
+    async restoreInstance(instanceId, expected) {
+        if (this.instances.get(instanceId) !== expected) {
+            return;
+        }
+        if (this.bridge.status === "connected" && this.synchronized.has(instanceId) && expected.lastAppearance) {
+            await this.renderAppearance(expected.lastAppearance);
+        }
+        else {
+            await this.renderInstance(instanceId);
+        }
+    }
+    cancelFeedbackTimer(instance) {
+        if (!instance || instance.feedbackTimer === undefined) {
+            return;
+        }
+        try {
+            this.cancelTimeout(instance.feedbackTimer);
+        }
+        catch {
+            // A stale timer is harmless when an instance is disappearing.
+        }
+        instance.feedbackTimer = undefined;
     }
     async clearImage(instance) {
         if (!instance.imageApplied) {

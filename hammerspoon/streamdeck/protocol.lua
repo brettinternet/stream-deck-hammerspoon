@@ -13,6 +13,7 @@ local messageTypes = {
   keyDown = true,
   requestAppearance = true,
   appearance = true,
+  feedback = true,
   error = true,
 }
 
@@ -150,6 +151,31 @@ local MAX_SETTINGS_TEXT_LENGTH = 4096
 local MAX_SETTINGS_NUMBER = 1000000000000
 local MAX_SETTINGS_OPTIONS = 64
 local MAX_SETTINGS_OPTION_VALUE_LENGTH = 256
+local MAX_FEEDBACK_MESSAGE_LENGTH = 256
+local MIN_FEEDBACK_DURATION_MS = 100
+local MAX_FEEDBACK_DURATION_MS = 10000
+
+local function isFeedbackMessage(value)
+  if not isNonEmptyString(value) then
+    return false
+  end
+  local ok, length = pcall(utf8.len, value)
+  if not ok or length == nil or length > MAX_FEEDBACK_MESSAGE_LENGTH then
+    return false
+  end
+  local valid = pcall(function()
+    for _, codePoint in utf8.codes(value) do
+      if (codePoint >= 0 and codePoint <= 0x1f) or (codePoint >= 0x7f and codePoint <= 0x9f) then
+        error("control character")
+      end
+    end
+  end)
+  return valid
+end
+
+local function isFeedbackDuration(value)
+  return isFiniteNumber(value) and value >= MIN_FEEDBACK_DURATION_MS and value <= MAX_FEEDBACK_DURATION_MS
+end
 
 local function boundedString(value, maximum)
   if not isNonEmptyString(value) then
@@ -346,6 +372,12 @@ function protocol.validate(message)
     if ok then ok, code = required(message, "message", isNonEmptyString) end
     if ok and rawget(message, "requestId") ~= nil then ok, code = required(message, "requestId", isNonEmptyString) end
     if ok and rawget(message, "instanceId") ~= nil then ok, code = required(message, "instanceId", isNonEmptyString) end
+  elseif messageType == "feedback" then
+    ok, code = required(message, "instanceId", isNonEmptyString)
+    if ok then ok, code = required(message, "actionId", isNonEmptyString) end
+    if ok then ok, code = required(message, "kind", function(value) return value == "success" or value == "error" end) end
+    if ok then ok, code = required(message, "message", isFeedbackMessage) end
+    if ok then ok, code = required(message, "durationMs", isFeedbackDuration) end
   end
 
   if not ok then

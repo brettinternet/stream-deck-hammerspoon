@@ -13,6 +13,7 @@
     { "$ref": "#/$defs/keyDown" },
     { "$ref": "#/$defs/requestAppearance" },
     { "$ref": "#/$defs/appearance" },
+    { "$ref": "#/$defs/feedback" },
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
@@ -343,6 +344,30 @@
           "then": { "type": "object", "required": ["appearanceVersion"] }
         }
       ]
+    },
+    "feedback": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "feedback" },
+            "instanceId": { "$ref": "#/$defs/id" },
+            "actionId": { "$ref": "#/$defs/id" },
+            "kind": { "type": "string", "enum": ["success", "error"] },
+            "message": { "$ref": "#/$defs/feedbackText" },
+            "durationMs": { "type": "number", "minimum": 100, "maximum": 10000 }
+          },
+          "required": ["instanceId", "actionId", "kind", "message", "durationMs"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "feedbackText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]+$"
     },
     "error": {
       "allOf": [

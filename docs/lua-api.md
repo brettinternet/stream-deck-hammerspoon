@@ -86,6 +86,10 @@ Requests fresh appearance data for the current key instance only. It is normally
 
 Returns the settings stored by Stream Deck for the current key instance. Settings are ordinary decoded Lua values. The returned settings belong to this context; changing a local Lua table does not write settings back to Stream Deck. This v1 API has no settings-write method.
 
+### `context:success(message, durationMs)` and `context:error(message, durationMs)`
+
+Emit instance-scoped transient feedback after a callback succeeds or fails. `message` must be non-empty valid UTF-8, contain no Unicode control characters, and be at most 256 characters. `durationMs` is an inclusive millisecond range from 100 to 10,000. Invalid arguments return `false` without raising or exposing callback details; a valid emission returns `true` when queued. The plugin displays the message with the Stream Deck success or alert indicator, then restores the instance's previous appearance after the duration. Feedback is discarded safely when the instance disappears or the bridge reconnects.
+
 These are the only context methods in v1. Contexts are per-instance: assigning one action to several keys gives each key an independent context and independent settings. Do not use a module-global settings table when per-key behavior is intended.
 
 ## Action definitions and validation

@@ -41,7 +41,7 @@ A valid v1 message may carry extension fields, but a v1 implementation must not 
 
 ## Message inventory
 
-There are exactly ten v1 message types:
+There are exactly eleven v1 message types:
 
 | Direction | Type | Kind | Correlation |
 | --- | --- | --- | --- |
@@ -54,8 +54,8 @@ There are exactly ten v1 message types:
 | Plugin → Lua | `keyDown` | input event | no acknowledgement; errors use `instanceId` |
 | Plugin → Lua | `requestAppearance` | appearance request | no acknowledgement; errors use `instanceId` |
 | Lua → Plugin | `appearance` | appearance response | identifies `instanceId`; no separate request ID |
+| Lua → Plugin | `feedback` | transient success/error feedback | identifies `instanceId` and `actionId` |
 | Lua → Plugin | `error` | asynchronous error | optional `requestId` and/or `instanceId` |
-
 No other message type is part of v1. In particular, there is no wire-level settings-change, key-up, ping, pong, or plugin-to-Lua error message.
 
 The state is per WebSocket connection, and the active session ID is per accepted `hello`:
@@ -240,6 +240,26 @@ Required fields: `protocolVersion`, `type: "appearance"`, `instanceId`, `actionI
 ```
 
 The plugin discards a malformed appearance, an appearance with an unknown action, or an appearance for an instance no longer visible. It does not render malformed fields or a partial invalid appearance and cannot send a plugin-to-Lua error in v1. A valid late appearance must not overwrite a different current action or instance.
+
+## Feedback messages
+
+### `feedback` (Lua → plugin)
+
+Feedback is correlated by both `instanceId` and `actionId` and is emitted by `context:success` or `context:error`. `kind` is `success` or `error`; `message` is non-empty valid UTF-8 with no Unicode control characters and at most 256 characters; `durationMs` is a finite numeric millisecond value from 100 through 10,000.
+
+```json
+{
+  "protocolVersion": 1,
+  "type": "feedback",
+  "instanceId": "deck-instance-01",
+  "actionId": "com.example.volumeUp",
+  "kind": "success",
+  "message": "Saved",
+  "durationMs": 250
+}
+```
+
+Lua validates feedback before encoding and TypeScript validates it before rendering. The plugin shows the safe message with the corresponding Stream Deck success or alert indicator, then restores the last valid appearance after expiry. Feedback for an unknown action, disappeared instance, stale action, or disconnected session is ignored; timers are cancelled on disappearance and reconnect.
 
 ## Errors
 

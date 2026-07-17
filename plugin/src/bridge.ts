@@ -10,6 +10,7 @@ import {
   serializeClientMessage,
   type AppearanceFields,
   type ClientMessage,
+  type FeedbackKind,
   type JsonSettings,
   type JsonValue,
   type ServerMessage,
@@ -30,6 +31,16 @@ export interface BridgeAppearance extends AppearanceFields {
   actionId: string;
   title: string;
   state: 0 | 1;
+}
+
+export interface BridgeFeedback {
+  type: "feedback";
+  protocolVersion: typeof PROTOCOL_VERSION;
+  instanceId: string;
+  actionId: string;
+  kind: FeedbackKind;
+  message: string;
+  durationMs: number;
 }
 
 export interface BridgeProtocolError {
@@ -72,6 +83,7 @@ type TimerHandle = unknown;
 type ServerErrorMessage = Extract<ServerMessage, { type: "error" }>;
 type ActionsMessage = Extract<ServerMessage, { type: "actions" }>;
 type AppearanceMessage = Extract<ServerMessage, { type: "appearance" }>;
+type FeedbackMessage = Extract<ServerMessage, { type: "feedback" }>;
 type BridgeMessage =
   | Pick<Extract<ClientMessage, { type: "hello" }>, "protocolVersion" | "type" | "token" | "pluginVersion">
   | Pick<Extract<ClientMessage, { type: "listActions" }>, "protocolVersion" | "type" | "requestId">
@@ -373,6 +385,9 @@ export class BridgeClient extends EventEmitter {
       case "appearance":
         this.handleAppearance(message);
         break;
+      case "feedback":
+        this.handleFeedback(message);
+        break;
       case "error":
         this.handleRemoteError(message);
         break;
@@ -407,6 +422,28 @@ export class BridgeClient extends EventEmitter {
     };
     this.emit("appearance", appearance);
   }
+
+  private handleFeedback(message: FeedbackMessage): void {
+    const instance = this.instances.get(message.instanceId);
+    if (!instance || instance.actionId !== message.actionId || !this.isKnownAction(message.actionId)) return;
+    const feedback: BridgeFeedback = {
+      type: "feedback",
+      protocolVersion: PROTOCOL_VERSION,
+      instanceId: message.instanceId,
+      actionId: message.actionId,
+      kind: message.kind,
+      message: message.message,
+      durationMs: message.durationMs,
+    };
+    for (const listener of this.listeners("feedback")) {
+      try {
+        listener(feedback);
+      } catch {
+        // A feedback listener must not break transport processing or other listeners.
+      }
+    }
+  }
+
   private handleRemoteError(message: ServerErrorMessage): void {
     const error: BridgeProtocolError = {
       code: message.code,

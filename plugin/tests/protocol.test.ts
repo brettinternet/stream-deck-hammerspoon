@@ -80,6 +80,16 @@ const extendedAppearance: ServerMessage = {
   badge: "OK",
 };
 
+
+const feedback: ServerMessage = {
+  protocolVersion: 1,
+  type: "feedback",
+  instanceId: "deck-instance-01",
+  actionId: "com.example.volumeUp",
+  kind: "success",
+  message: "Completed",
+  durationMs: 250,
+};
 const requestAppearance: ClientMessage = {
   protocolVersion: 1,
   type: "requestAppearance",
@@ -121,6 +131,7 @@ describe("protocol examples", () => {
     }
     expect(parseServerMessage(JSON.stringify(appearance))).toEqual(appearance);
     expect(parseServerMessage(JSON.stringify(extendedAppearance))).toEqual(extendedAppearance);
+    expect(parseServerMessage(JSON.stringify(feedback))).toEqual(feedback);
   });
 });
 
@@ -165,6 +176,23 @@ describe("protocol direction and validation", () => {
     ];
 
     for (const message of malformedAppearances) {
+      expect(() => parseServerMessage(JSON.stringify(message))).toThrow();
+    }
+  });
+
+  test("rejects unsafe feedback messages and duration bounds", () => {
+    const invalidFeedback = [
+      { ...feedback, message: "" },
+      { ...feedback, message: "x".repeat(257) },
+      { ...feedback, message: "\u0000" },
+      { ...feedback, message: "\u007f" },
+      { ...feedback, message: "\ud800" },
+      { ...feedback, durationMs: 99 },
+      { ...feedback, durationMs: 10001 },
+      { ...feedback, durationMs: Number.NaN },
+      { ...feedback, kind: "warning" },
+    ];
+    for (const message of invalidFeedback) {
       expect(() => parseServerMessage(JSON.stringify(message))).toThrow();
     }
   });

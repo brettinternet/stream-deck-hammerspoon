@@ -149,6 +149,18 @@ function server.new(registry, protocol, contextFactory)
     return self:_queue(message)
   end
 
+  function object:_emitFeedback(instanceId, actionId, kind, message, durationMs)
+    return self:_queue({
+      protocolVersion = self.protocol.VERSION,
+      type = "feedback",
+      instanceId = instanceId,
+      actionId = actionId,
+      kind = kind,
+      message = message,
+      durationMs = durationMs,
+    })
+  end
+
   function object:_emitError(code, instanceId)
     return self:_queueError(code, nil, instanceId)
   end
@@ -164,6 +176,9 @@ function server.new(registry, protocol, contextFactory)
       end,
       emitError = function(code, contextInstanceId)
         return self:_emitError(code, contextInstanceId)
+      end,
+      emitFeedback = function(contextInstanceId, contextActionId, kind, message, durationMs)
+        return self:_emitFeedback(contextInstanceId, contextActionId, kind, message, durationMs)
       end,
     })
   end

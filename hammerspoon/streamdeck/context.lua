@@ -22,6 +22,36 @@ local function isAppearanceBadge(value)
   return length ~= nil and length <= 4
 end
 
+local MAX_FEEDBACK_MESSAGE_LENGTH = 256
+local MIN_FEEDBACK_DURATION_MS = 100
+local MAX_FEEDBACK_DURATION_MS = 10000
+
+local function isFeedbackMessage(value)
+  if type(value) ~= "string" or value == "" then
+    return false
+  end
+  local ok, length = pcall(utf8.len, value)
+  if not ok or length == nil or length > MAX_FEEDBACK_MESSAGE_LENGTH then
+    return false
+  end
+  return pcall(function()
+    for _, codePoint in utf8.codes(value) do
+      if (codePoint >= 0 and codePoint <= 0x1f) or (codePoint >= 0x7f and codePoint <= 0x9f) then
+        error("control character")
+      end
+    end
+  end)
+end
+
+local function isFeedbackDuration(value)
+  return type(value) == "number"
+    and value == value
+    and value ~= math.huge
+    and value ~= -math.huge
+    and value >= MIN_FEEDBACK_DURATION_MS
+    and value <= MAX_FEEDBACK_DURATION_MS
+end
+
 local function isAppearance(value)
   if type(value) ~= "table" then
     return false
@@ -85,6 +115,7 @@ function context.new(options)
     settings = options.settings,
     emitAppearance = options.emitAppearance,
     emitError = options.emitError,
+    emitFeedback = options.emitFeedback,
   }
   local function reportCallbackFailure()
     pcall(object.emitError, "CALLBACK_FAILED", object.instanceId)
@@ -94,8 +125,29 @@ function context.new(options)
     return self.settings
   end
 
+  local function emitFeedback(kind, message, durationMs)
+    if not isFeedbackMessage(message) or not isFeedbackDuration(durationMs)
+        or type(object.emitFeedback) ~= "function" then
+      return false
+    end
+    local ok, emitted = pcall(object.emitFeedback, object.instanceId, object.actionId, kind, message, durationMs)
+    if not ok or emitted == false then
+      pcall(object.emitError, "INTERNAL", object.instanceId)
+      return false
+    end
+    return true
+  end
+
   function object:updateSettings(settings)
     self.settings = settings
+  end
+
+  function object:success(message, durationMs)
+    return emitFeedback("success", message, durationMs)
+  end
+
+  function object:error(message, durationMs)
+    return emitFeedback("error", message, durationMs)
   end
 
   function object:invoke(name)
@@ -123,6 +175,7 @@ function context.new(options)
     end
 
     local state = appearance.state == "active" and 1 or 0
+
     local emitted = pcall(self.emitAppearance, self.instanceId, self.actionId, appearance.title, state, appearance)
     if not emitted then
       pcall(self.emitError, "INTERNAL", self.instanceId)

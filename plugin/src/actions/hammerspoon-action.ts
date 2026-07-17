@@ -3,7 +3,7 @@ import streamDeck, {
   type KeyAction,
   type SendToPluginEvent,
 } from "@elgato/streamdeck";
-import type { BridgeAppearance, BridgeClient } from "../bridge.js";
+import type { BridgeAppearance, BridgeClient, BridgeFeedback } from "../bridge.js";
 import type { JsonSettings } from "../protocol.js";
 type JsonObject = { [key: string]: JsonValue };
 type JsonPrimitive = boolean | number | string | null | undefined;
@@ -102,6 +102,8 @@ export type HammerspoonActionSettings = JsonObject & {
 type TrackedInstance = {
   action: KeyAction<HammerspoonActionSettings>;
   actionId?: string;
+  lastAppearance?: BridgeAppearance;
+  feedbackTimer?: unknown;
   settings: HammerspoonActionSettings;
   imageApplied: boolean;
 };
@@ -114,15 +116,27 @@ function isRequestStateMessage(value: JsonValue): value is RequestStateMessage {
   return typeof value === "object" && value !== null && !Array.isArray(value) && value.type === "requestState";
 }
 
+type HammerspoonActionOptions = {
+  setTimeout?: (callback: () => void, delay: number) => unknown;
+  clearTimeout?: (handle: unknown) => void;
+};
+
 /** Bridges the official generic keypad action to one shared Hammerspoon connection. */
 export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings> {
   private readonly instances = new Map<string, TrackedInstance>();
   private readonly synchronized = new Set<string>();
   private readonly renderQueues = new Map<string, Promise<void>>();
+  private readonly scheduleTimeout: (callback: () => void, delay: number) => unknown;
+  private readonly cancelTimeout: (handle: unknown) => void;
   private subscribed = false;
 
-  public constructor(private readonly bridge: BridgeClient) {
+  public constructor(
+    private readonly bridge: BridgeClient,
+    options: HammerspoonActionOptions = {},
+  ) {
     super();
+    this.scheduleTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
+    this.cancelTimeout = options.clearTimeout ?? ((handle) => clearTimeout(handle as NodeJS.Timeout));
   }
 
   /** Subscribes this action adapter to bridge lifecycle and rendering events. */
@@ -134,6 +148,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     this.bridge.on("status", (status) => {
       if (status !== "connected") {
         this.synchronized.clear();
+        for (const instance of this.instances.values()) {
+          this.cancelFeedbackTimer(instance);
+        }
       }
       this.renderStatus();
       void this.sendBridgeState();
@@ -143,6 +160,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     });
     this.bridge.on("appearance", (appearance) => {
       void this.enqueueRender(appearance.instanceId, () => this.renderAppearance(appearance));
+    });
+    this.bridge.on("feedback", (feedback) => {
+      void this.enqueueRender(feedback.instanceId, () => this.renderFeedback(feedback));
     });
     this.bridge.on("protocolError", (error) => {
       if (error.instanceId) {
@@ -161,7 +181,16 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
 
     const instanceId = ev.action.id;
     const settings = this.settingsFrom(ev.payload.settings);
-    this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: this.instances.get(instanceId)?.imageApplied ?? false });
+    const previous = this.instances.get(instanceId);
+    if (previous) {
+      this.cancelFeedbackTimer(previous);
+    }
+    this.instances.set(instanceId, {
+      action: ev.action,
+      actionId: settings.actionId,
+      settings,
+      imageApplied: previous?.imageApplied ?? false,
+    });
     this.synchronized.delete(instanceId);
     await this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
     if (settings.actionId) {
@@ -176,6 +205,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   public override async onWillDisappear(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onWillDisappear"]>>[0]): Promise<void> {
     const instanceId = ev.action.id;
     const instance = this.instances.get(instanceId);
+    this.cancelFeedbackTimer(instance);
     this.instances.delete(instanceId);
     this.synchronized.delete(instanceId);
     if (instance?.actionId) {
@@ -196,6 +226,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
     this.instances.set(instanceId, { action: ev.action, actionId: settings.actionId, settings, imageApplied: previous?.imageApplied ?? false });
     this.synchronized.delete(instanceId);
+    this.cancelFeedbackTimer(previous);
     await this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
     if (settings.actionId) {
       this.bridge.upsertInstance({
@@ -292,6 +323,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       await this.renderInstance(appearance.instanceId);
       return;
     }
+    instance.lastAppearance = appearance;
     this.synchronized.add(appearance.instanceId);
     const image = appearanceImage(appearance);
     if (image !== undefined) {
@@ -306,6 +338,58 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
     await this.setTitle(instance.action, appearance.title);
     await this.setState(instance.action, appearance.state);
+  }
+
+  private async renderFeedback(feedback: BridgeFeedback): Promise<void> {
+    const instance = this.instances.get(feedback.instanceId);
+    if (!instance || instance.actionId !== feedback.actionId || this.bridge.status !== "connected") {
+      return;
+    }
+    this.cancelFeedbackTimer(instance);
+    await this.setTitle(instance.action, feedback.message);
+    try {
+      if (feedback.kind === "success") {
+        await instance.action.showOk();
+      } else {
+        await instance.action.showAlert();
+      }
+    } catch {
+      // Stream Deck feedback is best-effort when an instance is disappearing.
+    }
+    try {
+      instance.feedbackTimer = this.scheduleTimeout(() => {
+        if (this.instances.get(feedback.instanceId) !== instance) {
+          return;
+        }
+        instance.feedbackTimer = undefined;
+        void this.enqueueRender(feedback.instanceId, () => this.restoreInstance(feedback.instanceId, instance));
+      }, feedback.durationMs);
+    } catch {
+      // A failed timer must not affect the bridge or callback loop.
+    }
+  }
+
+  private async restoreInstance(instanceId: string, expected: TrackedInstance): Promise<void> {
+    if (this.instances.get(instanceId) !== expected) {
+      return;
+    }
+    if (this.bridge.status === "connected" && this.synchronized.has(instanceId) && expected.lastAppearance) {
+      await this.renderAppearance(expected.lastAppearance);
+    } else {
+      await this.renderInstance(instanceId);
+    }
+  }
+
+  private cancelFeedbackTimer(instance: TrackedInstance | undefined): void {
+    if (!instance || instance.feedbackTimer === undefined) {
+      return;
+    }
+    try {
+      this.cancelTimeout(instance.feedbackTimer);
+    } catch {
+      // A stale timer is harmless when an instance is disappearing.
+    }
+    instance.feedbackTimer = undefined;
   }
 
   private async clearImage(instance: TrackedInstance): Promise<boolean> {
