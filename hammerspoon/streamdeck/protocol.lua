@@ -599,7 +599,13 @@ local function isAppearanceIcon(value)
  local rootSeen = false
  local rootSize
  local elementCount = 0
- for rawBody in svg:gmatch("<([^<>]*)>") do
+ local cursor = 1
+ while true do
+  local startPosition, endPosition, rawBody = svg:find("<([^<>]*)>", cursor)
+  if not startPosition then
+   return rootSeen and #stack == 0 and svg:sub(cursor):match("^%s*$") ~= nil
+  end
+  if svg:sub(cursor, startPosition - 1):match("^%s*$") == nil then return false end
   local body = rawBody:match("^%s*(.-)%s*$")
   local closing = body:match("^/%s*([a-z][a-z0-9-]*)%s*$")
   if closing then
@@ -628,8 +634,8 @@ local function isAppearanceIcon(value)
    if elementCount > 128 or #stack >= 16 then return false end
    if not selfClosing then stack[#stack + 1] = tag end
   end
+  cursor = endPosition + 1
  end
- return rootSeen and #stack == 0
 end
 local function validateSettingsField(field, seenKeys)
   local kind = rawget(field, "type")

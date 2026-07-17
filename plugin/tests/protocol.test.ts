@@ -205,6 +205,7 @@ describe("protocol direction and validation", () => {
       { kind: "custom", mediaType: "image/png", dataBase64: trailingPng },
       { kind: "custom", mediaType: "image/png", dataBase64: "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAL0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAujBRSAABUUgAAV2q6GkAAAAASUVORK5CYII=" },
       { kind: "custom", mediaType: "image/png", dataBase64: "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAAAAABwhuybAAAAHUlEQVR4nO3BMQEAAADCoPVPbQo/oAAAAAAAuhoUiAABAaPFZ1kAAAAASUVORK5CYII=" },
+      { kind: "custom", mediaType: "image/svg+xml", dataBase64: "eDxzdmcgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB2aWV3Qm94PSIwIDAgNzIgNzIiPjwvc3ZnPg==" },
       { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from("<svg><script/></svg>").toString("base64") },
       { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" style="fill:#fff"></svg>').toString("base64") },
       { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" xmlns:foreign="urn:x" viewBox="0 0 72 72"></svg>').toString("base64") },

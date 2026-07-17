@@ -569,6 +569,7 @@ test("versioned appearance fields validate and render safely", function()
     { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/png", dataBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAALElEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAujBRSAABAGBCoqcAAAAASUVORK5CYII=" } },
     { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/png", dataBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAL0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAujBRSAABUUgAAV2q6GkAAAAASUVORK5CYII=" } },
     { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/png", dataBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAAAAABwhuybAAAAHUlEQVR4nO3BMQEAAADCoPVPbQo/oAAAAAAAuhoUiAABAaPFZ1kAAAAASUVORK5CYII=" } },
+    { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/svg+xml", dataBase64 = "eDxzdmcgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB2aWV3Qm94PSIwIDAgNzIgNzIiPjwvc3ZnPg==" } },
     { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/svg+xml", dataBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA3MiA3MiIgc3R5bGU9ImZpbGw6I2ZmZiI+PC9zdmc+" } },
     { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/svg+xml", dataBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOmZvcmVpZ249InVybjp4IiB2aWV3Qm94PSIwIDAgNzIgNzIiPjwvc3ZnPg==" } },
     { progress = 0.5 },
