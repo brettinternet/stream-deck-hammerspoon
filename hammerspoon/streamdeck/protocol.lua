@@ -293,6 +293,9 @@ local function newBitReader(bytes, first, last)
  function reader.align()
   buffer, bitCount = 0, 0
  end
+ function reader.finished()
+  return position > last and buffer == 0
+ end
  return reader
 end
 local function decodeHuffman(reader, tree)
@@ -411,7 +414,7 @@ local function inflatePngData(data, expectedLength)
    end
   end
  end
- if #output ~= expectedLength then return nil end
+ if not reader.finished() or #output ~= expectedLength then return nil end
  local adler = 1
  local a, b = 1, 0
  for _, byte in ipairs(output) do
