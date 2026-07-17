@@ -70,7 +70,7 @@ Stops the server, closes the plugin connection, clears the current in-memory ses
 
 The shared token is accepted only in `hello`. A valid hello is accepted even if a prior session was still marked authenticated: the bridge safely clears prior instance contexts, generates a fresh non-empty opaque `sessionId` with `hs.host.uuid()`, and returns it in the required `helloAck.sessionId`. This session ID is an in-memory capability, not a replacement for the token.
 
-After `helloAck`, every plugin-to-Lua application message (`listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, `keyUp`, and `requestAppearance`) must include the exact current `sessionId`. Missing, stale, or invalid IDs are rejected before action dispatch and invoke no callback. The bridge clears the ID and contexts on close, `stop()`, or failure. Because `hs.httpserver` does not provide a reliable connection-close callback, this explicit ID check prevents a later client from inheriting tokenless authorization from a prior process-global hello flag. Reconnect or plugin restart sends a new token-bearing hello and rotates the ID; old-session messages remain invalid. Session IDs are never logged.
+After `helloAck`, every plugin-to-Lua application message (`listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, `keyUp`, `dialDown`, `dialRotate`, `dialUp`, and `requestAppearance`) must include the exact current `sessionId`. Missing, stale, or invalid IDs are rejected before action dispatch and invoke no callback. The bridge clears the ID and contexts on close, `stop()`, or failure. Because `hs.httpserver` does not provide a reliable connection-close callback, this explicit ID check prevents a later client from inheriting tokenless authorization from a prior process-global hello flag. Reconnect or plugin restart sends a new token-bearing hello and rotates the ID; old-session messages remain invalid. Session IDs are never logged.
 
 ### `streamdeck.refresh(actionId)`
 
@@ -106,16 +106,19 @@ An action definition is a table with these fields:
 | `settingsSchema` | no | table | Optional settings schema supplied to the plugin's property inspector. |
 | `settingsSchemaVersion` | no | integer 1–16 | Settings descriptor version. Version 1 enables bounded validation; omitted versions remain legacy opaque arrays and newer bounded versions are preserved without rendering. |
 | `appearance` | yes | function | Computes title/state and optional versioned presentation fields for a context. |
-| `press` | yes | function | Handles a tap (or a legacy key-down event when `longPress` is absent) for a context. |
-| `release` | no | function | Handles a key-up event for a context. |
+| `press` | yes | function | Handles a key tap, or a legacy key-down event when `longPress` is absent. Also handles encoder push when `push` is absent. |
+| `release` | no | function | Handles a key-up or encoder push-release event for a context. |
+| `push` | no | function | Handles an encoder push event; when absent, the required `press` callback is used. |
+| `rotate` | no | function | Handles encoder rotation as `rotate(context, ticks, pressed)`, where positive ticks are clockwise and negative ticks are counter-clockwise. |
 | `longPress` | no | function | Handles a press held for `longPressThresholdMs`; paired with the required `press` callback to distinguish taps from long presses. |
 | `longPressThresholdMs` | no | integer 100–10,000 | Milliseconds before `longPress` runs; requires `longPress` and defaults to 500. |
 | `appear` | no | function | Runs when a new visible instance appears or a restored context is rebuilt after reconnect. |
 | `disappear` | no | function | Runs when a visible instance disappears or the connection is torn down. |
 
+`push` and `rotate` are optional encoder-only callbacks. They receive the same per-instance context as key callbacks, including independent settings and device metadata. An action must still define `press`; it is the fallback for encoder push and remains the key callback.
 Registration rejects a non-table definition, missing required fields, wrong field types, an empty ID or name, duplicate IDs, unknown fields, malformed long-press configuration, and thresholds outside 100–10,000 ms. `longPressThresholdMs` requires `longPress`; omitting it uses the deterministic 500 ms default. `settingsSchema`, when supplied, must be a dense array of at most 32 JSON values. With `settingsSchemaVersion = 1`, each descriptor must use one of `text`, `number`, `boolean`, or `select`, with a unique bounded key, optional bounded label/required flag, kind-specific bounded constraints, and a type-correct default. Select options are bounded unique `{ value, label }` objects and defaults must match an option. Unknown descriptor or constraint keys, duplicate keys, invalid combinations, cycles, sparse arrays, non-finite numbers, and out-of-range values are rejected before action listing. Instance settings are not validated against the schema by the Lua bridge; the plugin inspector validates supported edits while Lua callbacks receive the decoded settings.
 
-The callbacks receive the current context. `press`, `release`, `longPress`, `appear`, and `disappear` return values are ignored. `appearance` must return:
+The callbacks receive the current context. `press`, `release`, `push`, `rotate`, `longPress`, `appear`, and `disappear` return values are ignored. `rotate` additionally receives integer `ticks` and boolean `pressed`; positive ticks are clockwise and negative ticks are counter-clockwise. `appearance` must return:
 
 ```lua
 {
@@ -147,6 +150,8 @@ Callbacks run asynchronously in response to bridge events and are protected with
 - A callback failure is logged locally and sent to the plugin as a safe protocol `error`. If the error is associated with an instance, the plugin also shows alert feedback on that instance. Error details never include the shared token or session ID. A failed callback leaves the current presentation unchanged.
 - A malformed appearance result is handled like a callback failure: no malformed fields are sent to Stream Deck, and the previous presentation remains in place.
 
+
+Encoder events use the same context lifecycle and error isolation as key events. `dialDown` invokes `push(context)` when defined, otherwise `press(context)`; `dialRotate` invokes `rotate(context, ticks, pressed)` when defined; and `dialUp` invokes `release(context)` when defined. Encoder callbacks are independent per visible instance, so settings and state are not shared between placements.
 Registration and startup failures are synchronous Lua errors. Callback failures are runtime errors handled by the bridge. This distinction makes a typo in the action table visible during configuration load while keeping a device callback failure from taking down the bridge.
 
 When the plugin is not connected, refresh requests cannot be delivered. The plugin displays its disconnected/offline presentation and retries with bounded backoff. Once authentication succeeds again, it receives a fresh session ID, requests the action list, re-announces visible instances with that ID, and requests appearance. Re-announcing an unchanged instance/action refreshes settings but does not invoke `appear` again.

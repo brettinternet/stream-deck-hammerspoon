@@ -41,7 +41,7 @@ A valid v1 message may carry extension fields, but a v1 implementation must not 
 
 ## Message inventory
 
-There are exactly twelve v1 message types:
+There are exactly fifteen v1 message types:
 
 | Direction | Type | Kind | Correlation |
 | --- | --- | --- | --- |
@@ -53,11 +53,14 @@ There are exactly twelve v1 message types:
 | Plugin → Lua | `instanceDisappeared` | lifecycle event | no acknowledgement; errors use `instanceId` |
 | Plugin → Lua | `keyDown` | input event | no acknowledgement; errors use `instanceId` |
 | Plugin → Lua | `keyUp` | input event | no acknowledgement; errors use `instanceId` |
+| Plugin → Lua | `dialDown` | encoder push event | no acknowledgement; errors use `instanceId` |
+| Plugin → Lua | `dialRotate` | encoder rotate event | no acknowledgement; errors use `instanceId` |
+| Plugin → Lua | `dialUp` | encoder push release event | no acknowledgement; errors use `instanceId` |
 | Plugin → Lua | `requestAppearance` | appearance request | no acknowledgement; errors use `instanceId` |
 | Lua → Plugin | `appearance` | appearance response | identifies `instanceId`; no separate request ID |
 | Lua → Plugin | `feedback` | transient success/error feedback | identifies `instanceId` and `actionId` |
 | Lua → Plugin | `error` | asynchronous error | optional `requestId` and/or `instanceId` |
-No other message type is part of v1. In particular, there is no wire-level settings-change, ping, pong, or plugin-to-Lua error message.
+No other message type is part of v1. In particular, there is no wire-level settings-change, ping, pong, touch, or plugin-to-Lua error message.
 
 The state is per WebSocket connection, and the active session ID is per accepted `hello`:
 
@@ -226,6 +229,32 @@ Required fields: `protocolVersion`, `type: "keyUp"`, `sessionId`, `instanceId`, 
 
 An unknown action produces `UNKNOWN_ACTION`; a missing instance or action mismatch produces `STALE_INSTANCE`; neither invokes a callback. When `release` is not registered, the validated event is ignored.
 
+### `dialDown` (plugin → Lua)
+
+Required fields: `protocolVersion`, `type: "dialDown"`, `sessionId`, `instanceId`, `actionId`. Lua validates the session and instance/action identity before invoking the optional protected `push(context)` callback, falling back to the required `press(context)` callback for actions that do not define `push`. There is no success acknowledgement.
+
+### `dialRotate` (plugin → Lua)
+
+Required fields: `protocolVersion`, `type: "dialRotate"`, `sessionId`, `instanceId`, `actionId`, integer `ticks`, and boolean `pressed`. Positive `ticks` indicate clockwise rotation; negative values indicate counter-clockwise rotation. Lua invokes the optional protected `rotate(context, ticks, pressed)` callback. There is no success acknowledgement.
+
+```json
+{
+  "protocolVersion": 1,
+  "type": "dialRotate",
+  "sessionId": "opaque-session-01",
+  "instanceId": "encoder-instance-01",
+  "actionId": "com.example.volume",
+  "ticks": -2,
+  "pressed": true
+}
+```
+
+### `dialUp` (plugin → Lua)
+
+Required fields: `protocolVersion`, `type: "dialUp"`, `sessionId`, `instanceId`, `actionId`. Lua invokes the optional protected `release(context)` callback. When it is not registered, the validated event is ignored.
+
+All encoder events use the same v1 envelope and session binding as key events. They remain instance-scoped, so settings and callback state cannot cross between encoder placements.
+
 ### `requestAppearance` (plugin → Lua)
 
 Required fields: `protocolVersion`, `type: "requestAppearance"`, `sessionId`, `instanceId`, `actionId`. Lua validates the session before looking up the context and calling the appearance/refresh path, then sends `appearance`. It does not simulate a key press and does not invoke the press callback.
@@ -326,13 +355,11 @@ For a malformed frame that cannot be parsed as JSON, Lua may be unable to attach
 - The plugin sends `hello` first and waits for `helloAck.sessionId`; it stores that value only in memory and injects it into every subsequent plugin → Lua application message.
 - A valid `hello` on an already-authenticated connection is a reconnect/reset: Lua clears prior contexts and returns a fresh rotated `sessionId`. The prior ID is immediately invalid.
 - The plugin sends `listActions` after authentication. It may have only one outstanding action-list request in the first slice; a repeated request must use a new `requestId` after completion.
-- Lua processes valid application frames in received order. Lifecycle order is significant: `instanceAppeared` precedes `keyDown`, `keyUp`, or `requestAppearance` for that instance, and `instanceDisappeared` removes it for subsequent messages.
+- Lifecycle, key, and encoder messages are processed in received order. `instanceAppeared` precedes `keyDown`, `keyUp`, `dialDown`, `dialRotate`, `dialUp`, or `requestAppearance` for that instance, and `instanceDisappeared` removes it for subsequent messages.
 - `actions` is correlated only by exact `requestId`; response arrival order is not a substitute for correlation. An error with that `requestId` completes the request.
-- Lifecycle, `keyDown`, `keyUp`, and `requestAppearance` are events/commands with no success acknowledgement. Their failures arrive asynchronously as `error`, correlated by `instanceId`; missing/stale session errors are rejected before dispatch and have no acknowledgement.
-- `instanceAppeared` causes an `appearance`; `requestAppearance` also causes an `appearance`; `keyDown` may cause an appearance after the protected callback changes state. `keyUp` invokes the optional protected `release` callback and may cause an appearance if that callback changes state. `instanceDisappeared` causes no response.
+- Lifecycle, key, encoder, and `requestAppearance` messages are events/commands with no success acknowledgement. Their failures arrive asynchronously as `error`, correlated by `instanceId`; missing/stale session errors are rejected before dispatch and have no acknowledgement.
+- `instanceAppeared` causes an `appearance`; `requestAppearance` also causes an `appearance`; `keyDown` may cause an appearance after the protected callback changes state. `keyUp`, `dialDown`, `dialRotate`, and `dialUp` invoke their protected callbacks and may cause an appearance if those callbacks change state. `instanceDisappeared` causes no response.
 - A transport preserves frame order, but appearance and error delivery are asynchronous relative to later event processing. The plugin applies an appearance only if its `instanceId` and `actionId` still match current visible metadata.
-
-## Initial connection
 
 ```mermaid
 sequenceDiagram

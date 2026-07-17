@@ -215,6 +215,29 @@ export interface KeyUpMessage extends AuthenticatedClientMessage {
   instanceId: string;
   actionId: string;
 }
+export interface DialDownMessage extends AuthenticatedClientMessage {
+  type: "dialDown";
+  instanceId: string;
+  actionId: string;
+}
+export interface DialRotateMessage extends AuthenticatedClientMessage {
+  type: "dialRotate";
+  instanceId: string;
+  actionId: string;
+  ticks: number;
+  pressed: boolean;
+}
+export interface DialUpMessage extends AuthenticatedClientMessage {
+  type: "dialUp";
+  instanceId: string;
+  actionId: string;
+}
+export type DialDown = DialDownMessage;
+export type DialRotate = DialRotateMessage;
+export type DialUp = DialUpMessage;
+
+
+
 
 
 export interface RequestAppearanceMessage extends AuthenticatedClientMessage {
@@ -285,8 +308,10 @@ export type ClientMessage =
   | InstanceDisappearedMessage
   | KeyDownMessage
   | KeyUpMessage
+  | DialDownMessage
+  | DialRotateMessage
+  | DialUpMessage
   | RequestAppearanceMessage;
-
 export type ServerMessage =
   | HelloAckMessage
   | ActionsMessage
@@ -305,6 +330,9 @@ const CLIENT_MESSAGE_TYPES: Record<ClientMessageType, true> = {
   keyDown: true,
   keyUp: true,
   requestAppearance: true,
+  dialDown: true,
+  dialRotate: true,
+  dialUp: true,
 };
 
 const SERVER_MESSAGE_TYPES: Record<ServerMessageType, true> = {

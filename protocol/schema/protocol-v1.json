@@ -12,6 +12,9 @@
     { "$ref": "#/$defs/instanceDisappeared" },
     { "$ref": "#/$defs/keyDown" },
     { "$ref": "#/$defs/keyUp" },
+    { "$ref": "#/$defs/dialDown" },
+    { "$ref": "#/$defs/dialRotate" },
+    { "$ref": "#/$defs/dialUp" },
     { "$ref": "#/$defs/requestAppearance" },
     { "$ref": "#/$defs/appearance" },
     { "$ref": "#/$defs/feedback" },
@@ -329,6 +332,56 @@
           "type": "object",
           "properties": {
             "type": { "const": "keyUp" },
+            "sessionId": { "$ref": "#/$defs/sessionId" },
+            "instanceId": { "$ref": "#/$defs/id" },
+            "actionId": { "$ref": "#/$defs/id" }
+          },
+          "required": ["sessionId", "instanceId", "actionId"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "dialDown": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "dialDown" },
+            "sessionId": { "$ref": "#/$defs/sessionId" },
+            "instanceId": { "$ref": "#/$defs/id" },
+            "actionId": { "$ref": "#/$defs/id" }
+          },
+          "required": ["sessionId", "instanceId", "actionId"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "dialRotate": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "dialRotate" },
+            "sessionId": { "$ref": "#/$defs/sessionId" },
+            "instanceId": { "$ref": "#/$defs/id" },
+            "actionId": { "$ref": "#/$defs/id" },
+            "ticks": { "type": "integer" },
+            "pressed": { "type": "boolean" }
+          },
+          "required": ["sessionId", "instanceId", "actionId", "ticks", "pressed"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "dialUp": {
+      "allOf": [
+        { "$ref": "#/$defs/message" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "dialUp" },
             "sessionId": { "$ref": "#/$defs/sessionId" },
             "instanceId": { "$ref": "#/$defs/id" },
             "actionId": { "$ref": "#/$defs/id" }

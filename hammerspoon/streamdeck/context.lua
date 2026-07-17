@@ -178,13 +178,14 @@ function context.new(options)
     return emitFeedback("error", message, durationMs)
   end
 
-  function object:invoke(name)
+  function object:invoke(name, ...)
     local callback = self.definition[name]
     if callback == nil then
       return true
     end
+    local args = { ... }
     local ok = xpcall(function()
-      callback(self)
+      callback(self, table.unpack(args))
     end, callbackTraceback)
     if not ok then
       reportCallbackFailure()

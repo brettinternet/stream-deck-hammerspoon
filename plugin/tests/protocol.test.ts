@@ -115,6 +115,32 @@ const keyUp: ClientMessage = {
   actionId: "com.example.volumeUp",
 };
 
+const dialDown: ClientMessage = {
+  protocolVersion: 1,
+  type: "dialDown",
+  sessionId,
+  instanceId: "encoder-instance-01",
+  actionId: "com.example.volumeUp",
+};
+
+const dialRotate: ClientMessage = {
+  protocolVersion: 1,
+  type: "dialRotate",
+  sessionId,
+  instanceId: "encoder-instance-01",
+  actionId: "com.example.volumeUp",
+  ticks: -2,
+  pressed: true,
+};
+
+const dialUp: ClientMessage = {
+  protocolVersion: 1,
+  type: "dialUp",
+  sessionId,
+  instanceId: "encoder-instance-01",
+  actionId: "com.example.volumeUp",
+};
+
 const instanceDisappeared: ClientMessage = {
   protocolVersion: 1,
   type: "instanceDisappeared",
@@ -138,6 +164,9 @@ describe("protocol examples", () => {
     for (const message of [instanceAppeared, requestAppearance, keyDown, keyUp, instanceDisappeared]) {
       expect(JSON.parse(serializeClientMessage(message))).toEqual(message);
     }
+    for (const message of [dialDown, dialRotate, dialUp]) {
+      expect(JSON.parse(serializeClientMessage(message))).toEqual(message);
+    }
     expect(parseServerMessage(JSON.stringify(appearance))).toEqual(appearance);
     expect(parseServerMessage(JSON.stringify(extendedAppearance))).toEqual(extendedAppearance);
     expect(parseServerMessage(JSON.stringify(feedback))).toEqual(feedback);
@@ -146,8 +175,33 @@ describe("protocol examples", () => {
 
 describe("protocol direction and validation", () => {
   test("rejects plugin-to-server messages in the server-message parser", () => {
-    for (const message of [hello, listActions, instanceAppeared, requestAppearance, keyDown, keyUp, instanceDisappeared]) {
+    for (const message of [
+      hello,
+      listActions,
+      instanceAppeared,
+      requestAppearance,
+      keyDown,
+      keyUp,
+      dialDown,
+      dialRotate,
+      dialUp,
+      instanceDisappeared,
+    ]) {
       expect(() => parseServerMessage(JSON.stringify(message))).toThrow();
+    }
+  });
+
+  test("validates versioned encoder payloads", () => {
+    for (const message of [dialDown, dialRotate, dialUp]) {
+      expect(() => serializeClientMessage(message)).not.toThrow();
+    }
+    for (const message of [
+      { ...dialRotate, ticks: 1.5 },
+      { ...dialRotate, ticks: Number.NaN },
+      { ...dialRotate, pressed: "true" },
+      { ...dialRotate, instanceId: "" },
+    ]) {
+      expect(() => serializeClientMessage(message as ClientMessage)).toThrow();
     }
   });
 

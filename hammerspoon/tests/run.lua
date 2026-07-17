@@ -773,6 +773,82 @@ test("multiple instances keep independent settings and callbacks", function()
   end)
 end)
 
+test("encoder events preserve independent contexts and callback payloads", function()
+  local pushes = {}
+  local rotations = {}
+  local releases = {}
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.encoder",
+    name = "Encoder",
+    appearance = function(context)
+      return { title = context:getSettings().label, state = "inactive" }
+    end,
+    press = function()
+      error("encoder push must prefer push callback")
+    end,
+    push = function(context)
+      pushes[#pushes + 1] = context.instanceId .. ":" .. context:getSettings().label
+    end,
+    rotate = function(context, ticks, pressed)
+      rotations[#rotations + 1] = {
+        instanceId = context.instanceId,
+        label = context:getSettings().label,
+        ticks = ticks,
+        pressed = pressed,
+      }
+    end,
+    release = function(context)
+      releases[#releases + 1] = context.instanceId
+    end,
+  })
+
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    authenticate(server, path)
+    exchange(server, message("instanceAppeared", {
+      instanceId = "encoder-a",
+      actionId = "com.test.encoder",
+      settings = { label = "A" },
+      metadata = { controllerType = "encoder", device = { type = "stream-deck-plus", size = { columns = 4, rows = 1 } } },
+    }))
+    exchange(server, message("instanceAppeared", {
+      instanceId = "encoder-b",
+      actionId = "com.test.encoder",
+      settings = { label = "B" },
+      metadata = { controllerType = "encoder", device = { type = "stream-deck-plus", size = { columns = 4, rows = 1 } } },
+    }))
+
+    exchange(server, message("dialDown", { instanceId = "encoder-a", actionId = "com.test.encoder" }))
+    exchange(server, message("dialRotate", {
+      instanceId = "encoder-a",
+      actionId = "com.test.encoder",
+      ticks = 2,
+      pressed = true,
+    }))
+    exchange(server, message("dialRotate", {
+      instanceId = "encoder-b",
+      actionId = "com.test.encoder",
+      ticks = -1,
+      pressed = false,
+    }))
+    exchange(server, message("dialUp", { instanceId = "encoder-b", actionId = "com.test.encoder" }))
+
+    assertEqual(pushes[1], "encoder-a:A")
+    assertEqual(pushes[2], nil)
+    assertEqual(rotations[1].instanceId, "encoder-a")
+    assertEqual(rotations[1].label, "A")
+    assertEqual(rotations[1].ticks, 2)
+    assertTrue(rotations[1].pressed)
+    assertEqual(rotations[2].instanceId, "encoder-b")
+    assertEqual(rotations[2].label, "B")
+    assertEqual(rotations[2].ticks, -1)
+    assertFalse(rotations[2].pressed)
+    assertEqual(releases[1], "encoder-b")
+    server:stop()
+  end)
+end)
+
 test("long press configuration validates and defaults deterministically", function()
   local callback = function() end
   local function definition(id, extra)

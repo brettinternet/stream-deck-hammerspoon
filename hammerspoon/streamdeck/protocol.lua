@@ -12,6 +12,9 @@ local messageTypes = {
   instanceDisappeared = true,
   keyDown = true,
   keyUp = true,
+  dialDown = true,
+  dialRotate = true,
+  dialUp = true,
   requestAppearance = true,
   appearance = true,
   feedback = true,
@@ -810,10 +813,18 @@ function protocol.validate(message)
   elseif messageType == "instanceDisappeared"
       or messageType == "keyDown"
       or messageType == "keyUp"
+      or messageType == "dialDown"
+      or messageType == "dialUp"
       or messageType == "requestAppearance" then
     ok, code = required(message, "sessionId", isNonEmptyString)
     if ok then ok, code = required(message, "instanceId", isNonEmptyString) end
     if ok then ok, code = required(message, "actionId", isNonEmptyString) end
+  elseif messageType == "dialRotate" then
+    ok, code = required(message, "sessionId", isNonEmptyString)
+    if ok then ok, code = required(message, "instanceId", isNonEmptyString) end
+    if ok then ok, code = required(message, "actionId", isNonEmptyString) end
+    if ok then ok, code = required(message, "ticks", isInteger) end
+    if ok then ok, code = required(message, "pressed", function(value) return type(value) == "boolean" end) end
   elseif messageType == "appearance" then
     ok, code = required(message, "instanceId", isNonEmptyString)
     if ok then ok, code = required(message, "actionId", isNonEmptyString) end

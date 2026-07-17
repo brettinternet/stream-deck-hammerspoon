@@ -18,6 +18,8 @@ type ActionCalls = {
 class FakeAction {
   readonly calls: ActionCalls = { titles: [], states: [], images: [], alerts: 0 };
   rejectTitle = false;
+  readonly feedbacks: Array<Record<string, unknown>> = [];
+  readonly layouts: string[] = [];
   rejectState = false;
   rejectImage = false;
   rejectImageClear = false;
@@ -29,6 +31,10 @@ class FakeAction {
     readonly id: string,
     private readonly key = true,
   ) {}
+
+  isDial(): boolean {
+    return !this.key;
+  }
 
   isKey(): boolean {
     return this.key;
@@ -58,6 +64,14 @@ class FakeAction {
     }
   }
 
+  async setFeedback(feedback: Record<string, unknown>): Promise<void> {
+    this.feedbacks.push(feedback);
+  }
+
+  async setFeedbackLayout(layout: string): Promise<void> {
+    this.layouts.push(layout);
+  }
+
   async showAlert(): Promise<void> {
     this.calls.alerts += 1;
     if (this.rejectAlert) {
@@ -77,6 +91,9 @@ class FakeBridge extends EventEmitter {
   readonly removals: Array<[string, string]> = [];
   readonly keyDowns: Array<[string, string, HammerspoonActionSettings]> = [];
   readonly keyUps: Array<[string, string, HammerspoonActionSettings]> = [];
+  readonly dialDowns: Array<[string, string, HammerspoonActionSettings]> = [];
+  readonly dialRotates: Array<[string, string, number, boolean, HammerspoonActionSettings]> = [];
+  readonly dialUps: Array<[string, string, HammerspoonActionSettings]> = [];
 
   upsertInstance(input: Record<string, unknown>): void {
     this.upserts.push(input);
@@ -92,6 +109,24 @@ class FakeBridge extends EventEmitter {
 
   keyUp(instanceId: string, actionId: string, settings: HammerspoonActionSettings): void {
     this.keyUps.push([instanceId, actionId, settings]);
+  }
+
+  dialDown(instanceId: string, actionId: string, settings: HammerspoonActionSettings): void {
+    this.dialDowns.push([instanceId, actionId, settings]);
+  }
+
+  dialRotate(
+    instanceId: string,
+    actionId: string,
+    ticks: number,
+    pressed: boolean,
+    settings: HammerspoonActionSettings,
+  ): void {
+    this.dialRotates.push([instanceId, actionId, ticks, pressed, settings]);
+  }
+
+  dialUp(instanceId: string, actionId: string, settings: HammerspoonActionSettings): void {
+    this.dialUps.push([instanceId, actionId, settings]);
   }
 }
 
@@ -135,6 +170,17 @@ function keyDown(action: FakeAction) {
 }
 
 function keyUp(action: FakeAction) {
+  return { action } as never;
+}
+function dialDown(action: FakeAction) {
+  return { action } as never;
+}
+
+function dialRotate(action: FakeAction, ticks: number, pressed: boolean) {
+  return { action, payload: { ticks, pressed } } as never;
+}
+
+function dialUp(action: FakeAction) {
   return { action } as never;
 }
 
@@ -318,6 +364,31 @@ describe("HammerspoonAction", () => {
       ["first-instance", "action.id", firstSettings],
       ["second-instance", "action.id", secondSettings],
     ]);
+  });
+
+  test("routes independent encoder push and rotate events with the SDK layout", async () => {
+    const bridge = new FakeBridge();
+    const adapter = makeAction(bridge);
+    const first = new FakeAction("first-encoder", false);
+    const second = new FakeAction("second-encoder", false);
+    const firstSettings = { actionId: "action.id", label: "First" };
+    const secondSettings = { actionId: "action.id", label: "Second" };
+
+    await adapter.onWillAppear(appear(first, firstSettings));
+    await adapter.onWillAppear(appear(second, secondSettings));
+    await adapter.onDialDown(dialDown(first));
+    await adapter.onDialRotate(dialRotate(first, 2, true));
+    await adapter.onDialUp(dialUp(first));
+    await adapter.onDialRotate(dialRotate(second, -1, false));
+
+    expect(first.layouts).toEqual(["$A1"]);
+    expect(second.layouts).toEqual(["$A1"]);
+    expect(bridge.dialDowns).toEqual([["first-encoder", "action.id", firstSettings]]);
+    expect(bridge.dialRotates).toEqual([
+      ["first-encoder", "action.id", 2, true, firstSettings],
+      ["second-encoder", "action.id", -1, false, secondSettings],
+    ]);
+    expect(bridge.dialUps).toEqual([["first-encoder", "action.id", firstSettings]]);
   });
 
   test("preserves custom settings through appear, settings updates, and keyDown", async () => {

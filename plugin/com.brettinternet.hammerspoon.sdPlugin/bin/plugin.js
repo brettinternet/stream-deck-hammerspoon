@@ -17185,6 +17185,15 @@ var oneOf = [
 		$ref: "#/$defs/keyUp"
 	},
 	{
+		$ref: "#/$defs/dialDown"
+	},
+	{
+		$ref: "#/$defs/dialRotate"
+	},
+	{
+		$ref: "#/$defs/dialUp"
+	},
+	{
 		$ref: "#/$defs/requestAppearance"
 	},
 	{
@@ -17774,6 +17783,104 @@ var $defs = {
 			}
 		]
 	},
+	dialDown: {
+		allOf: [
+			{
+				$ref: "#/$defs/message"
+			},
+			{
+				type: "object",
+				properties: {
+					type: {
+						"const": "dialDown"
+					},
+					sessionId: {
+						$ref: "#/$defs/sessionId"
+					},
+					instanceId: {
+						$ref: "#/$defs/id"
+					},
+					actionId: {
+						$ref: "#/$defs/id"
+					}
+				},
+				required: [
+					"sessionId",
+					"instanceId",
+					"actionId"
+				],
+				additionalProperties: true
+			}
+		]
+	},
+	dialRotate: {
+		allOf: [
+			{
+				$ref: "#/$defs/message"
+			},
+			{
+				type: "object",
+				properties: {
+					type: {
+						"const": "dialRotate"
+					},
+					sessionId: {
+						$ref: "#/$defs/sessionId"
+					},
+					instanceId: {
+						$ref: "#/$defs/id"
+					},
+					actionId: {
+						$ref: "#/$defs/id"
+					},
+					ticks: {
+						type: "integer"
+					},
+					pressed: {
+						type: "boolean"
+					}
+				},
+				required: [
+					"sessionId",
+					"instanceId",
+					"actionId",
+					"ticks",
+					"pressed"
+				],
+				additionalProperties: true
+			}
+		]
+	},
+	dialUp: {
+		allOf: [
+			{
+				$ref: "#/$defs/message"
+			},
+			{
+				type: "object",
+				properties: {
+					type: {
+						"const": "dialUp"
+					},
+					sessionId: {
+						$ref: "#/$defs/sessionId"
+					},
+					instanceId: {
+						$ref: "#/$defs/id"
+					},
+					actionId: {
+						$ref: "#/$defs/id"
+					}
+				},
+				required: [
+					"sessionId",
+					"instanceId",
+					"actionId"
+				],
+				additionalProperties: true
+			}
+		]
+	},
 	requestAppearance: {
 		allOf: [
 			{
@@ -18129,6 +18236,9 @@ const CLIENT_MESSAGE_TYPES = {
     keyDown: true,
     keyUp: true,
     requestAppearance: true,
+    dialDown: true,
+    dialRotate: true,
+    dialUp: true,
 };
 const SERVER_MESSAGE_TYPES = {
     helloAck: true,
@@ -18962,6 +19072,39 @@ class BridgeClient extends EventEmitter$1 {
             actionId: effectiveActionId,
         });
     }
+    dialDown(instanceId, actionId, settings) {
+        this.sendDialEvent(instanceId, "dialDown", actionId, settings);
+    }
+    dialRotate(instanceId, actionId, ticks, pressed, settings) {
+        if (!Number.isInteger(ticks) || typeof pressed !== "boolean")
+            return;
+        this.sendDialEvent(instanceId, "dialRotate", actionId, settings, { ticks, pressed });
+    }
+    dialUp(instanceId, actionId, settings) {
+        this.sendDialEvent(instanceId, "dialUp", actionId, settings);
+    }
+    sendDialEvent(instanceId, type, actionId, settings, payload = undefined) {
+        if (!isNonEmptyString(instanceId))
+            return;
+        const snapshot = this.instances.get(instanceId);
+        if (snapshot && settings) {
+            snapshot.settings = copySettings(settings);
+            if (snapshot.actionId)
+                snapshot.settings.actionId = snapshot.actionId;
+        }
+        if (!this.authenticated || !snapshot)
+            return;
+        const effectiveActionId = isNonEmptyString(actionId) ? actionId : snapshot.actionId;
+        if (!effectiveActionId || effectiveActionId !== snapshot.actionId || !this.isKnownAction(effectiveActionId))
+            return;
+        this.send({
+            protocolVersion: PROTOCOL_VERSION,
+            type,
+            instanceId,
+            actionId: effectiveActionId,
+            ...(payload === undefined ? {} : payload),
+        });
+    }
     requestActions() {
         if (!this.authenticated || this.pendingActions.size > 0)
             return;
@@ -19423,6 +19566,13 @@ function appearanceImage(appearance) {
         return undefined;
     }
 }
+function isDialAction(value) {
+    if (value === null || typeof value !== "object") {
+        return false;
+    }
+    const candidate = value;
+    return typeof candidate.isDial === "function" && candidate.isDial();
+}
 function isRequestStateMessage(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value) && value.type === "requestState";
 }
@@ -19476,7 +19626,7 @@ class HammerspoonAction extends SingletonAction {
         });
     }
     async onWillAppear(ev) {
-        if (!ev.action.isKey()) {
+        if (!ev.action.isKey() && !isDialAction(ev.action)) {
             return;
         }
         const instanceId = ev.action.id;
@@ -19502,6 +19652,9 @@ class HammerspoonAction extends SingletonAction {
                 metadata,
             });
         }
+        if (isDialAction(ev.action)) {
+            await this.setDialLayout(ev.action);
+        }
     }
     async onWillDisappear(ev) {
         const instanceId = ev.action.id;
@@ -19514,7 +19667,7 @@ class HammerspoonAction extends SingletonAction {
         }
     }
     async onDidReceiveSettings(ev) {
-        if (!ev.action.isKey()) {
+        if (!ev.action.isKey() && !isDialAction(ev.action)) {
             return;
         }
         const instanceId = ev.action.id;
@@ -19538,6 +19691,9 @@ class HammerspoonAction extends SingletonAction {
         }
     }
     async onKeyDown(ev) {
+        if (!ev.action.isKey()) {
+            return;
+        }
         const instance = this.instances.get(ev.action.id);
         if (!instance?.actionId) {
             await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
@@ -19546,12 +19702,48 @@ class HammerspoonAction extends SingletonAction {
         this.bridge.keyDown(ev.action.id, instance.actionId, instance.settings);
     }
     async onKeyUp(ev) {
+        if (!ev.action.isKey()) {
+            return;
+        }
         const instance = this.instances.get(ev.action.id);
         if (!instance?.actionId) {
             await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
             return;
         }
         this.bridge.keyUp(ev.action.id, instance.actionId, instance.settings);
+    }
+    async onDialDown(ev) {
+        if (!isDialAction(ev.action)) {
+            return;
+        }
+        const instance = this.instances.get(ev.action.id);
+        if (!instance?.actionId) {
+            await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+            return;
+        }
+        this.bridge.dialDown(ev.action.id, instance.actionId, instance.settings);
+    }
+    async onDialRotate(ev) {
+        if (!isDialAction(ev.action)) {
+            return;
+        }
+        const instance = this.instances.get(ev.action.id);
+        if (!instance?.actionId) {
+            await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+            return;
+        }
+        this.bridge.dialRotate(ev.action.id, instance.actionId, ev.payload.ticks, ev.payload.pressed, instance.settings);
+    }
+    async onDialUp(ev) {
+        if (!isDialAction(ev.action)) {
+            return;
+        }
+        const instance = this.instances.get(ev.action.id);
+        if (!instance?.actionId) {
+            await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+            return;
+        }
+        this.bridge.dialUp(ev.action.id, instance.actionId, instance.settings);
     }
     async onSendToPlugin(ev) {
         if (isRequestStateMessage(ev.payload)) {
@@ -19571,23 +19763,29 @@ class HammerspoonAction extends SingletonAction {
             return;
         }
         if (!instance.actionId) {
-            if (!(await this.clearImage(instance))) {
+            if (instance.action.isKey() && !(await this.clearImage(instance))) {
                 return;
             }
-            await this.setTitle(instance.action, "Select action");
-            await this.setState(instance.action, 0);
+            await this.setActionTitle(instance.action, "Select action");
+            if (instance.action.isKey()) {
+                await this.setState(instance.action, 0);
+            }
             return;
         }
         if (this.bridge.status !== "connected" || !this.synchronized.has(instanceId)) {
-            if (!(await this.clearImage(instance))) {
+            if (instance.action.isKey() && !(await this.clearImage(instance))) {
                 return;
             }
-            await this.setTitle(instance.action, "Hammerspoon\nOffline");
-            await this.setState(instance.action, 0);
+            await this.setActionTitle(instance.action, "Hammerspoon\nOffline");
+            if (instance.action.isKey()) {
+                await this.setState(instance.action, 0);
+            }
             return;
         }
-        await this.setTitle(instance.action, "Hammerspoon");
-        await this.setState(instance.action, 0);
+        await this.setActionTitle(instance.action, "Hammerspoon");
+        if (instance.action.isKey()) {
+            await this.setState(instance.action, 0);
+        }
     }
     renderStatus() {
         for (const instanceId of this.instances.keys()) {
@@ -19618,6 +19816,12 @@ class HammerspoonAction extends SingletonAction {
             await this.renderInstance(appearance.instanceId);
             return;
         }
+        if (isDialAction(instance.action)) {
+            instance.lastAppearance = appearance;
+            this.synchronized.add(appearance.instanceId);
+            await this.setDialTitle(instance.action, appearance.title);
+            return;
+        }
         const image = appearanceImage(appearance);
         if (appearance.icon !== undefined && image === undefined) {
             await this.alert(instance.action);
@@ -19628,7 +19832,7 @@ class HammerspoonAction extends SingletonAction {
         }
         instance.lastAppearance = appearance;
         this.synchronized.add(appearance.instanceId);
-        await this.setTitle(instance.action, appearance.title);
+        await this.setActionTitle(instance.action, appearance.title);
         await this.setState(instance.action, appearance.state);
     }
     async renderFeedback(feedback) {
@@ -19637,10 +19841,12 @@ class HammerspoonAction extends SingletonAction {
             return;
         }
         this.cancelFeedbackTimer(instance);
-        await this.setTitle(instance.action, feedback.message);
+        await this.setActionTitle(instance.action, feedback.message);
         try {
             if (feedback.kind === "success") {
-                await instance.action.showOk();
+                if (instance.action.isKey()) {
+                    await instance.action.showOk();
+                }
             }
             else {
                 await instance.action.showAlert();
@@ -19686,7 +19892,7 @@ class HammerspoonAction extends SingletonAction {
         instance.feedbackTimer = undefined;
     }
     async clearImage(instance) {
-        if (!instance.imageApplied) {
+        if (!instance.action.isKey() || !instance.imageApplied) {
             return true;
         }
         if (await this.setImage(instance.action, undefined)) {
@@ -19696,6 +19902,9 @@ class HammerspoonAction extends SingletonAction {
         return false;
     }
     async applyImage(instance, image) {
+        if (!instance.action.isKey()) {
+            return true;
+        }
         if (image === undefined) {
             return this.clearImage(instance);
         }
@@ -19711,6 +19920,29 @@ class HammerspoonAction extends SingletonAction {
             return true;
         }
         return false;
+    }
+    async setActionTitle(action, title) {
+        if (isDialAction(action)) {
+            await this.setDialTitle(action, title);
+            return;
+        }
+        await this.setTitle(action, title);
+    }
+    async setDialLayout(action) {
+        try {
+            await action.setFeedbackLayout("$A1");
+        }
+        catch {
+            await this.alert(action);
+        }
+    }
+    async setDialTitle(action, title) {
+        try {
+            await action.setFeedback({ title });
+        }
+        catch {
+            await this.alert(action);
+        }
     }
     async setImage(action, image) {
         try {

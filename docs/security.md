@@ -33,7 +33,7 @@ Hammerspoon starts `hs.httpserver` at the default URL `ws://localhost:17321/stre
 2. The plugin's first message must be a protocol v1 `hello` containing the shared token and `pluginVersion`.
 3. Lua validates the message shape and token before acknowledging it with `helloAck.sessionId`.
 4. A valid hello is accepted even if an earlier session was marked authenticated. Lua clears prior instance contexts, generates a fresh non-empty opaque session ID in memory, and returns it in the acknowledgement.
-5. Until that acknowledgement, every other message is rejected. After it, every plugin-to-Lua application message (`listActions`, lifecycle, `keyDown`, `keyUp`, and `requestAppearance`) must include the exact returned session ID. Missing or stale IDs are rejected before action dispatch and never invoke callbacks.
+5. Until that acknowledgement, every other message is rejected. After it, every plugin-to-Lua application message (`listActions`, lifecycle, `keyDown`, `keyUp`, `dialDown`, `dialRotate`, `dialUp`, and `requestAppearance`) must include the exact returned session ID. Missing or stale IDs are rejected before action dispatch and never invoke callbacks.
 6. An invalid token, malformed hello, missing hello, or unknown first message never creates an authenticated session. Rejected clients receive only a safe protocol error where a response is possible; they are not given token-comparison details or a reason that reveals secret material.
 
 The shared token authenticates each hello; the opaque session ID binds subsequent messages to that accepted hello. A process-global `hello` boolean alone is not authentication and is not sufficient here.
@@ -42,7 +42,7 @@ First-message authentication is a limitation as well as a design choice. The con
 
 ### Callback return constraint and empty frames
 
-`hs.httpserver:websocket` requires its message callback to return a string. A lifecycle event with no response therefore produces a zero-length frame. The TypeScript transport ignores only zero-length frames before JSON/protocol validation; every non-empty frame remains subject to strict JSON Schema/protocol validation. A zero-length frame is a transport artifact, not a protocol message or a twelfth type, and it does not bypass first-message authentication or authorize any client. This is a reversible, transport-specific limitation.
+`hs.httpserver:websocket` requires its message callback to return a string. A lifecycle or encoder event with no response therefore produces a zero-length frame. The TypeScript transport ignores only zero-length frames before JSON Schema/protocol validation; every non-empty frame remains subject to strict JSON Schema/protocol validation. A zero-length frame is a transport artifact, not a protocol message or a fifteenth type, and it does not bypass first-message authentication or authorize any client. This is a reversible, transport-specific limitation.
 
 ### Session lifecycle without a close callback
 

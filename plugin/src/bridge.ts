@@ -96,8 +96,15 @@ type BridgeMessage =
       "protocolVersion" | "type" | "instanceId" | "actionId" | "settings" | "metadata"
     >
   | Pick<
-      Extract<ClientMessage, { type: "instanceDisappeared" | "keyDown" | "keyUp" | "requestAppearance" }>,
+      Extract<
+        ClientMessage,
+        { type: "instanceDisappeared" | "keyDown" | "keyUp" | "dialDown" | "dialUp" | "requestAppearance" }
+      >,
       "protocolVersion" | "type" | "instanceId" | "actionId"
+    >
+  | Pick<
+      Extract<ClientMessage, { type: "dialRotate" }>,
+      "protocolVersion" | "type" | "instanceId" | "actionId" | "ticks" | "pressed"
     >;
 
 const DEFAULT_URL = "ws://localhost:17321/streamdeck";
@@ -324,6 +331,50 @@ export class BridgeClient extends EventEmitter {
       instanceId,
       actionId: effectiveActionId,
     });
+  }
+
+  dialDown(instanceId: string, actionId?: string, settings?: JsonSettings): void {
+    this.sendDialEvent(instanceId, "dialDown", actionId, settings);
+  }
+
+  dialRotate(
+    instanceId: string,
+    actionId: string | undefined,
+    ticks: number,
+    pressed: boolean,
+    settings?: JsonSettings,
+  ): void {
+    if (!Number.isInteger(ticks) || typeof pressed !== "boolean") return;
+    this.sendDialEvent(instanceId, "dialRotate", actionId, settings, { ticks, pressed });
+  }
+
+  dialUp(instanceId: string, actionId?: string, settings?: JsonSettings): void {
+    this.sendDialEvent(instanceId, "dialUp", actionId, settings);
+  }
+
+  private sendDialEvent(
+    instanceId: string,
+    type: "dialDown" | "dialRotate" | "dialUp",
+    actionId?: string,
+    settings?: JsonSettings,
+    payload: { ticks: number; pressed: boolean } | undefined = undefined,
+  ): void {
+    if (!isNonEmptyString(instanceId)) return;
+    const snapshot = this.instances.get(instanceId);
+    if (snapshot && settings) {
+      snapshot.settings = copySettings(settings);
+      if (snapshot.actionId) snapshot.settings.actionId = snapshot.actionId;
+    }
+    if (!this.authenticated || !snapshot) return;
+    const effectiveActionId = isNonEmptyString(actionId) ? actionId : snapshot.actionId;
+    if (!effectiveActionId || effectiveActionId !== snapshot.actionId || !this.isKnownAction(effectiveActionId)) return;
+    this.send({
+      protocolVersion: PROTOCOL_VERSION,
+      type,
+      instanceId,
+      actionId: effectiveActionId,
+      ...(payload === undefined ? {} : payload),
+    } as BridgeMessage);
   }
 
   requestActions(): void {

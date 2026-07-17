@@ -269,6 +269,44 @@ describe("BridgeClient authentication and transport", () => {
     ]);
   });
 
+  test("preserves independent encoder identity and rotate/push order", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets);
+    client.start();
+    await flush();
+    const requestId = await authenticate(sockets[0]);
+    completeActions(sockets[0], requestId);
+
+    client.upsertInstance({
+      instanceId: "first-encoder",
+      actionId: "com.example.action",
+      settings: { actionId: "com.example.action", label: "First" },
+      metadata: { controllerType: "encoder", device: { type: "stream-deck-plus", size: { columns: 4, rows: 1 } } },
+    });
+    client.upsertInstance({
+      instanceId: "second-encoder",
+      actionId: "com.example.action",
+      settings: { actionId: "com.example.action", label: "Second" },
+      metadata: { controllerType: "encoder", device: { type: "stream-deck-plus", size: { columns: 4, rows: 1 } } },
+    });
+    client.dialDown("first-encoder");
+    client.dialRotate("first-encoder", undefined, 2, true, { actionId: "com.example.action", label: "First updated" });
+    client.dialUp("first-encoder");
+    client.dialRotate("second-encoder", "com.example.action", -1, false);
+    client.dialDown("wrong-instance", "com.example.action");
+
+    expect(
+      frames(sockets[0])
+        .filter((frame) => ["dialDown", "dialRotate", "dialUp"].includes(frame.type as string))
+        .map(({ type, instanceId, actionId, ticks, pressed }) => ({ type, instanceId, actionId, ticks, pressed })),
+    ).toEqual([
+      { type: "dialDown", instanceId: "first-encoder", actionId: "com.example.action", ticks: undefined, pressed: undefined },
+      { type: "dialRotate", instanceId: "first-encoder", actionId: "com.example.action", ticks: 2, pressed: true },
+      { type: "dialUp", instanceId: "first-encoder", actionId: "com.example.action", ticks: undefined, pressed: undefined },
+      { type: "dialRotate", instanceId: "second-encoder", actionId: "com.example.action", ticks: -1, pressed: false },
+    ]);
+  });
+
   test("ignores unknown action IDs without emitting lifecycle frames", async () => {
     const sockets: FakeSocket[] = [];
     const { client } = makeClient(sockets);

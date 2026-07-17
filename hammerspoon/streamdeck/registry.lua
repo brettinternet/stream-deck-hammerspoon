@@ -8,6 +8,8 @@ local allowedFields = {
   appearance = true,
   press = true,
   release = true,
+  push = true,
+  rotate = true,
   longPress = true,
   longPressThresholdMs = true,
   appear = true,
@@ -290,7 +292,7 @@ local function validateDefinition(definition)
       error("Stream Deck action longPressThresholdMs must be an integer from 100 through 10000", 3)
     end
   end
-  for _, field in ipairs({ "appear", "disappear", "release" }) do
+  for _, field in ipairs({ "appear", "disappear", "release", "push", "rotate" }) do
     if definition[field] ~= nil and type(definition[field]) ~= "function" then
       error("Stream Deck action " .. field .. " must be a function", 3)
     end

@@ -3,11 +3,18 @@
   "Actions": [
     {
       "Controllers": [
-        "Keypad"
+        "Keypad",
+        "Encoder"
       ],
       "DisableAutomaticStates": true,
+      "Encoder": {
+        "layout": "$A1",
+        "TriggerDescription": {
+          "Push": "Run Hammerspoon action",
+          "Rotate": "Adjust Hammerspoon action"
+        }
+      },
       "Icon": "imgs/action",
-      "Name": "Hammerspoon Action",
       "PropertyInspectorPath": "ui/property-inspector.html",
       "States": [
         {
@@ -51,5 +58,5 @@
     "MinimumVersion": "7.1"
   },
   "UUID": "com.brettinternet.hammerspoon",
-  "Version": "0.1.0.0"
+  "Version": "1.2.3.4"
 }

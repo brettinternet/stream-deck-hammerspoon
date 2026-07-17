@@ -82,8 +82,8 @@ The runtime flow is:
 2. The plugin reads the runtime token file and opens one WebSocket connection.
 3. The plugin's first protocol message is `hello`, containing the shared token and `pluginVersion`.
 4. Hammerspoon validates the hello and, even when an earlier session was marked authenticated, accepts it by clearing prior instance contexts, generates a fresh non-empty in-memory opaque `sessionId`, and returns it in the required `helloAck.sessionId`.
-5. The plugin sends that exact `sessionId` on every subsequent application message: `listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, `keyUp`, and `requestAppearance`. Missing or stale IDs are rejected before any action or callback is invoked.
-6. Stream Deck instance lifecycle events become `instanceAppeared` and `instanceDisappeared`; key presses and releases become `keyDown` and `keyUp` events. Appearance refreshes become `requestAppearance`. A repeated `instanceAppeared` for the same instance/action is a settings refresh and does not run `appear` again.
+5. The plugin sends that exact `sessionId` on every subsequent application message: `listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, `keyUp`, `dialDown`, `dialRotate`, `dialUp`, and `requestAppearance`. Missing or stale IDs are rejected before any action or callback is invoked.
+6. Stream Deck instance lifecycle events become `instanceAppeared` and `instanceDisappeared`; key presses and releases become `keyDown` and `keyUp`; encoder pushes and rotations become `dialDown`, `dialRotate`, and `dialUp`; appearance refreshes become `requestAppearance`. A repeated `instanceAppeared` for the same instance/action is a settings refresh and does not run `appear` again.
 7. Lua computes presentation and sends `appearance`, or sends an asynchronous `error` with a safe code/message. Callback code may also emit validated, instance/action-correlated `feedback` with a bounded safe message and duration.
 8. The plugin applies the v1 `title` and `state` to the Stream Deck key. Feedback temporarily sets the safe message as the title and calls `showOk` or `showAlert`, then restores the previous appearance after expiry.
 

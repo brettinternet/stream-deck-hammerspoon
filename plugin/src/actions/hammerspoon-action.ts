@@ -1,5 +1,6 @@
 import streamDeck, {
   SingletonAction,
+  type DialAction,
   type KeyAction,
   type SendToPluginEvent,
 } from "@elgato/streamdeck";
@@ -170,8 +171,20 @@ export type HammerspoonActionSettings = JsonObject & {
   actionId?: string;
 };
 
+type TrackedAction =
+  | KeyAction<HammerspoonActionSettings>
+  | DialAction<HammerspoonActionSettings>;
+
+function isDialAction(value: unknown): value is DialAction<HammerspoonActionSettings> {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as { isDial?: unknown };
+  return typeof candidate.isDial === "function" && (candidate.isDial as () => boolean)();
+}
+
 type TrackedInstance = {
-  action: KeyAction<HammerspoonActionSettings>;
+  action: TrackedAction;
   actionId?: string;
   lastAppearance?: BridgeAppearance;
   feedbackTimer?: unknown;
@@ -246,7 +259,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   }
 
   public override async onWillAppear(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onWillAppear"]>>[0]): Promise<void> {
-    if (!ev.action.isKey()) {
+    if (!ev.action.isKey() && !isDialAction(ev.action)) {
       return;
     }
 
@@ -273,6 +286,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
         metadata,
       });
     }
+    if (isDialAction(ev.action)) {
+      await this.setDialLayout(ev.action);
+    }
   }
 
   public override async onWillDisappear(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onWillDisappear"]>>[0]): Promise<void> {
@@ -287,7 +303,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   }
 
   public override async onDidReceiveSettings(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onDidReceiveSettings"]>>[0]): Promise<void> {
-    if (!ev.action.isKey()) {
+    if (!ev.action.isKey() && !isDialAction(ev.action)) {
       return;
     }
 
@@ -313,6 +329,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   }
 
   public override async onKeyDown(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onKeyDown"]>>[0]): Promise<void> {
+    if (!ev.action.isKey()) {
+      return;
+    }
     const instance = this.instances.get(ev.action.id);
     if (!instance?.actionId) {
       await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
@@ -323,6 +342,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   }
 
   public override async onKeyUp(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onKeyUp"]>>[0]): Promise<void> {
+    if (!ev.action.isKey()) {
+      return;
+    }
     const instance = this.instances.get(ev.action.id);
     if (!instance?.actionId) {
       await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
@@ -330,6 +352,51 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
 
     this.bridge.keyUp(ev.action.id, instance.actionId, instance.settings as JsonSettings);
+  }
+
+  public override async onDialDown(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onDialDown"]>>[0]): Promise<void> {
+    if (!isDialAction(ev.action)) {
+      return;
+    }
+    const instance = this.instances.get(ev.action.id);
+    if (!instance?.actionId) {
+      await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+      return;
+    }
+
+    this.bridge.dialDown(ev.action.id, instance.actionId, instance.settings as JsonSettings);
+  }
+
+  public override async onDialRotate(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onDialRotate"]>>[0]): Promise<void> {
+    if (!isDialAction(ev.action)) {
+      return;
+    }
+    const instance = this.instances.get(ev.action.id);
+    if (!instance?.actionId) {
+      await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+      return;
+    }
+
+    this.bridge.dialRotate(
+      ev.action.id,
+      instance.actionId,
+      ev.payload.ticks,
+      ev.payload.pressed,
+      instance.settings as JsonSettings,
+    );
+  }
+
+  public override async onDialUp(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onDialUp"]>>[0]): Promise<void> {
+    if (!isDialAction(ev.action)) {
+      return;
+    }
+    const instance = this.instances.get(ev.action.id);
+    if (!instance?.actionId) {
+      await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+      return;
+    }
+
+    this.bridge.dialUp(ev.action.id, instance.actionId, instance.settings as JsonSettings);
   }
 
   public override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, HammerspoonActionSettings>): Promise<void> {
@@ -353,25 +420,31 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
 
     if (!instance.actionId) {
-      if (!(await this.clearImage(instance))) {
+      if (instance.action.isKey() && !(await this.clearImage(instance))) {
         return;
       }
-      await this.setTitle(instance.action, "Select action");
-      await this.setState(instance.action, 0);
+      await this.setActionTitle(instance.action, "Select action");
+      if (instance.action.isKey()) {
+        await this.setState(instance.action, 0);
+      }
       return;
     }
 
     if (this.bridge.status !== "connected" || !this.synchronized.has(instanceId)) {
-      if (!(await this.clearImage(instance))) {
+      if (instance.action.isKey() && !(await this.clearImage(instance))) {
         return;
       }
-      await this.setTitle(instance.action, "Hammerspoon\nOffline");
-      await this.setState(instance.action, 0);
+      await this.setActionTitle(instance.action, "Hammerspoon\nOffline");
+      if (instance.action.isKey()) {
+        await this.setState(instance.action, 0);
+      }
       return;
     }
 
-    await this.setTitle(instance.action, "Hammerspoon");
-    await this.setState(instance.action, 0);
+    await this.setActionTitle(instance.action, "Hammerspoon");
+    if (instance.action.isKey()) {
+      await this.setState(instance.action, 0);
+    }
   }
 
   private renderStatus(): void {
@@ -408,6 +481,12 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       await this.renderInstance(appearance.instanceId);
       return;
     }
+    if (isDialAction(instance.action)) {
+      instance.lastAppearance = appearance;
+      this.synchronized.add(appearance.instanceId);
+      await this.setDialTitle(instance.action, appearance.title);
+      return;
+    }
     const image = appearanceImage(appearance);
     if (appearance.icon !== undefined && image === undefined) {
       await this.alert(instance.action);
@@ -418,7 +497,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
     instance.lastAppearance = appearance;
     this.synchronized.add(appearance.instanceId);
-    await this.setTitle(instance.action, appearance.title);
+    await this.setActionTitle(instance.action, appearance.title);
     await this.setState(instance.action, appearance.state);
   }
 
@@ -428,10 +507,12 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       return;
     }
     this.cancelFeedbackTimer(instance);
-    await this.setTitle(instance.action, feedback.message);
+    await this.setActionTitle(instance.action, feedback.message);
     try {
       if (feedback.kind === "success") {
-        await instance.action.showOk();
+        if (instance.action.isKey()) {
+          await instance.action.showOk();
+        }
       } else {
         await instance.action.showAlert();
       }
@@ -475,7 +556,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   }
 
   private async clearImage(instance: TrackedInstance): Promise<boolean> {
-    if (!instance.imageApplied) {
+    if (!instance.action.isKey() || !instance.imageApplied) {
       return true;
     }
     if (await this.setImage(instance.action, undefined)) {
@@ -485,6 +566,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     return false;
   }
   private async applyImage(instance: TrackedInstance, image: string | undefined): Promise<boolean> {
+    if (!instance.action.isKey()) {
+      return true;
+    }
     if (image === undefined) {
       return this.clearImage(instance);
     }
@@ -501,6 +585,30 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
     return false;
   }
+  private async setActionTitle(action: TrackedAction, title: string): Promise<void> {
+    if (isDialAction(action)) {
+      await this.setDialTitle(action, title);
+      return;
+    }
+    await this.setTitle(action, title);
+  }
+
+  private async setDialLayout(action: DialAction<HammerspoonActionSettings>): Promise<void> {
+    try {
+      await action.setFeedbackLayout("$A1");
+    } catch {
+      await this.alert(action);
+    }
+  }
+
+  private async setDialTitle(action: DialAction<HammerspoonActionSettings>, title: string): Promise<void> {
+    try {
+      await action.setFeedback({ title });
+    } catch {
+      await this.alert(action);
+    }
+  }
+
   private async setImage(action: KeyAction<HammerspoonActionSettings>, image: string | undefined): Promise<boolean> {
     try {
       await action.setImage(image);
@@ -528,7 +636,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   }
 
 
-  private async alert(action: KeyAction<HammerspoonActionSettings>): Promise<void> {
+  private async alert(action: TrackedAction): Promise<void> {
     try {
       await action.showAlert();
     } catch {
