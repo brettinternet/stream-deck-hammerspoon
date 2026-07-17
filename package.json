@@ -11,6 +11,7 @@
   ],
   "scripts": {
     "build": "bun run --cwd plugin build",
+    "release": "bun scripts/release.mjs",
     "watch": "bun run --cwd plugin watch",
     "check": "bun run --cwd plugin check && bun run lua:check",
     "test": "bun run --cwd plugin test && mise exec -- lua hammerspoon/tests/run.lua && mise exec -- lua hammerspoon/tests/server-startup.test.lua",

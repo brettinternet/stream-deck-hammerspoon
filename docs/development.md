@@ -80,6 +80,7 @@ bunx --package @elgato/cli@1.7.4 streamdeck dev
 `validate` checks the compiled plugin. `pack` (also named `bundle` by the CLI) creates the distributable `.streamDeckPlugin` package. `link` installs the plugin by linking the compiled directory into the official Stream Deck application. `restart` reloads the installed plugin. `dev` enables developer mode, which permits debugger attachment and property-inspector debugging; it is not a `--debug` plugin runner. Use the Node inspector or an IDE debugger to attach after enabling developer mode. Consult `bunx --package @elgato/cli@1.7.4 streamdeck --help` for version-specific options.
 
 Keep the official Stream Deck application running throughout this flow. Do not substitute a direct USB/HID operation or another hardware controller. The CLI flow can validate, package, install, restart, and enable debug support without a connected deck; hardware/UI completion still requires the official application and a connected device.
+For reproducible versioned plugin and Lua artifacts, checksums, installation, and uninstall steps, use the [release guide](releases.md) and run `bun run release`.
 
 ## Token setup
 
