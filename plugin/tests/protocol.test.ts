@@ -181,9 +181,9 @@ describe("protocol direction and validation", () => {
   });
 
   test("validates bundled fallback and custom image safety bounds", () => {
-    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"></svg>').toString("base64");
+    const svg = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA3MiA3MiI+PHJlY3QgeD0iLjUiIHk9IjAiIHdpZHRoPSI3MS41IiBoZWlnaHQ9IjcyIi8+PC9zdmc+";
     expect(parseServerMessage(JSON.stringify({ ...appearance, appearanceVersion: 1, icon: { kind: "bundled", name: "hammerspoon" } }))).toBeDefined();
-    const png = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAHElEQVR4nO3BMQEAAADCoPVPbQo/oAAAAAAAuhoUiAABdg1dRQAAAABJRU5ErkJggg==";
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAujBRSAAB/UYCuQAAAABJRU5ErkJggg==";
     const corruptPng = Buffer.from(png, "base64");
     corruptPng[29] ^= 1;
     expect(parseServerMessage(JSON.stringify({

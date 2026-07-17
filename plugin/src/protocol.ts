@@ -1,4 +1,5 @@
 import Ajv2020 from "ajv/dist/2020.js";
+import { inflateSync } from "node:zlib";
 import protocolSchema from "../../protocol/schema/protocol-v1.json";
 
 export const PROTOCOL_VERSION = 1 as const;
@@ -472,6 +473,9 @@ function isValidPng(bytes: Buffer): boolean {
   let offset = 8;
   let hasHeader = false;
   let hasData = false;
+  let expectedRawLength = 0;
+  let rowLength = 0;
+  const idatParts: Buffer[] = [];
   while (offset < bytes.length) {
     if (offset + 12 > bytes.length) {
       return false;
@@ -489,9 +493,16 @@ function isValidPng(bytes: Buffer): boolean {
       }
       const width = bytes.readUInt32BE(offset + 8);
       const height = bytes.readUInt32BE(offset + 12);
-      if (width !== height || (width !== 72 && width !== 144)) {
+      const bitDepth = bytes[offset + 16];
+      const colorType = bytes[offset + 17];
+      const bytesPerPixel = ({ 0: 1, 2: 3, 4: 2, 6: 4 } as Record<number, number>)[colorType];
+      if (width !== height || (width !== 72 && width !== 144) || bitDepth !== 8
+        || bytes[offset + 18] !== 0 || bytes[offset + 19] !== 0 || bytes[offset + 20] !== 0
+        || bytesPerPixel === undefined) {
         return false;
       }
+      rowLength = width * bytesPerPixel + 1;
+      expectedRawLength = height * rowLength;
       hasHeader = true;
     }
     if (type === "acTL") {
@@ -501,10 +512,27 @@ function isValidPng(bytes: Buffer): boolean {
       if (length === 0) {
         return false;
       }
+      idatParts.push(bytes.subarray(offset + 8, offset + 8 + length));
       hasData = true;
     }
     if (type === "IEND") {
-      return hasHeader && hasData && length === 0 && end === bytes.length;
+      if (!hasHeader || !hasData || length !== 0 || end !== bytes.length) {
+        return false;
+      }
+      try {
+        const raw = inflateSync(Buffer.concat(idatParts), { maxOutputLength: expectedRawLength });
+        if (raw.length !== expectedRawLength) {
+          return false;
+        }
+        for (let row = 0; row < raw.length; row += rowLength) {
+          if (raw[row] > 4) {
+            return false;
+          }
+        }
+        return true;
+      } catch {
+        return false;
+      }
     }
     offset = end;
   }

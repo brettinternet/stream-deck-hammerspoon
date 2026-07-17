@@ -537,7 +537,7 @@ test("versioned appearance fields validate and render safely", function()
     icon = {
       kind = "custom",
       mediaType = "image/png",
-      dataBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAHElEQVR4nO3BMQEAAADCoPVPbQo/oAAAAAAAuhoUiAABdg1dRQAAAABJRU5ErkJggg==",
+      dataBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAujBRSAAB/UYCuQAAAABJRU5ErkJggg==",
     },
   }))
   assertTrue(pngIconValid, pngIconCode or "valid PNG icons must pass Lua validation")
