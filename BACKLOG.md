@@ -109,9 +109,12 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Versioned appearanceVersion 1 adds bounded foreground/background colors, progress, and UTF-8 badges across the canonical schema, TypeScript/Ajv, Lua validation, and plugin rendering. The plugin emits escaped SVG decoration through supported setImage calls, clears stale decoration safely, serializes per-instance renders across status/reconnect races, and retains the previous complete appearance when clearing fails. Legacy title/state and offline fallbacks remain supported.
 
 ### CUS-004 — Success and error APIs
-- Status: ready
+- Status: done
 - Depends on: VSL-004
 - Acceptance: Instance context exposes success/error feedback with bounded duration, safe messages, and callback isolation.
+- Commits: b6ef96a5cf41fa16164b2f6d9a1e9a1d2ff933f5, 164d6f1151d970bf2d07188b5ac5afd8cdc2d1f0
+- Verification: 70 plugin tests; 40 Lua bridge tests; TypeScript check; Lua syntax check; plugin build; focused Unicode-boundary protocol test; independent verifier PASS on all 5 criteria.
+- Outcome: Per-instance context success/error methods emit versioned feedback with safe UTF-8 messages and 100–10,000 ms durations. Lua and TypeScript validators agree on code-point bounds; the plugin correlates feedback by instance/action, shows message plus success/alert indicators, restores appearance after expiry, and isolates stale lifecycle, emitter, listener, SDK, and timer failures.
 
 ### CUS-005 — Per-instance state
 - Status: ready
