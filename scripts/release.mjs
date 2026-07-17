@@ -2,7 +2,7 @@
 /* global Bun, Buffer, Response, console */
 
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, mkdir, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdtemp, mkdir, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -10,6 +10,12 @@ const root = resolve(import.meta.dirname, "..");
 const pluginDirectory = join(root, "plugin/com.brettinternet.hammerspoon.sdPlugin");
 const manifestPath = join(pluginDirectory, "manifest.json");
 const luaDirectory = join(root, "hammerspoon/streamdeck");
+const generatedFiles = [
+  join(pluginDirectory, "bin/plugin.js"),
+  join(pluginDirectory, "bin/plugin.js.map"),
+  join(pluginDirectory, "ui/property-inspector.js"),
+  join(pluginDirectory, "ui/property-inspector.js.map"),
+];
 const releaseRoot = join(root, "dist/releases");
 const fixedTime = new Date("1980-01-01T00:00:00Z");
 
@@ -79,6 +85,38 @@ async function normalizeTimes(directory) {
   }
 }
 
+async function snapshotFiles(paths) {
+  const snapshots = [];
+  for (const path of paths) {
+    try {
+      const info = await stat(path);
+      snapshots.push({
+        path,
+        bytes: await readFile(path),
+        mode: info.mode,
+        atime: info.atime,
+        mtime: info.mtime,
+      });
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      snapshots.push({ path });
+    }
+  }
+  return snapshots;
+}
+
+async function restoreFiles(snapshots) {
+  for (const snapshot of snapshots) {
+    if (snapshot.bytes === undefined) {
+      await rm(snapshot.path, { force: true });
+      continue;
+    }
+    await writeFile(snapshot.path, snapshot.bytes, { mode: snapshot.mode });
+    await chmod(snapshot.path, snapshot.mode);
+    await utimes(snapshot.path, snapshot.atime, snapshot.mtime);
+  }
+}
+
 async function findPackage(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
@@ -103,6 +141,7 @@ if (typeof manifest.UUID !== "string" || manifest.UUID.length === 0) {
 }
 
 const outputDirectory = join(releaseRoot, version);
+const generatedSnapshots = await snapshotFiles(generatedFiles);
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "stream-deck-hammerspoon-release-"));
 try {
   await rm(outputDirectory, { recursive: true, force: true });
@@ -163,5 +202,6 @@ try {
   );
   console.log(`Release artifacts written to ${relative(root, outputDirectory)}`);
 } finally {
+  await restoreFiles(generatedSnapshots);
   await rm(temporaryDirectory, { recursive: true, force: true });
 }
