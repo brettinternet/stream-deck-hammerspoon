@@ -130,6 +130,18 @@ Registration and startup failures are synchronous Lua errors. Callback failures 
 
 When the plugin is not connected, refresh requests cannot be delivered. The plugin displays its disconnected/offline presentation and retries with bounded backoff. Once authentication succeeds again, it receives a fresh session ID, requests the action list, re-announces visible instances with that ID, and requests appearance. Re-announcing an unchanged instance/action refreshes settings but does not invoke `appear` again.
 
+## Example collection
+
+The repository includes complete configuration snippets in `hammerspoon/examples/`:
+
+- `microphone.lua` toggles the default input device and refreshes the pressed key.
+- `application.lua` shows the frontmost application, hides it on press, and refreshes from `hs.application.watcher` events.
+- `multi-instance.lua` keeps independent toggle state for each visible key and reads an optional per-instance `label` setting.
+
+Copy one file into `~/.hammerspoon` or adapt its registration into an existing configuration. Every example uses the generic Stream Deck action; select the example's registered action ID in the property inspector. The current v1 inspector edits `actionId` only, so the multi-instance example falls back to `Toggle` unless its settings include a string `label`.
+
+The examples run without Hammerspoon or hardware in the repository's Lua test harness.
+
 ## Complete example: microphone mute
 
 The following is a complete `~/.hammerspoon/init.lua` example. It registers one stable action, toggles the default input device, and derives the title/state independently from the press callback.

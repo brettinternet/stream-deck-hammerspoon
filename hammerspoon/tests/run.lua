@@ -599,4 +599,5 @@ test("reconnect resets authentication and instance state", function()
   end)
 end)
 
+passed = passed + dofile("hammerspoon/tests/examples.lua")
 io.write("Lua bridge tests passed: " .. passed .. "\n")
