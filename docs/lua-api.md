@@ -145,10 +145,14 @@ The repository includes complete configuration snippets in `hammerspoon/examples
 - `window-snap.lua` (`com.brettinternet.hammerspoon.window-snap`) cycles each focused window through left-half, right-half, and full-work-area layouts with per-instance lifecycle state and refreshes after successful moves.
 - `keep-awake.lua` (`com.brettinternet.hammerspoon.keep-awake`) toggles display-idle sleep prevention with `hs.caffeinate`, updates every visible instance after the global state changes, and reports unavailable or failed power APIs as protected errors.
 - `app-launcher.lua` (`com.brettinternet.hammerspoon.app-launcher`) launches or focuses a configured application with safe per-key app/label defaults, shows when the target is frontmost, and refreshes after a successful launch or focus.
+- `clipboard-stash.lua` (`com.brettinternet.hammerspoon.clipboard-stash`) parks one clipboard item per key, restores it on the next press, and resets its per-instance stash on disappearance.
+- `window-center.lua` (`com.brettinternet.hammerspoon.window-center`) centers the focused window within its screen work area without changing its size, reporting when no focused window is available.
+- `meeting-mode.lua` (`com.brettinternet.hammerspoon.meeting-mode`) coordinates microphone muting and display-idle prevention as one global mode, refreshing every visible instance only after both changes succeed.
+- `lock-screen.lua` (`com.brettinternet.hammerspoon.lock-screen`) provides a one-shot privacy key through `hs.caffeinate.lockScreen` without pretending the locked state is observable.
 
-Copy any of the eleven files into `~/.hammerspoon` or adapt its registration into an existing configuration. Each file registers a namespaced action for the generic Stream Deck action; select that registered action ID in the property inspector. The official bridge owns the connection, so the examples use `require("streamdeck")`, never `hs.streamdeck` or direct hardware access. The current v1 inspector edits `actionId` only, so settings-based examples use their documented defaults unless their settings are supplied by an adapted configuration.
+Copy any of the fifteen files into `~/.hammerspoon` or adapt it in your existing configuration. Each file registers a namespaced action for the generic Stream Deck action; select that registered action ID in the property inspector. The official bridge owns the connection, so the examples use `require("streamdeck")`, never `hs.streamdeck` or direct hardware access. The current v1 inspector edits `actionId` only, so settings-based examples use their documented defaults unless their settings are supplied by an adapted configuration.
 
-All eleven examples are hardware-free and use ordinary Hammerspoon APIs; they can be copied or adapted without a connected Stream Deck. They run without Hammerspoon or hardware in the repository's Lua test harness.
+All fifteen examples are hardware-free and use ordinary Hammerspoon APIs; they can be copied or adapted without a connected Stream Deck. They run without Hammerspoon or hardware in the repository's Lua test harness.
 
 ## Complete example: microphone mute
 
