@@ -180,19 +180,36 @@ describe("protocol direction and validation", () => {
     }
   });
 
-  test("validates the closed icon variants and custom image safety bounds", () => {
+  test("validates bundled fallback and custom image safety bounds", () => {
     const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"></svg>').toString("base64");
     expect(parseServerMessage(JSON.stringify({ ...appearance, appearanceVersion: 1, icon: { kind: "bundled", name: "hammerspoon" } }))).toBeDefined();
+    const png = Buffer.alloc(57);
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(png);
+    png.writeUInt32BE(13, 8);
+    png.write("IHDR", 12, "ascii");
+    png.writeUInt32BE(72, 16);
+    png.writeUInt32BE(72, 20);
+    png.write("IDAT", 37, "ascii");
+    png.write("IEND", 49, "ascii");
+    expect(parseServerMessage(JSON.stringify({
+      ...appearance,
+      appearanceVersion: 1,
+      icon: { kind: "custom", mediaType: "image/png", dataBase64: png.toString("base64") },
+    }))).toBeDefined();
+    expect(parseServerMessage(JSON.stringify({ ...appearance, appearanceVersion: 1, icon: { kind: "bundled", name: "future-icon" } }))).toBeDefined();
     expect(parseServerMessage(JSON.stringify({
       ...appearance,
       appearanceVersion: 1,
       icon: { kind: "custom", mediaType: "image/svg+xml", dataBase64: svg },
     }))).toBeDefined();
     for (const icon of [
-      { kind: "bundled", name: "unknown" },
+      { kind: "bundled", name: "bad_name" },
       { kind: "custom", mediaType: "image/png", dataBase64: "not-base64" },
       { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from("<svg><script/></svg>").toString("base64") },
-      { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from(`<svg viewBox="0 0 72 72">${"x".repeat(16384)}</svg>`).toString("base64") },
+      { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" style="fill:#fff"></svg>').toString("base64") },
+      { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" xmlns:foreign="urn:x" viewBox="0 0 72 72"></svg>').toString("base64") },
+      { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><g></svg>').toString("base64") },
+      { kind: "custom", mediaType: "image/svg+xml", dataBase64: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72">${"x".repeat(16384)}</svg>`).toString("base64") },
     ]) {
       expect(() => parseServerMessage(JSON.stringify({ ...appearance, appearanceVersion: 1, icon }))).toThrow();
     }

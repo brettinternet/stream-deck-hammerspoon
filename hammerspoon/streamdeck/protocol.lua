@@ -203,7 +203,7 @@ end
 local MAX_ICON_BYTES = 32768
 local MAX_ICON_BASE64_LENGTH = 43692
 local function decodeBase64(value)
-  if #value == 0 or #value % 4 ~= 0 or value:find("[^A-Za-z0-9+/=]") or value:find("=.*[^=]") then return nil end
+  if type(value) ~= "string" or #value == 0 or #value % 4 ~= 0 or #value > MAX_ICON_BASE64_LENGTH then return nil end
   local out = {}
   local function digit(byte)
     if byte >= 65 and byte <= 90 then return byte - 65
@@ -216,45 +216,213 @@ local function decodeBase64(value)
   for index = 1, #value, 4 do
     local a, b, c, d = value:byte(index, index + 3)
     local da, db = digit(a), digit(b)
-    local dc, dd = c == 61 and 0 or digit(c), d == 61 and 0 or digit(d)
-    if not da or not db or not dc or not dd or (c == 61 and d ~= 61) then return nil end
+    local cPadding, dPadding = c == 61, d == 61
+    local dc, dd = cPadding and 0 or digit(c), dPadding and 0 or digit(d)
+    local last = index + 3 == #value
+    if not da or not db or not dc or not dd
+        or (cPadding and not dPadding)
+        or ((cPadding or dPadding) and not last)
+        or (cPadding and db % 16 ~= 0)
+        or (dPadding and not cPadding and dc % 4 ~= 0) then
+      return nil
+    end
     out[#out + 1] = string.char(da * 4 + math.floor(db / 16))
-    if c ~= 61 then out[#out + 1] = string.char((db % 16) * 16 + math.floor(dc / 4)) end
-    if d ~= 61 then out[#out + 1] = string.char((dc % 4) * 64 + dd) end
+    if not cPadding then out[#out + 1] = string.char((db % 16) * 16 + math.floor(dc / 4)) end
+    if not dPadding then out[#out + 1] = string.char((dc % 4) * 64 + dd) end
   end
   return table.concat(out)
 end
 
+local function isValidPng(bytes)
+  if #bytes < 33 or bytes:sub(1, 8) ~= string.char(137,80,78,71,13,10,26,10) then return false end
+  local offset, hasHeader, hasData = 9, false, false
+  while offset <= #bytes do
+    if offset + 11 > #bytes then return false end
+    local length = string.unpack(">I4", bytes, offset)
+    local chunkEnd = offset + 11 + length
+    if chunkEnd > #bytes then return false end
+    local chunkType = bytes:sub(offset + 4, offset + 7)
+    if not chunkType:match("^[A-Za-z][A-Za-z][A-Za-z][A-Za-z]$") then return false end
+    if not hasHeader then
+      if chunkType ~= "IHDR" or length ~= 13 then return false end
+      local width = string.unpack(">I4", bytes, offset + 8)
+      local height = string.unpack(">I4", bytes, offset + 12)
+      if width ~= height or (width ~= 72 and width ~= 144) then return false end
+      hasHeader = true
+    end
+    if chunkType == "acTL" then return false end
+    if chunkType == "IDAT" then hasData = true end
+    if chunkType == "IEND" then
+      return hasHeader and hasData and length == 0 and chunkEnd == #bytes
+    end
+    offset = chunkEnd + 1
+  end
+  return false
+end
+
+local SVG_ATTRIBUTES = {
+ xmlns = true,
+ viewbox = true,
+ width = true,
+ height = true,
+ fill = true,
+ stroke = true,
+ ["stroke-width"] = true,
+ opacity = true,
+ ["fill-opacity"] = true,
+ ["stroke-opacity"] = true,
+ ["stroke-linecap"] = true,
+ ["stroke-linejoin"] = true,
+ ["stroke-miterlimit"] = true,
+ ["fill-rule"] = true,
+ ["clip-rule"] = true,
+ d = true,
+ points = true,
+ x = true,
+ y = true,
+ x1 = true,
+ y1 = true,
+ x2 = true,
+ y2 = true,
+ cx = true,
+ cy = true,
+ r = true,
+ rx = true,
+ ry = true,
+}
+local SVG_NUMERIC_ATTRIBUTES = {
+ ["stroke-width"] = true,
+ opacity = true,
+ ["fill-opacity"] = true,
+ ["stroke-opacity"] = true,
+ ["stroke-miterlimit"] = true,
+ x = true,
+ y = true,
+ x1 = true,
+ y1 = true,
+ x2 = true,
+ y2 = true,
+ cx = true,
+ cy = true,
+ r = true,
+ rx = true,
+ ry = true,
+ width = true,
+ height = true,
+}
+local function isSafeSvgAttribute(name, value, rootSize)
+ if #value > 4096 or value:find("[<&%z\1-\31\127-\159]") then return false end
+ if name == "xmlns" then return value == "http://www.w3.org/2000/svg" end
+ if name == "viewbox" then return rootSize == nil and (value == "0 0 72 72" or value == "0 0 144 144")
+   or (rootSize ~= nil and value == "0 0 " .. tostring(rootSize) .. " " .. tostring(rootSize)) end
+ if name == "width" or name == "height" then return rootSize == nil and (value == "72" or value == "144")
+   or (rootSize ~= nil and value == tostring(rootSize)) end
+ if name == "fill" or name == "stroke" then return value == "none" or value:match("^#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]$") ~= nil end
+ if name == "stroke-linecap" then return value == "butt" or value == "round" or value == "square" end
+ if name == "stroke-linejoin" then return value == "miter" or value == "round" or value == "bevel" end
+ if name == "fill-rule" or name == "clip-rule" then return value == "nonzero" or value == "evenodd" end
+ if SVG_NUMERIC_ATTRIBUTES[name] then
+  local number = tonumber(value)
+  return number ~= nil and number == number and number ~= math.huge and number ~= -math.huge
+    and number >= 0 and math.abs(number) <= 1000000
+    and value:match("^%d+%.?%d*$") ~= nil
+ end
+ if name == "d" or name == "points" then return value:match("^[A-Za-z0-9.,+%- \t\r\n]+$") ~= nil end
+ return SVG_ATTRIBUTES[name] == true
+end
+local function parseSvgAttributes(body, tag, rootSize)
+ local attributes = {}
+ local rest = body:sub(#tag + 1)
+ local selfClosing = rest:match("/%s*$") ~= nil
+ if selfClosing then rest = rest:gsub("/%s*$", "") end
+ local position = 1
+ while true do
+  local remaining = rest:sub(position)
+  local leading = remaining:match("^%s*") or ""
+  position = position + #leading
+  if position > #rest then break end
+  remaining = rest:sub(position)
+  local name = remaining:match("^([A-Za-z][A-Za-z0-9-]*)")
+  if not name then return nil end
+  local normalizedName = name:lower()
+  if not SVG_ATTRIBUTES[normalizedName] or attributes[normalizedName] ~= nil then return nil end
+  position = position + #name
+  local equals = rest:sub(position):match("^%s*=%s*")
+  if not equals then return nil end
+  position = position + #equals
+  local quote = rest:sub(position, position)
+  if quote ~= "\"" and quote ~= "'" then return nil end
+  local valueEnd = rest:find(quote, position + 1, true)
+  if not valueEnd then return nil end
+  local value = rest:sub(position + 1, valueEnd - 1)
+  if not isSafeSvgAttribute(normalizedName, value, rootSize) then return nil end
+  attributes[normalizedName] = value
+  position = valueEnd + 1
+ end
+ return attributes, selfClosing
+end
 local function isAppearanceIcon(value)
-  if not isObject(value) then return false end
-  if rawget(value, "kind") == "bundled" then
-    if rawget(value, "name") ~= "hammerspoon" then return false end
-    for key in pairs(value) do if key ~= "kind" and key ~= "name" then return false end end
-    return true
-  end
-  if rawget(value, "kind") ~= "custom" then return false end
-  local mediaType, encoded = rawget(value, "mediaType"), rawget(value, "dataBase64")
-  if (mediaType ~= "image/png" and mediaType ~= "image/svg+xml") or type(encoded) ~= "string"
-      or #encoded < 4 or #encoded > MAX_ICON_BASE64_LENGTH
-      or not encoded:match("^(%w%w%w%w)*([%w+/][%w+/][%w+/=][%w+/=])?$") then return false end
-  local bytes = decodeBase64(encoded)
-  if not bytes or #bytes == 0 or #bytes > MAX_ICON_BYTES then return false end
-  if mediaType == "image/png" then
-    if bytes:sub(1, 8) ~= string.char(137,80,78,71,13,10,26,10) or bytes:find("acTL", 1, true) then return false end
-    local width = string.unpack(">I4", bytes, 17)
-    local height = string.unpack(">I4", bytes, 21)
-    return width == height and (width == 72 or width == 144)
-  end
-  local svg = bytes:lower()
-  if #svg > 16384 or not svg:match("^%s*<svg[^>]*>") or not svg:match("</svg>%s*$")
-      or (not svg:match('viewbox%s*=%s*["\']0%s+0%s+(72)%s+%1["\']')
-        and not svg:match('viewbox%s*=%s*["\']0%s+0%s+(144)%s+%1["\']'))
-      or svg:find("<!doctype", 1, true) or svg:find("<!entity", 1, true)
-      or svg:find("<script", 1, true) or svg:find("<style", 1, true)
-      or svg:find("<text", 1, true) or svg:find("<image", 1, true)
-      or svg:find("<use", 1, true) or svg:find("<foreignobject", 1, true)
-      or svg:match("%son[%a]+%s*=") or svg:find("url(", 1, true) or svg:match("%shref%s*=") then return false end
+ if not isObject(value) then return false end
+ local kind = rawget(value, "kind")
+ if kind == "bundled" then
+  local name = rawget(value, "name")
+  if type(name) ~= "string" or #name < 1 or #name > 32 or not name:match("^[a-z][a-z0-9-]*$") then return false end
+  for key in pairs(value) do if key ~= "kind" and key ~= "name" then return false end end
   return true
+ end
+ if kind ~= "custom" then return false end
+ local mediaType, encoded = rawget(value, "mediaType"), rawget(value, "dataBase64")
+ if (mediaType ~= "image/png" and mediaType ~= "image/svg+xml") or type(encoded) ~= "string"
+     or #encoded < 4 or #encoded > MAX_ICON_BASE64_LENGTH
+     or not encoded:match("^[A-Za-z0-9+/=]+$") then return false end
+ for key in pairs(value) do
+  if key ~= "kind" and key ~= "mediaType" and key ~= "dataBase64" then return false end
+ end
+ local bytes = decodeBase64(encoded)
+ if not bytes or #bytes == 0 or #bytes > MAX_ICON_BYTES then return false end
+ if mediaType == "image/png" then return isValidPng(bytes) end
+ if utf8.len(bytes) == nil or #bytes > 16384 then return false end
+ local svg = bytes
+ if svg:find("[\0\1-\8\11\12\14-\31\127-\159]") ~= nil
+     or svg:find("<!", 1, true)
+     or svg:find("<?", 1, true)
+     or svg:match(">([^<]*[^%s<])") then return false end
+ local allowed = { svg = true, g = true, path = true, rect = true, circle = true, ellipse = true, line = true, polyline = true, polygon = true }
+ local stack = {}
+ local rootSeen = false
+ local rootSize
+ local elementCount = 0
+ for rawBody in svg:gmatch("<([^<>]*)>") do
+  local body = rawBody:match("^%s*(.-)%s*$")
+  local closing = body:match("^/%s*([a-z][a-z0-9-]*)%s*$")
+  if closing then
+   if stack[#stack] ~= closing then return false end
+   stack[#stack] = nil
+  else
+   local tag = body:match("^([a-z][a-z0-9-]*)")
+   if not tag or not allowed[tag] or (tag == "svg" and rootSeen) then return false end
+   if not rootSeen and tag ~= "svg" then return false end
+   local attributes, selfClosing = parseSvgAttributes(body, tag, rootSize)
+   if not attributes then return false end
+   if tag == "svg" then
+    local viewBox = attributes.viewbox
+    if attributes.xmlns ~= "http://www.w3.org/2000/svg" then return false end
+    if viewBox == "0 0 72 72" then rootSize = 72
+    elseif viewBox == "0 0 144 144" then rootSize = 144
+    else return false end
+    if (attributes.width ~= nil and attributes.width ~= tostring(rootSize))
+        or (attributes.height ~= nil and attributes.height ~= tostring(rootSize)) then return false end
+    rootSeen = true
+   end
+   for name, value in pairs(attributes) do
+    if not isSafeSvgAttribute(name, value, rootSize) then return false end
+   end
+   elementCount = elementCount + 1
+   if elementCount > 128 or #stack >= 16 then return false end
+   if not selfClosing then stack[#stack + 1] = tag end
+  end
+ end
+ return rootSeen and #stack == 0
 end
 local function validateSettingsField(field, seenKeys)
   local kind = rawget(field, "type")

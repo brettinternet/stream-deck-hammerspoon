@@ -120,10 +120,14 @@ The callbacks receive the current context. `press`, `appear`, and `disappear` re
   backgroundColor = "#202020",
   progress = 0.5,
   badge = "ON",
+  icon = {
+    kind = "bundled",
+    name = "hammerspoon",
+  },
 }
 ```
 
-`title` must be a string and `state` must be either `"active"` or `"inactive"`. The optional presentation fields require `appearanceVersion = 1`: colors must be six-digit `#RRGGBB` strings, `progress` must be between `0` and `1`, and `badge` must be valid UTF-8 of at most four characters. An empty badge clears it. Unknown fields, missing required fields, invalid values, and unsupported appearance versions are rejected and do not update the key. Appearance is independent from press: a press callback does not implicitly change presentation.
+`title` must be a string and `state` must be either `"active"` or `"inactive"`. The optional presentation fields require `appearanceVersion = 1`: colors must be six-digit `#RRGGBB` strings, `progress` must be between `0` and `1`, and `badge` must be valid UTF-8 of at most four characters. An icon is either a semantic bundled slug, which falls back to the shipped `hammerspoon` asset when unknown, or a custom `image/png`/`image/svg+xml` value with canonical padded base64. Custom data is bounded to 32,768 decoded bytes; the plugin derives and validates 72×72 or 144×144 dimensions and applies the constrained SVG profile before SDK rendering. Unknown fields, missing required fields, invalid values, and unsupported appearance versions are rejected and do not update the key. Appearance is independent from press: a press callback does not implicitly change presentation.
 
 ## Callback semantics and protected errors
 

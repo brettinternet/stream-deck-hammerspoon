@@ -504,7 +504,7 @@ test("versioned appearance fields validate and render safely", function()
     backgroundColor = "#202020",
     progress = 0.5,
     badge = "<&",
-    icon = { kind = "bundled", name = "hammerspoon" },
+    icon = { kind = "bundled", name = "future-icon" },
   }
   local valid, code = Protocol.validate(message("appearance", {
     instanceId = "instance",
@@ -519,6 +519,28 @@ test("versioned appearance fields validate and render safely", function()
     icon = appearance.icon,
   }))
   assertTrue(valid, code or "valid appearance fields must pass")
+  local futureIconValid, futureIconCode = Protocol.validate(message("appearance", {
+    instanceId = "instance",
+    actionId = "action",
+    title = "Future",
+    state = 0,
+    appearanceVersion = 1,
+    icon = { kind = "bundled", name = "future-icon" },
+  }))
+  assertTrue(futureIconValid, futureIconCode or "unknown semantic icons must use the bundled fallback")
+  local customIconValid, customIconCode = Protocol.validate(message("appearance", {
+    instanceId = "instance",
+    actionId = "action",
+    title = "Custom",
+    state = 0,
+    appearanceVersion = 1,
+    icon = {
+      kind = "custom",
+      mediaType = "image/svg+xml",
+      dataBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA3MiA3MiI+PC9zdmc+",
+    },
+  }))
+  assertTrue(customIconValid, customIconCode or "valid custom SVG icons must pass Lua validation")
 
   local invalidFields = {
     { appearanceVersion = 2 },
@@ -528,8 +550,10 @@ test("versioned appearance fields validate and render safely", function()
     { appearanceVersion = 1, progress = 1.01 },
     { appearanceVersion = 1, badge = string.rep("x", 5) },
     { appearanceVersion = 1, badge = string.char(0) },
-    { appearanceVersion = 1, icon = { kind = "bundled", name = "unknown" } },
+    { appearanceVersion = 1, icon = { kind = "bundled", name = "bad_name" } },
     { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/svg+xml", dataBase64 = "bad!" } },
+    { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/svg+xml", dataBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA3MiA3MiIgc3R5bGU9ImZpbGw6I2ZmZiI+PC9zdmc+" } },
+    { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/svg+xml", dataBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOmZvcmVpZ249InVybjp4IiB2aWV3Qm94PSIwIDAgNzIgNzIiPjwvc3ZnPg==" } },
     { progress = 0.5 },
   }
   for _, fields in ipairs(invalidFields) do
@@ -573,8 +597,7 @@ test("versioned appearance fields validate and render safely", function()
     assertEqual(responses[1].type, "appearance")
     assertEqual(responses[1].appearanceVersion, 1)
     assertEqual(responses[1].icon.kind, "bundled")
-    assertEqual(responses[1].icon.name, "hammerspoon")
-    assertEqual(responses[1].foregroundColor, "#FFFFFF")
+    assertEqual(responses[1].icon.name, "future-icon")
     assertEqual(responses[1].backgroundColor, "#202020")
     assertEqual(responses[1].progress, 0.5)
     assertEqual(responses[1].badge, "<&")

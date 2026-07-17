@@ -113,7 +113,7 @@ The first slice is one complete path, not a collection of disconnected scaffolds
 7. Press the key, route `keyDown` to the selected Lua action, and apply the resulting appearance/feedback.
 8. Stop or reload Hammerspoon, observe the plugin's disconnected title, reconnect, authenticate again, and synchronize all visible instances and their appearances.
 
-The v1 appearance contract requires `title` and `state` and optionally accepts `appearanceVersion: 1` colors, progress, badge, and a closed icon representation. Semantic `hammerspoon` icons resolve only to the shipped 72×72 plugin asset; custom PNG/SVG data is canonical padded base64 and strictly bounded/validated before SDK rendering. Invalid input falls back to title/state and the shipped or manifest image.
+The v1 appearance contract requires `title` and `state` and optionally accepts `appearanceVersion: 1` colors, progress, badge, and a closed icon representation. Semantic bundled slugs resolve to the shipped 72×72 plugin asset, with unknown slugs using that same safe fallback; custom PNG/SVG data is canonical padded base64 and strictly bounded/validated before SDK rendering. Invalid input falls back to title/state and the shipped or manifest image.
 
 ## Lifecycle and reconnect
 

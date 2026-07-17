@@ -13,7 +13,7 @@ export const APPEARANCE_VERSION = 1 as const;
 export type AppearanceVersion = typeof APPEARANCE_VERSION;
 
 export type AppearanceIcon =
-  | { kind: "bundled"; name: "hammerspoon" }
+  | { kind: "bundled"; name: string }
   | { kind: "custom"; mediaType: "image/png" | "image/svg+xml"; dataBase64: string };
 
 export interface AppearanceFields {
@@ -435,21 +435,240 @@ function validateFeedback(message: FeedbackMessage): void {
 
 const MAX_ICON_BYTES = 32768;
 const MAX_ICON_BASE64_LENGTH = 43692;
+const MAX_SVG_LENGTH = 16384;
+const SVG_ELEMENTS = new Set(["svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon"]);
+const SVG_ATTRIBUTES = new Set([
+  "xmlns", "viewBox", "width", "height", "fill", "stroke", "stroke-width", "opacity",
+  "fill-opacity", "stroke-opacity", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
+  "fill-rule", "clip-rule", "d", "points", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry",
+]);
+const SVG_NUMERIC_ATTRIBUTES = new Set([
+  "stroke-width", "opacity", "fill-opacity", "stroke-opacity", "stroke-miterlimit",
+  "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "width", "height",
+]);
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function isCanonicalBase64(value: string): boolean {
+  return value.length >= 4
+    && value.length <= MAX_ICON_BASE64_LENGTH
+    && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)
+    && Buffer.from(value, "base64").toString("base64") === value;
+}
+
+function isValidPng(bytes: Buffer): boolean {
+  if (bytes.length < 33 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) {
+    return false;
+  }
+  let offset = 8;
+  let hasHeader = false;
+  let hasData = false;
+  while (offset < bytes.length) {
+    if (offset + 12 > bytes.length) {
+      return false;
+    }
+    const length = bytes.readUInt32BE(offset);
+    const type = bytes.toString("ascii", offset + 4, offset + 8);
+    const end = offset + 12 + length;
+    if (!/^[A-Za-z]{4}$/.test(type) || end > bytes.length) {
+      return false;
+    }
+    if (!hasHeader) {
+      if (type !== "IHDR" || length !== 13) {
+        return false;
+      }
+      const width = bytes.readUInt32BE(offset + 8);
+      const height = bytes.readUInt32BE(offset + 12);
+      if (width !== height || (width !== 72 && width !== 144)) {
+        return false;
+      }
+      hasHeader = true;
+    }
+    if (type === "acTL") {
+      return false;
+    }
+    if (type === "IDAT") {
+      hasData = true;
+    }
+    if (type === "IEND") {
+      return hasHeader && hasData && length === 0 && end === bytes.length;
+    }
+    offset = end;
+  }
+  return false;
+}
+
+function isSvgNumber(value: string): boolean {
+  return /^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value)
+    && Number.isFinite(Number(value))
+    && Math.abs(Number(value)) <= 1000000;
+}
+
+function isSvgAttributeValue(name: string, value: string, rootSize?: 72 | 144): boolean {
+  if (value.length > 4096 || /[<&>\u0000-\u001f\u007f-\u009f]/.test(value)) {
+    return false;
+  }
+  if (name === "xmlns") {
+    return value === "http://www.w3.org/2000/svg";
+  }
+  if (name === "viewBox") {
+    return value === `0 0 ${rootSize ?? 0} ${rootSize ?? 0}`;
+  }
+  if (name === "width" || name === "height") {
+    return rootSize !== undefined ? value === String(rootSize) : isSvgNumber(value);
+  }
+  if (name === "fill" || name === "stroke") {
+    return value === "none" || /^#[0-9A-Fa-f]{6}$/.test(value);
+  }
+  if (name === "stroke-linecap") {
+    return value === "butt" || value === "round" || value === "square";
+  }
+  if (name === "stroke-linejoin") {
+    return value === "miter" || value === "round" || value === "bevel";
+  }
+  if (name === "fill-rule" || name === "clip-rule") {
+    return value === "nonzero" || value === "evenodd";
+  }
+  if (SVG_NUMERIC_ATTRIBUTES.has(name)) {
+    return isSvgNumber(value) && Number(value) >= 0;
+  }
+  if (name === "d" || name === "points") {
+    return /^[A-Za-z0-9.,+\- \t\r\n]+$/.test(value);
+  }
+  return false;
+}
+
+function parseSvgTag(source: string): { name: string; attributes: Map<string, string>; selfClosing: boolean } | undefined {
+  let body = source.trim();
+  const selfClosing = body.endsWith("/");
+  if (selfClosing) {
+    body = body.slice(0, -1).trim();
+  }
+  const nameMatch = body.match(/^([a-z][a-z0-9-]*)\b/);
+  if (!nameMatch) {
+    return undefined;
+  }
+  const name = nameMatch[1];
+  const attributes = new Map<string, string>();
+  let rest = body.slice(name.length).trim();
+  while (rest.length > 0) {
+    const attributeMatch = rest.match(/^([A-Za-z][A-Za-z0-9-]*)\s*=\s*/);
+    if (!attributeMatch) {
+      return undefined;
+    }
+    const attribute = attributeMatch[1];
+    if (attributes.has(attribute) || !SVG_ATTRIBUTES.has(attribute)) {
+      return undefined;
+    }
+    rest = rest.slice(attributeMatch[0].length);
+    const quote = rest[0];
+    if (quote !== '"' && quote !== "'") {
+      return undefined;
+    }
+    const end = rest.indexOf(quote, 1);
+    if (end < 0) {
+      return undefined;
+    }
+    attributes.set(attribute, rest.slice(1, end));
+    rest = rest.slice(end + 1).trim();
+  }
+  return { name, attributes, selfClosing };
+}
+
+function sanitizeSvg(value: string): string | undefined {
+  if (value.length === 0 || value.length > MAX_SVG_LENGTH) {
+    return undefined;
+  }
+  let svg: string;
+  try {
+    svg = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(value));
+  } catch {
+    return undefined;
+  }
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(svg)) {
+    return undefined;
+  }
+  const tags = /<([^<>]*)>/g;
+  const stack: string[] = [];
+  const output: string[] = [];
+  let cursor = 0;
+  let elementCount = 0;
+  let rootSize: 72 | 144 | undefined;
+  let rootSeen = false;
+  let match: RegExpExecArray | null;
+  while ((match = tags.exec(svg)) !== null) {
+    if (svg.slice(cursor, match.index).trim() !== "") {
+      return undefined;
+    }
+    cursor = tags.lastIndex;
+    const body = match[1].trim();
+    if (body.startsWith("!") || body.startsWith("?") || body.startsWith("/")) {
+      if (!body.startsWith("/")) {
+        return undefined;
+      }
+      const closingName = body.slice(1).trim();
+      if (!/^[a-z][a-z0-9-]*$/.test(closingName) || stack.at(-1) !== closingName) {
+        return undefined;
+      }
+      stack.pop();
+      output.push(`</${closingName}>`);
+      continue;
+    }
+    const parsed = parseSvgTag(body);
+    if (!parsed || !SVG_ELEMENTS.has(parsed.name) || (parsed.name === "svg" && rootSeen)) {
+      return undefined;
+    }
+    if (!rootSeen && parsed.name !== "svg") {
+      return undefined;
+    }
+    elementCount += 1;
+    if (elementCount > 128 || stack.length >= 16) {
+      return undefined;
+    }
+    if (parsed.name === "svg") {
+      const viewBox = parsed.attributes.get("viewBox");
+      const size = viewBox === "0 0 72 72" ? 72 : viewBox === "0 0 144 144" ? 144 : undefined;
+      if (parsed.attributes.get("xmlns") !== "http://www.w3.org/2000/svg" || size === undefined) {
+        return undefined;
+      }
+      if (
+        (parsed.attributes.get("width") !== undefined && parsed.attributes.get("width") !== String(size)) ||
+        (parsed.attributes.get("height") !== undefined && parsed.attributes.get("height") !== String(size))
+      ) {
+        return undefined;
+      }
+      rootSize = size;
+      rootSeen = true;
+    }
+    for (const [name, attributeValue] of parsed.attributes) {
+      if (!isSvgAttributeValue(name, attributeValue, parsed.name === "svg" ? rootSize : undefined)) {
+        return undefined;
+      }
+    }
+    const serializedAttributes = [...parsed.attributes]
+      .map(([name, attributeValue]) => `${name}="${attributeValue.replace(/["']/g, (character) => character === '"' ? "&quot;" : "&apos;")}"`)
+      .join(" ");
+    output.push(`<${parsed.name}${serializedAttributes.length > 0 ? ` ${serializedAttributes}` : ""}${parsed.selfClosing ? "/>" : ">"}`);
+    if (!parsed.selfClosing) {
+      stack.push(parsed.name);
+    }
+  }
+  return cursor === svg.length && rootSeen && stack.length === 0 ? output.join("") : undefined;
+}
+
 export function isSafeAppearanceIcon(value: unknown): value is AppearanceIcon {
   if (!isObject(value)) {
     return false;
   }
   if (value.kind === "bundled") {
-    return value.name === "hammerspoon" && Object.keys(value).every((key) => key === "kind" || key === "name");
+    return typeof value.name === "string"
+      && /^[a-z][a-z0-9-]{0,31}$/.test(value.name)
+      && Object.keys(value).every((key) => key === "kind" || key === "name");
   }
   if (
     value.kind !== "custom" ||
     (value.mediaType !== "image/png" && value.mediaType !== "image/svg+xml") ||
     typeof value.dataBase64 !== "string" ||
-    value.dataBase64.length < 4 ||
-    value.dataBase64.length > MAX_ICON_BASE64_LENGTH ||
-    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.dataBase64) ||
-    Buffer.from(value.dataBase64, "base64").toString("base64") !== value.dataBase64 ||
+    !isCanonicalBase64(value.dataBase64) ||
     Object.keys(value).some((key) => !["kind", "mediaType", "dataBase64"].includes(key))
   ) {
     return false;
@@ -458,30 +677,22 @@ export function isSafeAppearanceIcon(value: unknown): value is AppearanceIcon {
   if (bytes.length === 0 || bytes.length > MAX_ICON_BYTES) {
     return false;
   }
+  return value.mediaType === "image/png" ? isValidPng(bytes) : sanitizeSvg(bytes.toString("utf8")) !== undefined;
+}
+
+export function safeAppearanceIconImage(value: AppearanceIcon): string | undefined {
+  if (!isSafeAppearanceIcon(value)) {
+    return undefined;
+  }
+  if (value.kind === "bundled") {
+    return undefined;
+  }
+  const bytes = Buffer.from(value.dataBase64, "base64");
   if (value.mediaType === "image/png") {
-    if (bytes.length < 24 || !bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
-      return false;
-    }
-    const width = bytes.readUInt32BE(16);
-    const height = bytes.readUInt32BE(20);
-    return width === height && (width === 72 || width === 144) && !bytes.includes(Buffer.from("acTL"));
+    return `data:${value.mediaType};base64,${value.dataBase64}`;
   }
-  const svg = bytes.toString("utf8");
-  if (Buffer.from(svg).length !== bytes.length || svg.length > 16384) {
-    return false;
-  }
-  const root = svg.match(/^\s*<svg\b([^>]*)>/i);
-  const viewBox = root?.[1].match(/\bviewBox\s*=\s*["']0\s+0\s+(72|144)\s+\1["']/i);
-  if (!root || !viewBox || !/<\/svg>\s*$/i.test(svg)) {
-    return false;
-  }
-  if (
-    /<!DOCTYPE|<!ENTITY|<\s*(?:script|style|text|image|use|foreignObject)\b|\bon[a-z]+\s*=|url\s*\(|(?:href|src)\s*=|xmlns:[^=]+=/i.test(svg) ||
-    (svg.match(/<(?!!|\/?svg\b)[^>]+>/gi) ?? []).length > 128
-  ) {
-    return false;
-  }
-  return true;
+  const sanitized = sanitizeSvg(bytes.toString("utf8"));
+  return sanitized === undefined ? undefined : `data:image/svg+xml,${encodeURIComponent(sanitized)}`;
 }
 
 function schemaError(direction: "server" | "client"): Error {

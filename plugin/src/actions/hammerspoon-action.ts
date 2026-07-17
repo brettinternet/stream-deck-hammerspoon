@@ -4,7 +4,7 @@ import streamDeck, {
   type SendToPluginEvent,
 } from "@elgato/streamdeck";
 import type { BridgeAppearance, BridgeClient, BridgeFeedback } from "../bridge.js";
-import { isSafeAppearanceIcon, type JsonSettings } from "../protocol.js";
+import { isSafeAppearanceIcon, safeAppearanceIconImage, type JsonSettings } from "../protocol.js";
 type JsonObject = { [key: string]: JsonValue };
 type JsonPrimitive = boolean | number | string | null | undefined;
 type JsonValue = JsonObject | JsonPrimitive | JsonValue[];
@@ -40,27 +40,27 @@ const BUNDLED_ICON_PATH = "imgs/key.svg";
 
 function appearanceImage(appearance: BridgeAppearance): string | undefined {
   const icon = appearance.icon;
+  const hasDecoration = appearance.foregroundColor !== undefined
+    || appearance.backgroundColor !== undefined
+    || appearance.progress !== undefined
+    || appearance.badge !== undefined;
+  let customIconImage: string | undefined;
   if (icon !== undefined) {
     if (!isSafeAppearanceIcon(icon)) {
       return undefined;
     }
     if (icon.kind === "custom") {
-      return `data:${icon.mediaType};base64,${icon.dataBase64}`;
-    }
-    if (
-      appearance.foregroundColor === undefined &&
-      appearance.backgroundColor === undefined &&
-      appearance.progress === undefined &&
-      appearance.badge === undefined
-    ) {
+      customIconImage = safeAppearanceIconImage(icon);
+      if (customIconImage === undefined) {
+        return undefined;
+      }
+      if (!hasDecoration) {
+        return customIconImage;
+      }
+    } else if (!hasDecoration) {
       return BUNDLED_ICON_PATH;
     }
   }
-
-  const hasDecoration = appearance.foregroundColor !== undefined
-    || appearance.backgroundColor !== undefined
-    || appearance.progress !== undefined
-    || appearance.badge !== undefined;
   if (appearance.appearanceVersion !== 1 || !hasDecoration) {
     return undefined;
   }
@@ -98,9 +98,9 @@ function appearanceImage(appearance: BridgeAppearance): string | undefined {
       }
     }
   }
-  const bundledOverlay = icon?.kind === "bundled"
+  const iconMarkup = icon?.kind === "bundled"
     ? `<image href="${BUNDLED_ICON_PATH}" x="0" y="0" width="72" height="72"/>`
-    : "";
+    : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="0" y="0" width="72" height="72"/>`;
   const progressBar = progress === undefined
     ? ""
     : `<rect x="4" y="64" width="${Math.round(progress * 64)}" height="4" fill="${foreground}"/>`;
@@ -110,7 +110,7 @@ function appearanceImage(appearance: BridgeAppearance): string | undefined {
   const badgeText = badge === undefined
     ? ""
     : `<text x="68" y="14" text-anchor="end" fill="${foreground}">${escapeXml(badge)}</text>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="${background}"/>${bundledOverlay}${foregroundBorder}${progressBar}${badgeText}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="${background}"/>${iconMarkup}${foregroundBorder}${progressBar}${badgeText}</svg>`;
   try {
     return `data:image/svg+xml,${encodeURIComponent(svg)}`;
   } catch {
@@ -346,19 +346,16 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       await this.renderInstance(appearance.instanceId);
       return;
     }
-    instance.lastAppearance = appearance;
-    this.synchronized.add(appearance.instanceId);
     const image = appearanceImage(appearance);
-    if (image !== undefined) {
-      if (!(await this.clearImage(instance))) {
-        return;
-      }
-      if (await this.setImage(instance.action, image)) {
-        instance.imageApplied = true;
-      }
-    } else if (instance.imageApplied && !(await this.clearImage(instance))) {
+    if (appearance.icon !== undefined && image === undefined) {
+      await this.alert(instance.action);
       return;
     }
+    if (!(await this.applyImage(instance, image))) {
+      return;
+    }
+    instance.lastAppearance = appearance;
+    this.synchronized.add(appearance.instanceId);
     await this.setTitle(instance.action, appearance.title);
     await this.setState(instance.action, appearance.state);
   }
@@ -417,6 +414,23 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
 
   private async clearImage(instance: TrackedInstance): Promise<boolean> {
     if (!instance.imageApplied) {
+      return true;
+    }
+    if (await this.setImage(instance.action, undefined)) {
+      instance.imageApplied = false;
+      return true;
+    }
+    return false;
+  }
+  private async applyImage(instance: TrackedInstance, image: string | undefined): Promise<boolean> {
+    if (image === undefined) {
+      return this.clearImage(instance);
+    }
+    if (!(await this.clearImage(instance))) {
+      return false;
+    }
+    if (await this.setImage(instance.action, image)) {
+      instance.imageApplied = true;
       return true;
     }
     if (await this.setImage(instance.action, undefined)) {

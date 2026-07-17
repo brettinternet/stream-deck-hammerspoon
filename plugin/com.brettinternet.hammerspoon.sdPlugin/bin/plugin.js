@@ -17708,6 +17708,54 @@ var $defs = {
 		type: "string",
 		maxLength: 4
 	},
+	appearanceIcon: {
+		oneOf: [
+			{
+				type: "object",
+				properties: {
+					kind: {
+						"const": "bundled"
+					},
+					name: {
+						type: "string",
+						pattern: "^[a-z][a-z0-9-]{0,31}$"
+					}
+				},
+				required: [
+					"kind",
+					"name"
+				],
+				additionalProperties: false
+			},
+			{
+				type: "object",
+				properties: {
+					kind: {
+						"const": "custom"
+					},
+					mediaType: {
+						type: "string",
+						"enum": [
+							"image/png",
+							"image/svg+xml"
+						]
+					},
+					dataBase64: {
+						type: "string",
+						minLength: 4,
+						maxLength: 43692,
+						pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+					}
+				},
+				required: [
+					"kind",
+					"mediaType",
+					"dataBase64"
+				],
+				additionalProperties: false
+			}
+		]
+	},
 	appearance: {
 		allOf: [
 			{
@@ -17751,6 +17799,9 @@ var $defs = {
 					},
 					badge: {
 						$ref: "#/$defs/appearanceBadge"
+					},
+					icon: {
+						$ref: "#/$defs/appearanceIcon"
 					}
 				},
 				required: [
@@ -17783,6 +17834,11 @@ var $defs = {
 						{
 							required: [
 								"badge"
+							]
+						},
+						{
+							required: [
+								"icon"
 							]
 						}
 					]
@@ -18112,6 +18168,256 @@ function validateFeedback(message) {
         throw new Error("Invalid server message: feedback message must contain valid Unicode.");
     }
 }
+const MAX_ICON_BYTES = 32768;
+const MAX_ICON_BASE64_LENGTH = 43692;
+const MAX_SVG_LENGTH = 16384;
+const SVG_ELEMENTS = new Set(["svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon"]);
+const SVG_ATTRIBUTES = new Set([
+    "xmlns", "viewBox", "width", "height", "fill", "stroke", "stroke-width", "opacity",
+    "fill-opacity", "stroke-opacity", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
+    "fill-rule", "clip-rule", "d", "points", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry",
+]);
+const SVG_NUMERIC_ATTRIBUTES = new Set([
+    "stroke-width", "opacity", "fill-opacity", "stroke-opacity", "stroke-miterlimit",
+    "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "width", "height",
+]);
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+function isCanonicalBase64(value) {
+    return value.length >= 4
+        && value.length <= MAX_ICON_BASE64_LENGTH
+        && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)
+        && Buffer.from(value, "base64").toString("base64") === value;
+}
+function isValidPng(bytes) {
+    if (bytes.length < 33 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) {
+        return false;
+    }
+    let offset = 8;
+    let hasHeader = false;
+    let hasData = false;
+    while (offset < bytes.length) {
+        if (offset + 12 > bytes.length) {
+            return false;
+        }
+        const length = bytes.readUInt32BE(offset);
+        const type = bytes.toString("ascii", offset + 4, offset + 8);
+        const end = offset + 12 + length;
+        if (!/^[A-Za-z]{4}$/.test(type) || end > bytes.length) {
+            return false;
+        }
+        if (!hasHeader) {
+            if (type !== "IHDR" || length !== 13) {
+                return false;
+            }
+            const width = bytes.readUInt32BE(offset + 8);
+            const height = bytes.readUInt32BE(offset + 12);
+            if (width !== height || (width !== 72 && width !== 144)) {
+                return false;
+            }
+            hasHeader = true;
+        }
+        if (type === "acTL") {
+            return false;
+        }
+        if (type === "IDAT") {
+            hasData = true;
+        }
+        if (type === "IEND") {
+            return hasHeader && hasData && length === 0 && end === bytes.length;
+        }
+        offset = end;
+    }
+    return false;
+}
+function isSvgNumber(value) {
+    return /^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value)
+        && Number.isFinite(Number(value))
+        && Math.abs(Number(value)) <= 1000000;
+}
+function isSvgAttributeValue(name, value, rootSize) {
+    if (value.length > 4096 || /[<&>\u0000-\u001f\u007f-\u009f]/.test(value)) {
+        return false;
+    }
+    if (name === "xmlns") {
+        return value === "http://www.w3.org/2000/svg";
+    }
+    if (name === "viewBox") {
+        return value === `0 0 ${rootSize ?? 0} ${rootSize ?? 0}`;
+    }
+    if (name === "width" || name === "height") {
+        return rootSize !== undefined ? value === String(rootSize) : isSvgNumber(value);
+    }
+    if (name === "fill" || name === "stroke") {
+        return value === "none" || /^#[0-9A-Fa-f]{6}$/.test(value);
+    }
+    if (name === "stroke-linecap") {
+        return value === "butt" || value === "round" || value === "square";
+    }
+    if (name === "stroke-linejoin") {
+        return value === "miter" || value === "round" || value === "bevel";
+    }
+    if (name === "fill-rule" || name === "clip-rule") {
+        return value === "nonzero" || value === "evenodd";
+    }
+    if (SVG_NUMERIC_ATTRIBUTES.has(name)) {
+        return isSvgNumber(value) && Number(value) >= 0;
+    }
+    if (name === "d" || name === "points") {
+        return /^[A-Za-z0-9.,+\- \t\r\n]+$/.test(value);
+    }
+    return false;
+}
+function parseSvgTag(source) {
+    let body = source.trim();
+    const selfClosing = body.endsWith("/");
+    if (selfClosing) {
+        body = body.slice(0, -1).trim();
+    }
+    const nameMatch = body.match(/^([a-z][a-z0-9-]*)\b/);
+    if (!nameMatch) {
+        return undefined;
+    }
+    const name = nameMatch[1];
+    const attributes = new Map();
+    let rest = body.slice(name.length).trim();
+    while (rest.length > 0) {
+        const attributeMatch = rest.match(/^([A-Za-z][A-Za-z0-9-]*)\s*=\s*/);
+        if (!attributeMatch) {
+            return undefined;
+        }
+        const attribute = attributeMatch[1];
+        if (attributes.has(attribute) || !SVG_ATTRIBUTES.has(attribute)) {
+            return undefined;
+        }
+        rest = rest.slice(attributeMatch[0].length);
+        const quote = rest[0];
+        if (quote !== '"' && quote !== "'") {
+            return undefined;
+        }
+        const end = rest.indexOf(quote, 1);
+        if (end < 0) {
+            return undefined;
+        }
+        attributes.set(attribute, rest.slice(1, end));
+        rest = rest.slice(end + 1).trim();
+    }
+    return { name, attributes, selfClosing };
+}
+function sanitizeSvg(value) {
+    if (value.length === 0 || value.length > MAX_SVG_LENGTH) {
+        return undefined;
+    }
+    let svg;
+    try {
+        svg = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(value));
+    }
+    catch {
+        return undefined;
+    }
+    if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(svg)) {
+        return undefined;
+    }
+    const tags = /<([^<>]*)>/g;
+    const stack = [];
+    const output = [];
+    let cursor = 0;
+    let elementCount = 0;
+    let rootSize;
+    let rootSeen = false;
+    let match;
+    while ((match = tags.exec(svg)) !== null) {
+        if (svg.slice(cursor, match.index).trim() !== "") {
+            return undefined;
+        }
+        cursor = tags.lastIndex;
+        const body = match[1].trim();
+        if (body.startsWith("!") || body.startsWith("?") || body.startsWith("/")) {
+            if (!body.startsWith("/")) {
+                return undefined;
+            }
+            const closingName = body.slice(1).trim();
+            if (!/^[a-z][a-z0-9-]*$/.test(closingName) || stack.at(-1) !== closingName) {
+                return undefined;
+            }
+            stack.pop();
+            output.push(`</${closingName}>`);
+            continue;
+        }
+        const parsed = parseSvgTag(body);
+        if (!parsed || !SVG_ELEMENTS.has(parsed.name) || (parsed.name === "svg" && rootSeen)) {
+            return undefined;
+        }
+        if (!rootSeen && parsed.name !== "svg") {
+            return undefined;
+        }
+        elementCount += 1;
+        if (elementCount > 128 || stack.length >= 16) {
+            return undefined;
+        }
+        if (parsed.name === "svg") {
+            const viewBox = parsed.attributes.get("viewBox");
+            const size = viewBox === "0 0 72 72" ? 72 : viewBox === "0 0 144 144" ? 144 : undefined;
+            if (parsed.attributes.get("xmlns") !== "http://www.w3.org/2000/svg" || size === undefined) {
+                return undefined;
+            }
+            if ((parsed.attributes.get("width") !== undefined && parsed.attributes.get("width") !== String(size)) ||
+                (parsed.attributes.get("height") !== undefined && parsed.attributes.get("height") !== String(size))) {
+                return undefined;
+            }
+            rootSize = size;
+            rootSeen = true;
+        }
+        for (const [name, attributeValue] of parsed.attributes) {
+            if (!isSvgAttributeValue(name, attributeValue, parsed.name === "svg" ? rootSize : undefined)) {
+                return undefined;
+            }
+        }
+        const serializedAttributes = [...parsed.attributes]
+            .map(([name, attributeValue]) => `${name}="${attributeValue.replace(/["']/g, (character) => character === '"' ? "&quot;" : "&apos;")}"`)
+            .join(" ");
+        output.push(`<${parsed.name}${serializedAttributes.length > 0 ? ` ${serializedAttributes}` : ""}${parsed.selfClosing ? "/>" : ">"}`);
+        if (!parsed.selfClosing) {
+            stack.push(parsed.name);
+        }
+    }
+    return cursor === svg.length && rootSeen && stack.length === 0 ? output.join("") : undefined;
+}
+function isSafeAppearanceIcon(value) {
+    if (!isObject(value)) {
+        return false;
+    }
+    if (value.kind === "bundled") {
+        return typeof value.name === "string"
+            && /^[a-z][a-z0-9-]{0,31}$/.test(value.name)
+            && Object.keys(value).every((key) => key === "kind" || key === "name");
+    }
+    if (value.kind !== "custom" ||
+        (value.mediaType !== "image/png" && value.mediaType !== "image/svg+xml") ||
+        typeof value.dataBase64 !== "string" ||
+        !isCanonicalBase64(value.dataBase64) ||
+        Object.keys(value).some((key) => !["kind", "mediaType", "dataBase64"].includes(key))) {
+        return false;
+    }
+    const bytes = Buffer.from(value.dataBase64, "base64");
+    if (bytes.length === 0 || bytes.length > MAX_ICON_BYTES) {
+        return false;
+    }
+    return value.mediaType === "image/png" ? isValidPng(bytes) : sanitizeSvg(bytes.toString("utf8")) !== undefined;
+}
+function safeAppearanceIconImage(value) {
+    if (!isSafeAppearanceIcon(value)) {
+        return undefined;
+    }
+    if (value.kind === "bundled") {
+        return undefined;
+    }
+    const bytes = Buffer.from(value.dataBase64, "base64");
+    if (value.mediaType === "image/png") {
+        return `data:${value.mediaType};base64,${value.dataBase64}`;
+    }
+    const sanitized = sanitizeSvg(bytes.toString("utf8"));
+    return sanitized === undefined ? undefined : `data:image/svg+xml,${encodeURIComponent(sanitized)}`;
+}
 function schemaError(direction) {
     const details = ajv.errorsText(validateProtocolMessage.errors, { separator: "; " });
     return new Error(`Invalid ${direction} message: failed protocol schema validation${details ? `: ${details}` : ""}.`);
@@ -18173,6 +18479,9 @@ function parseServerMessage(data) {
         catch {
             throw new Error("Invalid server message: badge must contain valid Unicode.");
         }
+    }
+    if (parsed.type === "appearance" && parsed.icon !== undefined && !isSafeAppearanceIcon(parsed.icon)) {
+        throw new Error("Invalid server message: icon is unsupported, malformed, oversized, or unsafe.");
     }
     if (parsed.type === "actions") {
         const actions = parsed.actions;
@@ -18345,8 +18654,19 @@ class BridgeClient extends EventEmitter$1 {
                 : undefined;
         if (configuredActionId)
             settings.actionId = configuredActionId;
+        const previous = this.instances.get(input.instanceId);
         const snapshot = { actionId: configuredActionId, settings };
         this.instances.set(input.instanceId, snapshot);
+        if (this.authenticated
+            && previous?.actionId
+            && previous.actionId !== configuredActionId) {
+            this.send({
+                protocolVersion: PROTOCOL_VERSION,
+                type: "instanceDisappeared",
+                instanceId: input.instanceId,
+                actionId: previous.actionId,
+            });
+        }
         if (this.authenticated && configuredActionId && this.isKnownAction(configuredActionId)) {
             this.sendInstanceAppeared(input.instanceId, snapshot);
         }
@@ -18355,6 +18675,8 @@ class BridgeClient extends EventEmitter$1 {
         if (!isNonEmptyString(instanceId))
             return;
         const snapshot = this.instances.get(instanceId);
+        if (snapshot && isNonEmptyString(actionId) && snapshot.actionId !== actionId)
+            return;
         this.instances.delete(instanceId);
         if (!this.authenticated)
             return;
@@ -18535,6 +18857,7 @@ class BridgeClient extends EventEmitter$1 {
             ...(message.foregroundColor === undefined ? {} : { foregroundColor: message.foregroundColor }),
             ...(message.backgroundColor === undefined ? {} : { backgroundColor: message.backgroundColor }),
             ...(message.progress === undefined ? {} : { progress: message.progress }),
+            ...(message.icon === undefined ? {} : { icon: message.icon }),
             ...(message.badge === undefined ? {} : { badge: message.badge }),
         };
         this.emit("appearance", appearance);
@@ -18730,11 +19053,31 @@ function escapeXml(value) {
         "'": "&apos;",
     })[character] ?? character);
 }
+const BUNDLED_ICON_PATH = "imgs/key.svg";
 function appearanceImage(appearance) {
+    const icon = appearance.icon;
     const hasDecoration = appearance.foregroundColor !== undefined
         || appearance.backgroundColor !== undefined
         || appearance.progress !== undefined
         || appearance.badge !== undefined;
+    let customIconImage;
+    if (icon !== undefined) {
+        if (!isSafeAppearanceIcon(icon)) {
+            return undefined;
+        }
+        if (icon.kind === "custom") {
+            customIconImage = safeAppearanceIconImage(icon);
+            if (customIconImage === undefined) {
+                return undefined;
+            }
+            if (!hasDecoration) {
+                return customIconImage;
+            }
+        }
+        else if (!hasDecoration) {
+            return BUNDLED_ICON_PATH;
+        }
+    }
     if (appearance.appearanceVersion !== 1 || !hasDecoration) {
         return undefined;
     }
@@ -18768,6 +19111,9 @@ function appearanceImage(appearance) {
             }
         }
     }
+    const iconMarkup = icon?.kind === "bundled"
+        ? `<image href="${BUNDLED_ICON_PATH}" x="0" y="0" width="72" height="72"/>`
+        : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="0" y="0" width="72" height="72"/>`;
     const progressBar = progress === undefined
         ? ""
         : `<rect x="4" y="64" width="${Math.round(progress * 64)}" height="4" fill="${foreground}"/>`;
@@ -18777,7 +19123,7 @@ function appearanceImage(appearance) {
     const badgeText = badge === undefined
         ? ""
         : `<text x="68" y="14" text-anchor="end" fill="${foreground}">${escapeXml(badge)}</text>`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="${background}"/>${foregroundBorder}${progressBar}${badgeText}</svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect width="72" height="72" fill="${background}"/>${iconMarkup}${foregroundBorder}${progressBar}${badgeText}</svg>`;
     try {
         return `data:image/svg+xml,${encodeURIComponent(svg)}`;
     }
@@ -18968,20 +19314,16 @@ class HammerspoonAction extends SingletonAction {
             await this.renderInstance(appearance.instanceId);
             return;
         }
-        instance.lastAppearance = appearance;
-        this.synchronized.add(appearance.instanceId);
         const image = appearanceImage(appearance);
-        if (image !== undefined) {
-            if (!(await this.clearImage(instance))) {
-                return;
-            }
-            if (await this.setImage(instance.action, image)) {
-                instance.imageApplied = true;
-            }
-        }
-        else if (instance.imageApplied && !(await this.clearImage(instance))) {
+        if (appearance.icon !== undefined && image === undefined) {
+            await this.alert(instance.action);
             return;
         }
+        if (!(await this.applyImage(instance, image))) {
+            return;
+        }
+        instance.lastAppearance = appearance;
+        this.synchronized.add(appearance.instanceId);
         await this.setTitle(instance.action, appearance.title);
         await this.setState(instance.action, appearance.state);
     }
@@ -19041,6 +19383,23 @@ class HammerspoonAction extends SingletonAction {
     }
     async clearImage(instance) {
         if (!instance.imageApplied) {
+            return true;
+        }
+        if (await this.setImage(instance.action, undefined)) {
+            instance.imageApplied = false;
+            return true;
+        }
+        return false;
+    }
+    async applyImage(instance, image) {
+        if (image === undefined) {
+            return this.clearImage(instance);
+        }
+        if (!(await this.clearImage(instance))) {
+            return false;
+        }
+        if (await this.setImage(instance.action, image)) {
+            instance.imageApplied = true;
             return true;
         }
         if (await this.setImage(instance.action, undefined)) {

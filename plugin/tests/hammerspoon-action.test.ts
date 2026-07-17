@@ -53,7 +53,7 @@ class FakeAction {
     if (this.imageDelay) {
       await this.imageDelay;
     }
-    if (this.rejectImage || (image === undefined && this.rejectImageClear)) {
+    if ((this.rejectImage && image !== undefined) || (image === undefined && this.rejectImageClear)) {
       throw new Error("setImage failed");
     }
   }
@@ -518,7 +518,7 @@ describe("HammerspoonAction", () => {
       backgroundColor: "#000000",
     });
     await flush();
-    expect(failed.calls.images).toHaveLength(1);
+    expect(failed.calls.images).toEqual([expect.any(String), undefined]);
     expect(failed.calls.titles).toEqual(["Hammerspoon\nOffline", "Fallback"]);
     expect(failed.calls.states).toEqual([0, 1]);
     expect(failed.calls.alerts).toBe(1);
@@ -555,7 +555,9 @@ describe("HammerspoonAction", () => {
       icon: { kind: "custom", mediaType: "image/svg+xml", dataBase64: custom },
     });
     await flush();
-    expect(action.calls.images.at(-1)).toBe(`data:image/svg+xml;base64,${custom}`);
+    expect(action.calls.images.at(-1)).toBe(
+      `data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2072%2072%22%3E%3C%2Fsvg%3E`,
+    );
     bridge.emit("appearance", {
       type: "appearance",
       protocolVersion: 1,
@@ -567,8 +569,8 @@ describe("HammerspoonAction", () => {
       icon: { kind: "custom", mediaType: "image/svg+xml", dataBase64: "bad" },
     } as never);
     await flush();
-    expect(action.calls.images.at(-1)).toBeUndefined();
-    expect(action.calls.titles.at(-1)).toBe("Fallback");
+    expect(action.calls.images.at(-1)).toContain("data:image/svg+xml,");
+    expect(action.calls.titles.at(-1)).toBe("Custom");
   });
 
   test("retains the previous appearance when decoration cannot be cleared", async () => {

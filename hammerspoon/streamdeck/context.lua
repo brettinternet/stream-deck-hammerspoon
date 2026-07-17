@@ -23,14 +23,16 @@ local function isAppearanceBadge(value)
 end
 
 local MAX_ICON_BASE64_LENGTH = 43692
+local MAX_ICON_NAME_LENGTH = 32
 local function isAppearanceIcon(value)
   if type(value) ~= "table" then return false end
   if value.kind == "bundled" then
-    if value.name ~= "hammerspoon" then return false end
+    if type(value.name) ~= "string" or #value.name < 1 or #value.name > MAX_ICON_NAME_LENGTH
+        or not value.name:match("^[a-z][a-z0-9-]*$") then return false end
   elseif value.kind == "custom" then
     if value.mediaType ~= "image/png" and value.mediaType ~= "image/svg+xml" then return false end
     if type(value.dataBase64) ~= "string" or #value.dataBase64 < 4 or #value.dataBase64 > MAX_ICON_BASE64_LENGTH
-        or not value.dataBase64:match("^(%w%w%w%w)*([%w+/][%w+/][%w+/=][%w+/=])?$") then return false end
+        or not value.dataBase64:match("^[A-Za-z0-9+/=]+$") then return false end
   else
     return false
   end
