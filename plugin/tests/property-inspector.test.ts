@@ -20,6 +20,7 @@ class FakeElement {
   max = "";
   step = "";
   maxLength = 0;
+  minLength = 0;
   children: FakeChild[] = [];
   private readonly listeners = new Map<string, Listener>();
 
@@ -175,8 +176,8 @@ function action(actionId: string, name: string, extra: Record<string, unknown> =
   return { actionId, name, ...extra };
 }
 
-function sentFrames(socket: FakeSocket): unknown[] {
-  return socket.sent.map((frame) => JSON.parse(frame));
+function sentFrames(socket: FakeSocket): Array<Record<string, unknown>> {
+  return socket.sent.map((frame) => JSON.parse(frame) as Record<string, unknown>);
 }
 
 describe.serial("property inspector", () => {
@@ -566,11 +567,13 @@ describe.serial("property inspector", () => {
       const mode = (environment.document.actionSettings.children[3] as FakeElement).children[0] as FakeElement;
       expect(text.value).toBe("init");
       expect(text.maxLength).toBe(5);
+      expect(text.minLength).toBe(2);
       expect(count.value).toBe("4");
       expect(count.min).toBe("0");
       expect(count.max).toBe("10");
       expect(count.step).toBe("2");
       expect(enabled.checked).toBe(true);
+      expect(enabled.type).toBe("checkbox");
       expect(mode.value).toBe("one");
 
       text.value = "too-long";
@@ -646,6 +649,42 @@ describe.serial("property inspector", () => {
           count: 4,
           opaque: ["preserve"],
         },
+      });
+    } finally {
+      environment.restore();
+    }
+  });
+  test("uses Unicode code-point bounds for text settings", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(28196, "context-01", "register", "", "{}");
+      const socket = FakeSocket.instances[0]!;
+      socket.open();
+      socket.message(
+        bridgeState("connected", [
+          action("unicode", "Unicode", {
+            settingsSchemaVersion: 1,
+            settingsSchema: [{ type: "text", key: "value", maxLength: 1 }],
+          }),
+        ]),
+      );
+      socket.message(
+        JSON.stringify({
+          event: "didReceiveSettings",
+          payload: { settings: { actionId: "unicode", value: "😀" } },
+        }),
+      );
+
+      const value = (environment.document.actionSettings.children[0] as FakeElement).children[0] as FakeElement;
+      expect(value.value).toBe("😀");
+      expect(environment.document.settingsStatus.textContent).toBe("Settings are ready.");
+
+      value.dispatch("change");
+      const frames = sentFrames(socket).filter((frame) => frame.event === "setSettings");
+      expect(frames.at(-1)).toEqual({
+        event: "setSettings",
+        context: "context-01",
+        payload: { actionId: "unicode", value: "😀" },
       });
     } finally {
       environment.restore();

@@ -344,6 +344,14 @@ describe("versioned settings schema compatibility", () => {
         }),
       ),
     ).toBeDefined();
+    expect(
+      parseServerMessage(
+        actionMessage({
+          settingsSchemaVersion: 1,
+          settingsSchema: [{ type: "text", key: "emoji", default: "😀", maxLength: 1 }],
+        }),
+      ),
+    ).toBeDefined();
     expect(() =>
       parseServerMessage(
         actionMessage({

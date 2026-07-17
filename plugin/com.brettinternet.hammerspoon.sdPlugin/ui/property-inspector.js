@@ -258,11 +258,18 @@
         }
         return true;
     }
+    function stringLength(value) {
+        let length = 0;
+        for (const _character of value) {
+            length += 1;
+        }
+        return length;
+    }
     function fieldValueIsValid(field, value) {
         if (field.type === "text") {
             return (typeof value === "string" &&
-                (field.minLength === undefined || value.length >= field.minLength) &&
-                (field.maxLength === undefined || value.length <= field.maxLength));
+                (field.minLength === undefined || stringLength(value) >= field.minLength) &&
+                (field.maxLength === undefined || stringLength(value) <= field.maxLength));
         }
         if (field.type === "number") {
             return numberIsValid(field, value);
@@ -347,7 +354,8 @@
             const wrapper = documentLike.createElement("label");
             wrapper.textContent = field.label ?? field.key;
             const control = documentLike.createElement(field.type === "select" ? "select" : "input");
-            control.type = field.type === "select" ? "select-one" : field.type;
+            control.type =
+                field.type === "select" ? "select-one" : field.type === "boolean" ? "checkbox" : field.type;
             const currentValue = hasSetting(savedSettings, field.key) ? savedSettings[field.key] : defaultFieldValue(field);
             const displayValue = fieldValueIsValid(field, currentValue) ? currentValue : defaultFieldValue(field);
             if (hasSetting(savedSettings, field.key) && !fieldValueIsValid(field, currentValue)) {
@@ -361,6 +369,8 @@
                 control.value = String(displayValue);
             }
             if (field.type === "text") {
+                if (field.minLength !== undefined)
+                    control.minLength = field.minLength;
                 if (field.maxLength !== undefined)
                     control.maxLength = field.maxLength;
             }

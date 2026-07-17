@@ -17924,6 +17924,13 @@ function hasDuplicateObjectKeys(source) {
 function settingsSchemaError(actionIndex, fieldIndex, message) {
     return new Error(`Invalid server message: settingsSchema action ${actionIndex} field ${fieldIndex}: ${message}.`);
 }
+function stringLength(value) {
+    let length = 0;
+    for (const _character of value) {
+        length += 1;
+    }
+    return length;
+}
 function validateSettingsSchema(action, actionIndex) {
     if (action.settingsSchemaVersion !== 1) {
         return;
@@ -17945,8 +17952,8 @@ function validateSettingsSchema(action, actionIndex) {
                 throw settingsSchemaError(actionIndex, fieldIndex, "minLength must not exceed maxLength");
             }
             if (field.default !== undefined &&
-                ((field.minLength !== undefined && field.default.length < field.minLength) ||
-                    (field.maxLength !== undefined && field.default.length > field.maxLength))) {
+                ((field.minLength !== undefined && stringLength(field.default) < field.minLength) ||
+                    (field.maxLength !== undefined && stringLength(field.default) > field.maxLength))) {
                 throw settingsSchemaError(actionIndex, fieldIndex, "default is outside the text length bounds");
             }
         }
