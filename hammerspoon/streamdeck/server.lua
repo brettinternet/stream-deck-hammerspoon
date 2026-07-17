@@ -185,6 +185,7 @@ function server.new(registry, protocol, contextFactory)
   end
 
   local function cancelLongPress(instance)
+    instance.longPressGeneration = (instance.longPressGeneration or 0) + 1
     if instance.longPressTimer ~= nil then
       local timer = instance.longPressTimer
       instance.longPressTimer = nil
@@ -215,8 +216,12 @@ function server.new(registry, protocol, contextFactory)
     end
 
     local thresholdMs = instance.definition.longPressThresholdMs or 500
+    local generation = instance.longPressGeneration
     local callback = function()
-      if self.instances[instance.instanceId] ~= instance or not instance.pressed then
+      if self.instances[instance.instanceId] ~= instance
+          or not instance.pressed
+          or instance.longPressGeneration ~= generation
+          or instance.longPressTriggered then
         return
       end
       instance.longPressTimer = nil

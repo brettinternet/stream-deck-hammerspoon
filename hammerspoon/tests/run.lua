@@ -31,9 +31,13 @@ local function fileExists(path)
   return true
 end
 
+local lastRunTimer
+local lastScheduledTimer
+
 local pendingTimers = {}
 local function fakeDoAfter(delay, callback)
   local timer = { delay = delay, callback = callback, stopped = false }
+  lastScheduledTimer = timer
   function timer:stop()
     self.stopped = true
   end
@@ -45,11 +49,18 @@ local function runPendingTimer()
   for index, timer in ipairs(pendingTimers) do
     if not timer.stopped then
       table.remove(pendingTimers, index)
+      lastRunTimer = timer
       timer.callback()
       return timer.delay
     end
   end
   return nil
+end
+
+local function runLastTimerAgain()
+  if lastRunTimer ~= nil then
+    lastRunTimer.callback()
+  end
 end
 
 local function clearPendingTimers()
@@ -865,8 +876,17 @@ test("long press classifies tap and long transitions once and cancels safely", f
       instanceId = "long-instance",
       actionId = "com.test.long-press",
     }))
+    local staleTimer = lastScheduledTimer
+    exchange(server, message("keyDown", {
+      instanceId = "long-instance",
+      actionId = "com.test.long-press",
+    }))
+    staleTimer.callback()
+    assertEqual(longPressed, 0, "replaced timer callback must not invoke longPress")
     assertEqual(runPendingTimer(), 0.75)
     assertEqual(longPressed, 1, "threshold must invoke longPress once")
+    runLastTimerAgain()
+    assertEqual(longPressed, 1, "duplicate timer callback must not duplicate longPress")
     exchange(server, message("keyUp", {
       instanceId = "long-instance",
       actionId = "com.test.long-press",

@@ -105,7 +105,7 @@ An action definition is a table with these fields:
 | `appearance` | yes | function | Computes title/state and optional versioned presentation fields for a context. |
 | `press` | yes | function | Handles a tap (or a legacy key-down event when `longPress` is absent) for a context. |
 | `release` | no | function | Handles a key-up event for a context. |
-| `longPress` | no | function | Handles a press held for `longPressThresholdMs`; mutually exclusive with `press` for configured actions. |
+| `longPress` | no | function | Handles a press held for `longPressThresholdMs`; paired with the required `press` callback to distinguish taps from long presses. |
 | `longPressThresholdMs` | no | integer 100–10,000 | Milliseconds before `longPress` runs; requires `longPress` and defaults to 500. |
 | `appear` | no | function | Runs when a new visible instance appears or a restored context is rebuilt after reconnect. |
 | `disappear` | no | function | Runs when a visible instance disappears or the connection is torn down. |
