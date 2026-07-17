@@ -85,6 +85,9 @@ Requests fresh appearance data for the current key instance only. It is normally
 ### `context:getSettings()`
 
 Returns the settings stored by Stream Deck for the current key instance. Settings are ordinary decoded Lua values. The returned settings belong to this context; changing a local Lua table does not write settings back to Stream Deck. This v1 API has no settings-write method.
+### `context:getDevice()`
+
+Returns a defensive copy of optional per-instance controller/device metadata, or `nil` when unavailable. The closed DTO contains lowercase `controllerType`, a lowercase protocol device `type` (or `"unknown"`), and positive bounded `device.size.columns`/`rows`. SDK identifiers, names, connection state, visible actions, coordinates, and SDK objects are never exposed. Repeated lifecycle announcements update metadata without rerunning `appear`; callers may mutate the returned table without changing context state.
 
 ### `context:success(message, durationMs)` and `context:error(message, durationMs)`
 

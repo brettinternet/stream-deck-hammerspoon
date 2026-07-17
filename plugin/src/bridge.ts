@@ -7,9 +7,11 @@ import WebSocket from "ws";
 import {
   PROTOCOL_VERSION,
   parseServerMessage,
+  sanitizeDeviceMetadata,
   serializeClientMessage,
   type AppearanceFields,
   type ClientMessage,
+  type DeviceMetadata,
   type FeedbackKind,
   type JsonSettings,
   type JsonValue,
@@ -54,6 +56,7 @@ export interface BridgeInstanceInput {
   instanceId: string;
   actionId?: string;
   settings: JsonSettings;
+  metadata?: DeviceMetadata;
 }
 
 export interface BridgeClientOptions {
@@ -77,6 +80,7 @@ export interface BridgeSocket {
 type InstanceSnapshot = {
   actionId?: string;
   settings: JsonSettings;
+  metadata?: DeviceMetadata;
 };
 
 type TimerHandle = unknown;
@@ -89,7 +93,7 @@ type BridgeMessage =
   | Pick<Extract<ClientMessage, { type: "listActions" }>, "protocolVersion" | "type" | "requestId">
   | Pick<
       Extract<ClientMessage, { type: "instanceAppeared" }>,
-      "protocolVersion" | "type" | "instanceId" | "actionId" | "settings"
+      "protocolVersion" | "type" | "instanceId" | "actionId" | "settings" | "metadata"
     >
   | Pick<
       Extract<ClientMessage, { type: "instanceDisappeared" | "keyDown" | "keyUp" | "requestAppearance" }>,
@@ -125,6 +129,15 @@ function copySettings(settings: JsonSettings): JsonSettings {
     copied[key] = copyJsonValue(value);
   }
   return copied;
+}
+function copyDeviceMetadata(metadata: DeviceMetadata): DeviceMetadata {
+  return {
+    controllerType: metadata.controllerType,
+    device: {
+      type: metadata.device.type,
+      size: { columns: metadata.device.size.columns, rows: metadata.device.size.rows },
+    },
+  };
 }
 
 function copyAction(action: BridgeAction): BridgeAction {
@@ -235,7 +248,12 @@ export class BridgeClient extends EventEmitter {
         : undefined;
     if (configuredActionId) settings.actionId = configuredActionId;
     const previous = this.instances.get(input.instanceId);
-    const snapshot = { actionId: configuredActionId, settings };
+    const suppliedMetadata = input.metadata === undefined ? previous?.metadata : sanitizeDeviceMetadata(input.metadata);
+    const snapshot: InstanceSnapshot = {
+      actionId: configuredActionId,
+      settings,
+      ...(suppliedMetadata === undefined ? {} : { metadata: copyDeviceMetadata(suppliedMetadata) }),
+    };
     this.instances.set(input.instanceId, snapshot);
     if (
       this.authenticated
@@ -515,6 +533,7 @@ export class BridgeClient extends EventEmitter {
       instanceId,
       actionId: snapshot.actionId,
       settings: copySettings(snapshot.settings),
+      ...(snapshot.metadata === undefined ? {} : { metadata: copyDeviceMetadata(snapshot.metadata) }),
     });
   }
 

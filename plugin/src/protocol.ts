@@ -7,6 +7,94 @@ export const PROTOCOL_VERSION = 1 as const;
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export type JsonObject = { [key: string]: JsonValue };
+export type ControllerType = "keypad" | "encoder";
+export type DeviceType =
+  | "stream-deck"
+  | "stream-deck-mini"
+  | "stream-deck-xl"
+  | "stream-deck-mobile"
+  | "corsair-g-keys"
+  | "stream-deck-pedal"
+  | "corsair-voyager"
+  | "stream-deck-plus"
+  | "scuf-controller"
+  | "stream-deck-neo"
+  | "stream-deck-studio"
+  | "virtual-stream-deck"
+  | "galleon-100-sd"
+  | "stream-deck-plus-xl"
+  | "unknown";
+export interface DeviceInfo {
+  type: DeviceType;
+  size: { columns: number; rows: number };
+}
+export interface DeviceMetadata {
+  controllerType: ControllerType;
+  device: DeviceInfo;
+}
+
+const DEVICE_SIZE_MIN = 1;
+const DEVICE_SIZE_MAX = 64;
+const DEVICE_TYPE_VALUES: Record<string, true> = {
+  "stream-deck": true,
+  "stream-deck-mini": true,
+  "stream-deck-xl": true,
+  "stream-deck-mobile": true,
+  "corsair-g-keys": true,
+  "stream-deck-pedal": true,
+  "corsair-voyager": true,
+  "stream-deck-plus": true,
+  "scuf-controller": true,
+  "stream-deck-neo": true,
+  "stream-deck-studio": true,
+  "virtual-stream-deck": true,
+  "galleon-100-sd": true,
+  "stream-deck-plus-xl": true,
+  unknown: true,
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (!isObject(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+export function sanitizeDeviceMetadata(value: unknown): DeviceMetadata | undefined {
+  if (!isPlainObject(value) || !hasOnlyKeys(value, ["controllerType", "device"])) return undefined;
+  const controllerType = value.controllerType;
+  const device = value.device;
+  if (
+    (controllerType !== "keypad" && controllerType !== "encoder")
+    || !isPlainObject(device)
+    || !hasOnlyKeys(device, ["type", "size"])
+    || typeof device.type !== "string"
+    || !DEVICE_TYPE_VALUES[device.type]
+    || !isPlainObject(device.size)
+    || !hasOnlyKeys(device.size, ["columns", "rows"])
+    || typeof device.size.columns !== "number"
+    || !Number.isInteger(device.size.columns)
+    || device.size.columns < DEVICE_SIZE_MIN
+    || device.size.columns > DEVICE_SIZE_MAX
+    || typeof device.size.rows !== "number"
+    || !Number.isInteger(device.size.rows)
+    || device.size.rows < DEVICE_SIZE_MIN
+    || device.size.rows > DEVICE_SIZE_MAX
+  ) {
+    return undefined;
+  }
+  return {
+    controllerType,
+    device: {
+      type: device.type as DeviceType,
+      size: { columns: device.size.columns, rows: device.size.rows },
+    },
+  };
+}
 export type JsonSettings = JsonObject;
 export type Settings = JsonSettings;
 export type WireState = 0 | 1;
@@ -108,6 +196,7 @@ export interface InstanceAppearedMessage extends AuthenticatedClientMessage {
   instanceId: string;
   actionId: string;
   settings: JsonSettings;
+  metadata?: DeviceMetadata;
 }
 
 export interface InstanceDisappearedMessage extends AuthenticatedClientMessage {
@@ -855,8 +944,13 @@ export function serializeClientMessage(message: ClientMessage): string {
   if (!validateProtocolMessage(message)) {
     throw schemaError("client");
   }
-  if (message.type === "instanceAppeared" && !isJsonValue(message.settings)) {
-    throw new Error("Invalid client message: settings must contain JSON values.");
+  if (message.type === "instanceAppeared") {
+    if (!isJsonValue(message.settings)) {
+      throw new Error("Invalid client message: settings must contain JSON values.");
+    }
+    if (message.metadata !== undefined && sanitizeDeviceMetadata(message.metadata) === undefined) {
+      throw new Error("Invalid client message: metadata is malformed or out of bounds.");
+    }
   }
 
   try {

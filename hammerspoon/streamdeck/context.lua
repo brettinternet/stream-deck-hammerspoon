@@ -25,6 +25,18 @@ end
 local function isAppearanceIcon(value)
   return require("streamdeck.protocol").validateAppearanceIcon(value)
 end
+local function copyDevice(device)
+  if type(device) ~= "table" or not require("streamdeck.protocol").validateDeviceMetadata(device) then
+    return nil
+  end
+  return {
+    controllerType = device.controllerType,
+    device = {
+      type = device.device.type,
+      size = { columns = device.device.size.columns, rows = device.device.size.rows },
+    },
+  }
+end
 
 local MAX_FEEDBACK_MESSAGE_LENGTH = 256
 local MIN_FEEDBACK_DURATION_MS = 100
@@ -118,6 +130,7 @@ function context.new(options)
     instanceId = options.instanceId,
     actionId = options.actionId,
     settings = options.settings,
+    metadata = copyDevice(options.metadata),
     emitAppearance = options.emitAppearance,
     emitError = options.emitError,
     emitFeedback = options.emitFeedback,
@@ -129,6 +142,10 @@ function context.new(options)
   function object:getSettings()
     return self.settings
   end
+  function object:getDevice()
+    return copyDevice(self.metadata)
+  end
+
 
   local function emitFeedback(kind, message, durationMs)
     if not isFeedbackMessage(message) or not isFeedbackDuration(durationMs)
@@ -145,6 +162,12 @@ function context.new(options)
 
   function object:updateSettings(settings)
     self.settings = settings
+  end
+  function object:updateMetadata(metadata)
+    local copied = copyDevice(metadata)
+    if copied ~= nil then
+      self.metadata = copied
+    end
   end
 
   function object:success(message, durationMs)

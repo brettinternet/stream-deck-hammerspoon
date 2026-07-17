@@ -156,6 +156,16 @@ The plugin sends these messages only after authentication and includes the curre
 ### `instanceAppeared` (plugin → Lua)
 
 Required fields: `protocolVersion`, `type: "instanceAppeared"`, `sessionId`, `instanceId`, `actionId`, `settings`. Lua validates the session and `actionId` before creating or refreshing the instance context and computing/sending `appearance`. A repeated appearance for the same `instanceId` and action is a settings refresh; it does not invoke `appear` again or create a second callback context.
+The optional `metadata` field is a closed, protocol-owned DTO:
+
+```json
+{
+  "controllerType": "keypad",
+  "device": { "type": "stream-deck-plus", "size": { "columns": 4, "rows": 2 } }
+}
+```
+
+Only the lowercase controller/device type enums and bounded positive dimensions cross the bridge. SDK objects, identifiers, names, connection state, visible actions, and coordinates never cross it. Unknown SDK device types map to `"unknown"`. Reconnect replay retains each instance's metadata, and a repeated appearance updates it without invoking `appear`.
 
 ```json
 {

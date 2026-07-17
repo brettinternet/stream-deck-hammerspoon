@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   parseServerMessage,
+  sanitizeDeviceMetadata,
   serializeClientMessage,
   type ClientMessage,
   type ServerMessage,
@@ -454,5 +455,39 @@ describe("versioned settings schema compatibility", () => {
         }),
       ),
     ).toThrow();
+  });
+});
+
+describe("device metadata privacy boundary", () => {
+  test("sanitizes the closed DTO and maps unknown device type safely", () => {
+    const metadata = sanitizeDeviceMetadata({
+      controllerType: "keypad",
+      device: { type: "unknown", size: { columns: 4, rows: 2 } },
+      name: "private name",
+    });
+    expect(metadata).toBeUndefined();
+    expect(sanitizeDeviceMetadata({
+      controllerType: "encoder",
+      device: { type: "unknown", size: { columns: 1, rows: 1 } },
+    })).toEqual({
+      controllerType: "encoder",
+      device: { type: "unknown", size: { columns: 1, rows: 1 } },
+    });
+  });
+
+  test("serializes optional metadata without SDK fields", () => {
+    const message = {
+      protocolVersion: 1,
+      type: "instanceAppeared",
+      sessionId,
+      instanceId: "instance-1",
+      actionId: "action-1",
+      settings: {},
+      metadata: {
+        controllerType: "keypad",
+        device: { type: "stream-deck", size: { columns: 5, rows: 3 } },
+      },
+    } satisfies ClientMessage;
+    expect(JSON.parse(serializeClientMessage(message))).toEqual(message);
   });
 });

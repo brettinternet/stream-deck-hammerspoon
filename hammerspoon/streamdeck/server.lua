@@ -166,11 +166,12 @@ function server.new(registry, protocol, contextFactory)
     return self:_queueError(code, nil, instanceId)
   end
 
-  function object:_context(instanceId, actionId, settings, definition)
+  function object:_context(instanceId, actionId, settings, definition, metadata)
     return self.contextFactory.new({
       instanceId = instanceId,
       actionId = actionId,
       settings = settings,
+      metadata = metadata,
       definition = definition,
       emitAppearance = function(contextInstanceId, contextActionId, title, state, appearance)
         return self:_emitAppearance(contextInstanceId, contextActionId, title, state, appearance)
@@ -346,9 +347,10 @@ function server.new(registry, protocol, contextFactory)
       if existing then
         cancelInstancePress(existing)
         existing:updateSettings(message.settings)
+        if message.metadata ~= nil then existing:updateMetadata(message.metadata) end
         existing:refresh()
       else
-        local instance = self:_context(message.instanceId, message.actionId, message.settings, definition)
+        local instance = self:_context(message.instanceId, message.actionId, message.settings, definition, message.metadata)
         self.instances[message.instanceId] = instance
         instance:invoke("appear")
         instance:refresh()

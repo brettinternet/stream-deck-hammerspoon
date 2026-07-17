@@ -4,10 +4,58 @@ import streamDeck, {
   type SendToPluginEvent,
 } from "@elgato/streamdeck";
 import type { BridgeAppearance, BridgeClient, BridgeFeedback } from "../bridge.js";
-import { isSafeAppearanceIcon, safeAppearanceIconImage, type JsonSettings } from "../protocol.js";
+import { isSafeAppearanceIcon, safeAppearanceIconImage, sanitizeDeviceMetadata, type DeviceMetadata, type JsonSettings } from "../protocol.js";
 type JsonObject = { [key: string]: JsonValue };
 type JsonPrimitive = boolean | number | string | null | undefined;
 type JsonValue = JsonObject | JsonPrimitive | JsonValue[];
+
+type DeviceContext = {
+  controllerType?: unknown;
+  device?: {
+    type?: unknown;
+    size?: { columns?: unknown; rows?: unknown };
+  };
+};
+
+const DEVICE_TYPE_NAMES: Record<number, DeviceMetadata["device"]["type"]> = {
+  0: "stream-deck",
+  1: "stream-deck-mini",
+  2: "stream-deck-xl",
+  3: "stream-deck-mobile",
+  4: "corsair-g-keys",
+  5: "stream-deck-pedal",
+  6: "corsair-voyager",
+  7: "stream-deck-plus",
+  8: "scuf-controller",
+  9: "stream-deck-neo",
+  10: "stream-deck-studio",
+  11: "virtual-stream-deck",
+  12: "galleon-100-sd",
+  13: "stream-deck-plus-xl",
+};
+
+export function extractDeviceMetadata(action: unknown): DeviceMetadata | undefined {
+  try {
+    const context = action as DeviceContext;
+    const device = context.device;
+    if (!device) return undefined;
+    const deviceType = typeof device.type === "number" ? (DEVICE_TYPE_NAMES[device.type] ?? "unknown") : "unknown";
+    const controllerType = context.controllerType === "Keypad"
+      ? "keypad"
+      : context.controllerType === "Encoder"
+        ? "encoder"
+        : undefined;
+    return sanitizeDeviceMetadata({
+      controllerType,
+      device: {
+        type: deviceType,
+        size: { columns: device.size?.columns, rows: device.size?.rows },
+      },
+    });
+  } catch {
+    return undefined;
+  }
+}
 
 function cloneJsonValue(value: JsonValue): JsonValue {
   if (Array.isArray(value)) {
@@ -204,6 +252,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
 
     const instanceId = ev.action.id;
     const settings = this.settingsFrom(ev.payload.settings);
+    const metadata = extractDeviceMetadata(ev.action);
     const previous = this.instances.get(instanceId);
     if (previous) {
       this.cancelFeedbackTimer(previous);
@@ -221,6 +270,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
         instanceId,
         actionId: settings.actionId,
         settings: settings as JsonSettings,
+        metadata,
       });
     }
   }
@@ -243,6 +293,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
 
     const instanceId = ev.action.id;
     const settings = this.settingsFrom(ev.payload.settings);
+    const metadata = extractDeviceMetadata(ev.action);
     const previous = this.instances.get(instanceId);
     if (previous?.actionId && previous.actionId !== settings.actionId) {
       this.bridge.removeInstance(instanceId, previous.actionId);
@@ -256,6 +307,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
         instanceId,
         actionId: settings.actionId,
         settings: settings as JsonSettings,
+        metadata,
       });
     }
   }

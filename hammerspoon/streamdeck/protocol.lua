@@ -185,6 +185,34 @@ local function boundedString(value, maximum)
   local length = utf8.len(value)
   return length ~= nil and length <= maximum
 end
+local MIN_DEVICE_SIZE = 1
+local MAX_DEVICE_SIZE = 64
+local deviceTypes = {
+  ["stream-deck"] = true, ["stream-deck-mini"] = true, ["stream-deck-xl"] = true,
+  ["stream-deck-mobile"] = true, ["corsair-g-keys"] = true, ["stream-deck-pedal"] = true,
+  ["corsair-voyager"] = true, ["stream-deck-plus"] = true, ["scuf-controller"] = true,
+  ["stream-deck-neo"] = true, ["stream-deck-studio"] = true, ["virtual-stream-deck"] = true,
+  ["galleon-100-sd"] = true, ["stream-deck-plus-xl"] = true, unknown = true,
+}
+
+local function hasOnlyKeys(value, allowed)
+  for key in next, value do
+    if not allowed[key] then return false end
+  end
+  return true
+end
+
+local function isDeviceMetadata(value)
+  if not isObject(value) or not hasOnlyKeys(value, { controllerType = true, device = true }) then return false end
+  local controllerType, device = rawget(value, "controllerType"), rawget(value, "device")
+  if controllerType ~= "keypad" and controllerType ~= "encoder" then return false end
+  if not isObject(device) or not hasOnlyKeys(device, { type = true, size = true }) then return false end
+  local deviceType, size = rawget(device, "type"), rawget(device, "size")
+  if not deviceTypes[deviceType] or not isObject(size) or not hasOnlyKeys(size, { columns = true, rows = true }) then return false end
+  local columns, rows = rawget(size, "columns"), rawget(size, "rows")
+  return isInteger(columns) and columns >= MIN_DEVICE_SIZE and columns <= MAX_DEVICE_SIZE
+    and isInteger(rows) and rows >= MIN_DEVICE_SIZE and rows <= MAX_DEVICE_SIZE
+end
 
 local function isAppearanceColor(value)
   return type(value) == "string" and value:match("^#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]$") ~= nil
@@ -776,6 +804,9 @@ function protocol.validate(message)
     if ok then ok, code = required(message, "instanceId", isNonEmptyString) end
     if ok then ok, code = required(message, "actionId", isNonEmptyString) end
     if ok then ok, code = required(message, "settings", isObject) end
+    if ok and rawget(message, "metadata") ~= nil and not isDeviceMetadata(rawget(message, "metadata")) then
+      ok, code = false, "INVALID_FIELD"
+    end
   elseif messageType == "instanceDisappeared"
       or messageType == "keyDown"
       or messageType == "keyUp"
@@ -825,6 +856,9 @@ function protocol.validate(message)
 end
 function protocol.validateAppearanceIcon(value)
   return isAppearanceIcon(value)
+end
+function protocol.validateDeviceMetadata(value)
+  return isDeviceMetadata(value)
 end
 
 function protocol.decode(raw)
