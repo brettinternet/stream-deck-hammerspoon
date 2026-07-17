@@ -125,26 +125,38 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Bridge and action adapters key snapshots, settings, appearances, and lifecycle events by Stream Deck instance ID. Same-action placements retain independent profile/device settings through updates and reconnect replay; Lua contexts rebuild independently from replayed settings, disappear cleanly, reject stale input/appearance, and preserve other visible instances. Explicit stale action removals cannot erase a newer binding.
 
 ### CUS-006 — Better icon handling
-- Status: ready
+- Status: done
 - Depends on: CUS-003
 - Acceptance: Semantic bundled icons and validated custom SVG/image inputs render at supported sizes with safe fallbacks.
+- Commits: 589dbe3, 61f28bbb945867bbb3bfb99a83c90da3cfe22f8a, 9d17210, c3e70b8, 9b39ffe, ebcb7c9, f607d8f
+- Verification: `bun run check`; `bun test plugin/tests/protocol.test.ts plugin/tests/hammerspoon-action.test.ts` (35 pass, 153 expect calls); `mise exec -- lua hammerspoon/tests/run.lua` (41 pass); `bun run build`; independent verifier PASS on HEAD `f607d8f` across bundled fallback, valid 72/144 PNG/SVG, malformed/trailing PNG rejection, SVG parity, context delegation, action preservation, SDK fallback, and generated bundle/source-map reproducibility.
+- Outcome: Versioned appearance icons accept semantic bundled slugs through the shipped `imgs/key.svg` fallback and bounded custom PNG/SVG data. TypeScript and Lua validate CRCs, dimensions, decoded PNG streams, consumed zlib data, canonical base64, and constrained SVG syntax with matching casing, bounds, text, and safety rules. Context delegates icon validation to the protocol; invalid icons preserve the previous complete appearance or safely clear to the SDK default, while titles/state remain coherent.
 
 ## Phase 4: Extended Stream Deck support
 
 ### EXT-001 — Key release
-- Status: ready
+- Status: done
 - Depends on: CUS-005
 - Acceptance: Release events preserve instance identity/order and invoke optional protected Lua callbacks.
+- Commits: 1cfe51dc73ceb9c87f4739557d12973c66bc07ce, 06963e18d6890657c5ac7832cc7f5720dafa3fd9
+- Verification: 55 plugin tests; TypeScript check; 41 Lua bridge tests; Lua syntax/load check; plugin build; shipped bundle syntax check; independent verifier PASS on EXT-001.
+- Outcome: Stream Deck onKeyUp events retain instance/action identity and order through HammerspoonAction, BridgeClient, the keyUp protocol schema, and Lua validation/dispatch. Optional release callbacks are validated as functions, omitted release is a no-op, and present callbacks run under xpcall with CALLBACK_FAILED reporting while keyDown/press behavior remains intact.
 
 ### EXT-002 — Long press
-- Status: ready
+- Status: done
 - Depends on: EXT-001
 - Acceptance: Configurable deterministic thresholds distinguish tap and long press without duplicate callbacks.
+- Commits: 5c28cea, f72f41f
+- Verification: `mise exec -- lua hammerspoon/tests/run.lua` (44 pass); Lua syntax/load check; `git diff --check`; post-fix regression covers stale/replaced timer callbacks, duplicate timer callbacks, tap/long classification, cancellation, and callback isolation. Independent verifier identified and the review fix corrected the superseded implementation's stale-timer duplicate gap.
+- Outcome: Optional `longPress` callbacks use bounded integer thresholds from 100–10,000 ms with a deterministic 500 ms default. Per-instance timers classify taps at key-up and long presses at threshold, preserve legacy immediate press behavior when unconfigured, cancel on key-up/disappear/settings replacement, and use generation and trigger guards to suppress stale or duplicate callbacks. Release and callback-error isolation remain protected.
 
 ### EXT-003 — Stream Deck+ encoders
-- Status: ready
+- Status: done
 - Depends on: EXT-005, CUS-005
 - Acceptance: Rotate and push events use versioned payloads, independent contexts, SDK-compliant layouts, and hardware-free tests.
+- Commits: b0df656, 73cc32e, 33b15ca
+- Verification: `bun run check`; `bun run test`; `bun run build`; `bun run validate` (Stream Deck CLI validation successful); generated bundle contains `sendDialEvent`, `dialDown`, `dialRotate`, and `dialUp`; manifest JSON validation passed; independent verifier PASS.
+- Outcome: Stream Deck+ encoder lifecycle and input events use authenticated versioned `dialDown`, `dialRotate`, and `dialUp` payloads. Dial actions receive SDK `$A1` layouts and per-instance settings/context; push falls back to `press`, rotation carries signed ticks and pressed state, and release remains optional and protected. Lua registry, context invocation, server dispatch, schema, plugin transport, generated artifact, docs, and hardware-free tests are synchronized.
 
 ### EXT-004 — Stream Deck+ touchscreen
 - Status: ready
@@ -152,9 +164,12 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Acceptance: Touch/tap events and LCD updates are validated, instance-aware, and tested behind SDK interfaces.
 
 ### EXT-005 — Device metadata
-- Status: ready
+- Status: done
 - Depends on: CUS-005
 - Acceptance: Context exposes stable, privacy-bounded device/controller metadata without leaking SDK objects into protocol modules.
+- Commits: fb4f4c3, a684128
+- Verification: `bun run --cwd plugin check`; focused plugin protocol/bridge/action tests (57 pass); Lua syntax check and bridge harness (44 pass); generated plugin syntax check; `bun run validate`; independent verifier: 4/5 criteria PASS; its only failure was the stale shipped artifact, fixed by a684128. Post-fix generated-artifact symbol check, `node --check`, and Stream Deck CLI validation pass, closing that finding.
+- Outcome: Optional `instanceAppeared.metadata` carries a closed, protocol-owned controller/device DTO with lowercase enums, unknown-device fallback, and bounded dimensions. Hammerspoon contexts expose defensive `getDevice()` snapshots; repeated announcements update metadata without rerunning `appear`, and BridgeClient retains independent metadata through reconnect replay. SDK identifiers, names, connection state, actions, coordinates, and SDK objects never cross protocol modules.
 
 ### EXT-006 — Device-aware rendering
 - Status: ready
