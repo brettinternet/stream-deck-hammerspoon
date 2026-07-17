@@ -64,8 +64,19 @@ function appearanceImage(appearance: BridgeAppearance): string | undefined {
   if (badge !== undefined && typeof badge !== "string") {
     return undefined;
   }
-  if (typeof badge === "string" && [...badge].length > 4) {
-    return undefined;
+  if (typeof badge === "string") {
+    if ([...badge].length > 4) {
+      return undefined;
+    }
+    for (const character of badge) {
+      const codePoint = character.codePointAt(0);
+      if (
+        codePoint !== undefined &&
+        (codePoint <= 0x08 || (codePoint >= 0x0b && codePoint <= 0x0c) || (codePoint >= 0x0e && codePoint <= 0x1f))
+      ) {
+        return undefined;
+      }
+    }
   }
   const progressBar = progress === undefined
     ? ""

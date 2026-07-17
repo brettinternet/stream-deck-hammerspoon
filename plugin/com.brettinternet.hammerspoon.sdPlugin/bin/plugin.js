@@ -18088,6 +18088,13 @@ function parseServerMessage(data) {
         throw schemaError("server");
     }
     if (parsed.type === "appearance" && parsed.badge !== undefined) {
+        for (const character of parsed.badge) {
+            const codePoint = character.codePointAt(0);
+            if (codePoint !== undefined &&
+                (codePoint <= 0x08 || (codePoint >= 0x0b && codePoint <= 0x0c) || (codePoint >= 0x0e && codePoint <= 0x1f))) {
+                throw new Error("Invalid server message: badge contains XML-invalid control characters.");
+            }
+        }
         try {
             encodeURIComponent(parsed.badge);
         }
@@ -18649,8 +18656,17 @@ function appearanceImage(appearance) {
     if (badge !== undefined && typeof badge !== "string") {
         return undefined;
     }
-    if (typeof badge === "string" && [...badge].length > 4) {
-        return undefined;
+    if (typeof badge === "string") {
+        if ([...badge].length > 4) {
+            return undefined;
+        }
+        for (const character of badge) {
+            const codePoint = character.codePointAt(0);
+            if (codePoint !== undefined &&
+                (codePoint <= 0x08 || (codePoint >= 0x0b && codePoint <= 0x0c) || (codePoint >= 0x0e && codePoint <= 0x1f))) {
+                return undefined;
+            }
+        }
     }
     const progressBar = progress === undefined
         ? ""

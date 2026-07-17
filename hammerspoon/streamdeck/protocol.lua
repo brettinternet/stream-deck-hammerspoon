@@ -167,6 +167,9 @@ local function isAppearanceBadge(value)
   if type(value) ~= "string" then
     return false
   end
+  if value:find("[%z\1-\8\11\12\14-\31]") ~= nil then
+    return false
+  end
   local length = utf8.len(value)
   return length ~= nil and length <= 4
 end

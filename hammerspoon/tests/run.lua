@@ -525,6 +525,7 @@ test("versioned appearance fields validate and render safely", function()
     { appearanceVersion = 1, progress = -0.01 },
     { appearanceVersion = 1, progress = 1.01 },
     { appearanceVersion = 1, badge = string.rep("x", 5) },
+    { appearanceVersion = 1, badge = string.char(0) },
     { progress = 0.5 },
   }
   for _, fields in ipairs(invalidFields) do

@@ -160,6 +160,7 @@ describe("protocol direction and validation", () => {
       { ...extendedAppearance, progress: 1.01 },
       { ...extendedAppearance, badge: "12345" },
       { ...extendedAppearance, badge: "\ud800" },
+      { ...extendedAppearance, badge: "\u0000" },
       { ...appearance, progress: 0.5 },
     ];
 

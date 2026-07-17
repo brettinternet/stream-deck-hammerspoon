@@ -448,6 +448,15 @@ export function parseServerMessage(data: string): ServerMessage {
     throw schemaError("server");
   }
   if (parsed.type === "appearance" && parsed.badge !== undefined) {
+    for (const character of parsed.badge as string) {
+      const codePoint = character.codePointAt(0);
+      if (
+        codePoint !== undefined &&
+        (codePoint <= 0x08 || (codePoint >= 0x0b && codePoint <= 0x0c) || (codePoint >= 0x0e && codePoint <= 0x1f))
+      ) {
+        throw new Error("Invalid server message: badge contains XML-invalid control characters.");
+      }
+    }
     try {
       encodeURIComponent(parsed.badge as string);
     } catch {

@@ -221,7 +221,7 @@ Unknown actions and stale instances produce the corresponding asynchronous error
 
 ### `appearance` (Lua → plugin)
 
-Required fields: `protocolVersion`, `type: "appearance"`, `instanceId`, `actionId`, `title`, `state`. `state` must be integer `0` or `1`; `title` must be a JSON string. The optional presentation fields are enabled only by `appearanceVersion: 1`: `foregroundColor` and `backgroundColor` are six-digit `#RRGGBB` strings, `progress` is a number from `0` through `1`, and `badge` is a UTF-8 string of at most four characters (an empty badge clears it). Any presentation field without `appearanceVersion: 1` is invalid. The plugin renders the extended fields as a bounded SVG image through the SDK's `setImage`; if that capability is unavailable or fails, it deterministically retains the plain title/state rendering.
+Required fields: `protocolVersion`, `type: "appearance"`, `instanceId`, `actionId`, `title`, `state`. `state` must be integer `0` or `1`; `title` must be a JSON string. The optional presentation fields are enabled only by `appearanceVersion: 1`: `foregroundColor` and `backgroundColor` are six-digit `#RRGGBB` strings, `progress` is a number from `0` through `1`, and `badge` is a UTF-8 string of at most four characters (an empty badge clears it). Any presentation field without `appearanceVersion: 1` is invalid. The plugin renders the extended fields as a bounded SVG image through the SDK's `setImage`; if initial decoration rendering fails, it applies the plain title/state rendering, while a failed attempt to clear an existing decoration retains the previous complete appearance rather than applying a partial update.
 
 ```json
 {
