@@ -352,4 +352,188 @@ test("multi-instance example isolates state, labels, and lifecycle", function()
   assertEqual(action.appearance(b).state, "active", "B state must survive A lifecycle")
 end)
 
+test("focus timer example covers lifecycle, completion, stopping, and unavailable timers", function()
+  local scheduled
+  local fake_hs = {
+    timer = {
+      doAfter = function(seconds, callback)
+        local timer = {
+          seconds = seconds,
+          callback = callback,
+          stop_calls = 0,
+        }
+        function timer:stop()
+          self.stop_calls = self.stop_calls + 1
+          return true
+        end
+        scheduled = timer
+        return timer
+      end,
+    },
+  }
+  local streamdeck = load_fixture("hammerspoon/examples/focus-timer.lua", fake_hs)
+  local action = streamdeck.registrations[1]
+  local focus = context("focus")
+
+  assertEqual(action.id, "com.brettinternet.hammerspoon.focus-timer")
+  assertEqual(action.appearance(focus).title, "Ready")
+  assertEqual(action.appearance(focus).state, "inactive")
+  action.appear(focus)
+  action.press(focus)
+  assertEqual(scheduled.seconds, 25 * 60, "focus timer must use a 25-minute duration")
+  assertEqual(focus.refreshes, 1, "starting a focus timer must refresh")
+  assertEqual(action.appearance(focus).title, "Focus")
+  assertEqual(action.appearance(focus).state, "active")
+
+  scheduled.callback()
+  assertEqual(focus.refreshes, 2, "timer completion must refresh")
+  assertEqual(action.appearance(focus).title, "Ready")
+  assertEqual(action.appearance(focus).state, "inactive")
+
+  action.press(focus)
+  local running_timer = scheduled
+  action.press(focus)
+  assertEqual(running_timer.stop_calls, 1, "pressing a running timer must stop it")
+  assertEqual(focus.refreshes, 4, "stopping a focus timer must refresh")
+  assertEqual(action.appearance(focus).state, "inactive")
+
+  action.press(focus)
+  local disappearing_timer = scheduled
+  action.disappear(focus)
+  assertEqual(disappearing_timer.stop_calls, 1, "disappearing must stop the timer")
+  action.appear(focus)
+  assertEqual(action.appearance(focus).title, "Ready", "reappearing must reset timer state")
+
+  local unavailable = load_fixture("hammerspoon/examples/focus-timer.lua", {})
+  local unavailable_context = context("unavailable")
+  unavailable.registrations[1].appear(unavailable_context)
+  assertError(function()
+    unavailable.registrations[1].press(unavailable_context)
+  end, "focus timer unavailable")
+end)
+
+test("window zoom example covers appearance, lifecycle, toggling, and errors", function()
+  local focused
+  local zoom_result = true
+  local application = {
+    name = function()
+      return "Editor"
+    end,
+  }
+  local window = {
+    toggle_calls = 0,
+    application = function()
+      return application
+    end,
+    toggleZoom = function(self)
+      self.toggle_calls = self.toggle_calls + 1
+      return zoom_result
+    end,
+  }
+  local streamdeck = load_fixture("hammerspoon/examples/window-maximize.lua", {
+    window = {
+      focusedWindow = function()
+        return focused
+      end,
+    },
+  })
+  local action = streamdeck.registrations[1]
+  local window_context = context("window")
+
+  assertEqual(action.id, "com.brettinternet.hammerspoon.window-maximize")
+  assertEqual(action.appearance(window_context).title, "No window")
+  assertError(function()
+    action.press(window_context)
+  end, "no focused window")
+  assertEqual(window_context.refreshes, 0)
+
+  focused = window
+  action.appear(window_context)
+  local appearance = action.appearance(window_context)
+  assertEqual(appearance.title, "Editor")
+  assertEqual(appearance.state, "inactive")
+  action.press(window_context)
+  assertEqual(window.toggle_calls, 1)
+  assertEqual(window_context.refreshes, 1)
+  assertEqual(action.appearance(window_context).state, "active")
+  action.press(window_context)
+  assertEqual(window.toggle_calls, 2)
+  assertEqual(window_context.refreshes, 2)
+  assertEqual(action.appearance(window_context).state, "inactive")
+
+  zoom_result = false
+  assertError(function()
+    action.press(window_context)
+  end, "failed to toggle focused window zoom")
+  assertEqual(window_context.refreshes, 2, "failed zoom must not refresh")
+
+  action.disappear(window_context)
+  action.appear(window_context)
+  assertEqual(action.appearance(window_context).state, "inactive",
+    "reappearing must reset window zoom state")
+
+  local unavailable = load_fixture("hammerspoon/examples/window-maximize.lua", {})
+  local unavailable_context = context("unavailable-window")
+  assertError(function()
+    unavailable.registrations[1].press(unavailable_context)
+  end, "no focused window")
+end)
+
+test("clipboard clean example covers trim, refresh, write errors, and unavailable clipboard", function()
+  local clipboard
+  local set_result = true
+  local set_calls = 0
+  local streamdeck = load_fixture("hammerspoon/examples/clipboard-clean.lua", {
+    pasteboard = {
+      getContents = function()
+        return clipboard
+      end,
+      setContents = function(value)
+        set_calls = set_calls + 1
+        if set_result then
+          clipboard = value
+        end
+        return set_result
+      end,
+    },
+  })
+  local action = streamdeck.registrations[1]
+  local clipboard_context = context("clipboard")
+
+  assertEqual(action.id, "com.brettinternet.hammerspoon.clipboard-clean")
+  local appearance = action.appearance(clipboard_context)
+  assertEqual(appearance.title, "No text")
+  assertEqual(appearance.state, "inactive")
+  assertError(function()
+    action.press(clipboard_context)
+  end, "no clipboard text")
+
+  clipboard = "  hello world \n"
+  appearance = action.appearance(clipboard_context)
+  assertEqual(appearance.title, "Trim")
+  assertEqual(appearance.state, "active")
+  action.press(clipboard_context)
+  assertEqual(clipboard, "hello world")
+  assertEqual(set_calls, 1)
+  assertEqual(clipboard_context.refreshes, 1)
+  assertEqual(action.appearance(clipboard_context).title, "Clean")
+
+  action.press(clipboard_context)
+  assertEqual(set_calls, 2, "clean clipboard press should still write the normalized value")
+  assertEqual(clipboard_context.refreshes, 2)
+
+  clipboard = "  failed  "
+  set_result = false
+  assertError(function()
+    action.press(clipboard_context)
+  end, "failed to update clipboard")
+  assertEqual(clipboard_context.refreshes, 2, "failed clipboard write must not refresh")
+
+  local unavailable = load_fixture("hammerspoon/examples/clipboard-clean.lua", {})
+  local unavailable_context = context("unavailable-clipboard")
+  assertError(function()
+    unavailable.registrations[1].appearance(unavailable_context)
+  end, "clipboard unavailable")
+end)
+
 return passed
