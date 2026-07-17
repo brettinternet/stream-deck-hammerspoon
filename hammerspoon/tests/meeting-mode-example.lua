@@ -7,19 +7,19 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local toggle_calls = {}
 
     local microphone = {}
-    function microphone:muted()
+    function microphone:inputMuted()
       if failure == "muted-throws" then
-        error("muted exploded")
+        error("inputMuted exploded")
       end
       if failure == "muted-invalid" then
         return "unknown"
       end
       return microphone_muted
     end
-    function microphone:setMuted(desired)
+    function microphone:setInputMuted(desired)
       set_calls[#set_calls + 1] = desired
       if failure == "set-throws" then
-        error("setMuted exploded")
+        error("setInputMuted exploded")
       end
       if failure == "set-invalid" then
         return false

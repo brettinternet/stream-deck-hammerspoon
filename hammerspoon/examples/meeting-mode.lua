@@ -25,15 +25,15 @@ local function default_microphone()
     return nil
   end
   if (type(microphone) ~= "table" and type(microphone) ~= "userdata")
-    or type(microphone.muted) ~= "function"
-    or type(microphone.setMuted) ~= "function" then
+    or type(microphone.inputMuted) ~= "function"
+    or type(microphone.setInputMuted) ~= "function" then
     error("microphone mute API unavailable")
   end
   return microphone
 end
 
 local function read_microphone_state(microphone)
-  local ok, muted = pcall(microphone.muted, microphone)
+  local ok, muted = pcall(microphone.inputMuted, microphone)
   if not ok then
     error("failed to read microphone mute state: " .. tostring(muted))
   end
@@ -74,7 +74,7 @@ local function read_mode_state()
 end
 
 local function set_microphone_state(microphone, desired)
-  local ok, result = pcall(microphone.setMuted, microphone, desired)
+  local ok, result = pcall(microphone.setInputMuted, microphone, desired)
   if not ok then
     error("failed to set microphone mute state: " .. tostring(result))
   end
