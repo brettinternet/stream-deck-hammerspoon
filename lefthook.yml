@@ -1,0 +1,8 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.{js,mjs,cjs,ts,tsx}"
+      run: bunx --no-install eslint {staged_files}
+    gitleaks:
+      run: gitleaks protect --staged --redact

@@ -2,6 +2,8 @@
 bun = "latest"
 node = "24"
 lua = "5"
+lefthook = "2.1.10"
+gitleaks = "8.30.1"
 
 [settings]
 npm.package_manager = "bun"
