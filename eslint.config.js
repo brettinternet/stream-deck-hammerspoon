@@ -11,6 +11,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/build/**",
       "**/*.sdPlugin/**",
+      ".worktrees/**",
     ],
   },
   {
