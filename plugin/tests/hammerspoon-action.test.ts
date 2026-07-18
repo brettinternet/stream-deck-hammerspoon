@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type {
   BridgeAction,
   BridgeClient,
@@ -146,10 +146,14 @@ class FakeBridge extends EventEmitter {
 }
 
 const propertyInspectorMessages: unknown[] = [];
+const propertyInspectorDidAppearListeners: Array<() => void> = [];
 const streamDeckMock = {
   ui: {
     sendToPropertyInspector: async (message: unknown): Promise<void> => {
       propertyInspectorMessages.push(message);
+    },
+    onDidAppear: (listener: () => void): void => {
+      propertyInspectorDidAppearListeners.push(listener);
     },
   },
 };
@@ -233,6 +237,30 @@ class FeedbackTimers {
 }
 
 describe("HammerspoonAction", () => {
+  beforeEach(() => {
+    propertyInspectorMessages.length = 0;
+    propertyInspectorDidAppearListeners.length = 0;
+  });
+  test("resends bridge state when the property inspector appears", async () => {
+    const bridge = new FakeBridge();
+    bridge.status = "connected";
+    bridge.actions = [{ actionId: "action.id", name: "Action" }];
+    const adapter = makeAction(bridge);
+
+    adapter.subscribe();
+    const listener = propertyInspectorDidAppearListeners.at(-1);
+    expect(listener).toBeDefined();
+    listener?.();
+    await flush();
+
+    expect(propertyInspectorMessages).toEqual([
+      {
+        type: "bridgeState",
+        status: "connected",
+        actions: [{ actionId: "action.id", name: "Action" }],
+      },
+    ]);
+  });
   test("uses the manifest action UUID required by the Stream Deck SDK", () => {
     const action = makeAction(new FakeBridge());
 

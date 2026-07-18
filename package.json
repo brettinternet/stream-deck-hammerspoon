@@ -22,7 +22,7 @@
     "pack": "bun run build && bunx --no-install streamdeck pack --force plugin/com.brettinternet.hammerspoon.sdPlugin"
   },
   "devDependencies": {
-    "@elgato/cli": "1.7.4",
+    "@elgato/cli": "^1.7.4",
     "@eslint/js": "^9.0.0",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",

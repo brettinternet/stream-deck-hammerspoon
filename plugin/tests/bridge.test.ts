@@ -66,6 +66,10 @@ class FakeSocket {
     this.emit("close", { code: 1000 });
   }
 
+  error(): void {
+    this.emit("error");
+  }
+
   close(): void {
     this.closeCalls += 1;
     this.readyState = FakeSocket.CLOSED;
@@ -181,7 +185,8 @@ function completeActions(socket: FakeSocket, requestId: string, actionId = "com.
 describe("BridgeClient authentication and transport", () => {
   test("authenticates before requesting actions and publishes the registry", async () => {
     const sockets: FakeSocket[] = [];
-    const { client } = makeClient(sockets);
+    const timers = new ManualTimers();
+    const { client } = makeClient(sockets, timers);
     const statuses: string[] = [];
     const registries: unknown[] = [];
     client.on("status", (status) => statuses.push(status as string));
@@ -195,6 +200,7 @@ describe("BridgeClient authentication and transport", () => {
 
     const requestId = await authenticate(sockets[0]);
     expect(client.status).toBe("connected");
+    expect(timers.delays()).toEqual([]);
     completeActions(sockets[0], requestId);
 
     expect(client.status).toBe("connected");
@@ -469,8 +475,35 @@ describe("BridgeClient authentication and transport", () => {
     expect(client.status).toBe("disconnected");
     expect(sockets).toHaveLength(0);
   });
-});
+  test("reconnects when the WebSocket handshake hangs", async () => {
+    const sockets: FakeSocket[] = [];
+    const timers = new ManualTimers();
+    const { client } = makeClient(sockets, timers);
 
+    client.start();
+    await flush();
+    sockets[0].open();
+
+    expect(client.status).toBe("authenticating");
+    expect(timers.delays()).toEqual([5_000]);
+
+    timers.runNext();
+
+    expect(sockets[0].closeCalls).toBe(1);
+    expect(client.status).toBe("disconnected");
+    expect(timers.delays()).toEqual([250]);
+
+    timers.runNext();
+    await flush();
+    sockets[0].peerClose();
+    expect(timers.delays()).toEqual([5_000]);
+    sockets[0].error();
+    expect(timers.delays()).toEqual([5_000]);
+    expect(sockets).toHaveLength(2);
+    expect(client.status).toBe("connecting");
+    client.stop();
+  });
+});
 describe("BridgeClient reconnect and synchronization", () => {
   test("uses bounded exponential reconnect delays and resets after helloAck", async () => {
     const sockets: FakeSocket[] = [];

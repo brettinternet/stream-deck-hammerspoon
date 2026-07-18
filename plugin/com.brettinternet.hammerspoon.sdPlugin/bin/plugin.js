@@ -18911,6 +18911,7 @@ const DEFAULT_URL = "ws://localhost:17321/streamdeck";
 const DEFAULT_TOKEN_PATH = join(homedir(), ".hammerspoon", "streamdeck-token");
 const INITIAL_RECONNECT_MS = 250;
 const MAX_RECONNECT_MS = 10_000;
+const SOCKET_HANDSHAKE_TIMEOUT_MS = 5_000;
 function isNonEmptyString(value) {
     return typeof value === "string" && value.length > 0;
 }
@@ -19034,6 +19035,7 @@ class BridgeClient extends EventEmitter$1 {
     safePluginVersion;
     socket;
     socketGeneration = 0;
+    handshakeTimer;
     reconnectTimer;
     reconnectAttempt = 0;
     started = false;
@@ -19090,6 +19092,7 @@ class BridgeClient extends EventEmitter$1 {
         this.sessionId = undefined;
         this.pendingActions.clear();
         this.clearReconnectTimer();
+        this.clearHandshakeTimer();
         this.socketGeneration += 1;
         const socket = this.socket;
         this.socket = undefined;
@@ -19305,12 +19308,37 @@ class BridgeClient extends EventEmitter$1 {
             });
         };
         const onMessage = (data) => this.handleMessage(generation, data);
-        const onClose = () => this.connectionFailed(generation);
-        const onError = () => this.connectionFailed(generation);
+        const onClose = () => {
+            if (!this.isCurrent(generation))
+                return;
+            this.clearHandshakeTimer();
+            this.connectionFailed(generation);
+        };
+        const onError = () => {
+            if (!this.isCurrent(generation))
+                return;
+            this.clearHandshakeTimer();
+            this.connectionFailed(generation);
+        };
         socket.on("open", onOpen);
         socket.on("message", onMessage);
         socket.on("close", onClose);
         socket.on("error", onError);
+        this.handshakeTimer = this.scheduleTimeout(() => {
+            if (!this.isCurrent(generation))
+                return;
+            this.clearHandshakeTimer();
+            this.emitDiagnostic("reconnect", "SOCKET_FAILED");
+            const currentSocket = this.socket;
+            this.socket = undefined;
+            try {
+                currentSocket?.close();
+            }
+            catch {
+                // A timed-out transport is already being replaced.
+            }
+            this.connectionFailed(generation);
+        }, SOCKET_HANDSHAKE_TIMEOUT_MS);
     }
     handleMessage(generation, data) {
         if (!this.isCurrent(generation))
@@ -19341,6 +19369,7 @@ class BridgeClient extends EventEmitter$1 {
             this.authenticated = true;
             this.reconnectAttempt = 0;
             this.setStatus("connected");
+            this.clearHandshakeTimer();
             this.requestActions();
             return;
         }
@@ -19493,6 +19522,12 @@ class BridgeClient extends EventEmitter$1 {
             return false;
         }
     }
+    clearHandshakeTimer() {
+        if (this.handshakeTimer === undefined)
+            return;
+        this.cancelTimeout(this.handshakeTimer);
+        this.handshakeTimer = undefined;
+    }
     connectionFailed(generation) {
         if (!this.isCurrent(generation))
             return;
@@ -19501,6 +19536,7 @@ class BridgeClient extends EventEmitter$1 {
         this.authenticated = false;
         this.sessionId = undefined;
         this.pendingActions.clear();
+        this.clearHandshakeTimer();
         this.setStatus("disconnected");
         this.socket = undefined;
         if (!this.preserveFailureCause)
@@ -19872,6 +19908,9 @@ class HammerspoonAction extends SingletonAction {
             void this.sendBridgeState();
         });
         this.bridge.on("actions", () => {
+            void this.sendBridgeState();
+        });
+        streamDeck.ui.onDidAppear(() => {
             void this.sendBridgeState();
         });
         this.bridge.on("appearance", (appearance) => {

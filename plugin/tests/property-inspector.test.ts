@@ -80,6 +80,7 @@ class FakeSocket {
   static instances: FakeSocket[] = [];
   readonly url: string;
   readonly sent: string[] = [];
+  closeCalls = 0;
   onopen: SocketHandler = null;
   onerror: SocketHandler = null;
   onclose: SocketHandler = null;
@@ -107,6 +108,7 @@ class FakeSocket {
   }
 
   close(): void {
+    this.closeCalls += 1;
     this.onclose?.();
   }
 }
@@ -181,7 +183,7 @@ function sentFrames(socket: FakeSocket): Array<Record<string, unknown>> {
 }
 
 describe.serial("property inspector", () => {
-  test("connects, renders bridge actions, updates settings, and saves a selection", async () => {
+  test("uses the registration UUID for settings commands", async () => {
     const environment = await installEnvironment();
     try {
       environment.connect(
@@ -207,11 +209,6 @@ describe.serial("property inspector", () => {
       socket.open();
       expect(sentFrames(socket)).toEqual([
         { event: "registerPropertyInspector", uuid: "fallback-context" },
-        {
-          event: "sendToPlugin",
-          context: "action-context",
-          payload: { type: "requestState" },
-        },
       ]);
 
       socket.message(new Uint8Array([123]));
@@ -219,6 +216,13 @@ describe.serial("property inspector", () => {
       socket.message(JSON.stringify({ event: "unrelated", payload: {} }));
       expect(environment.document.connectionStatus.textContent).toBe("Connecting");
 
+      socket.message(bridgeState("connected", []));
+      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.actionSelect.disabled).toBe(true);
+      expect(environment.document.actionSelect.value).toBe("action-two");
+      expect(environment.document.actionSelect.children).toEqual([
+        { value: "action-two", textContent: "Loading actions...", disabled: true },
+      ]);
       socket.message(
         bridgeState("connected", [
           action("action-one", "First action"),
@@ -244,16 +248,12 @@ describe.serial("property inspector", () => {
 
       environment.document.actionSelect.value = "action-two";
       environment.document.actionSelect.dispatch("change");
-      expect(sentFrames(socket).slice(-2)).toEqual([
+      expect(sentFrames(socket).slice(-1)).toEqual([
         {
+          action: "com.brettinternet.hammerspoon.action",
           event: "setSettings",
-          context: "action-context",
+          context: "fallback-context",
           payload: { actionId: "action-two" },
-        },
-        {
-          event: "sendToPlugin",
-          context: "action-context",
-          payload: { type: "requestState" },
         },
       ]);
 
@@ -320,6 +320,48 @@ describe.serial("property inspector", () => {
       environment.restore();
     }
   });
+  test("ignores messages from superseded property inspector sockets", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(
+        28196,
+        "context-01",
+        "register",
+        "",
+        JSON.stringify({ context: "context-01", payload: { settings: { actionId: "old" } } }),
+      );
+      const firstSocket = FakeSocket.instances[0]!;
+      firstSocket.open();
+      firstSocket.message(bridgeState("connected", [action("old", "Old action")]));
+      expect(environment.document.actionSelect.value).toBe("old");
+
+      environment.connect(
+        28197,
+        "context-02",
+        "registerAgain",
+        "",
+        JSON.stringify({ context: "context-02", payload: { settings: {} } }),
+      );
+      const secondSocket = FakeSocket.instances[1]!;
+      expect(firstSocket.closeCalls).toBe(1);
+      firstSocket.open();
+      firstSocket.message(JSON.stringify({ event: "didReceiveSettings", payload: { settings: { actionId: "old" } } }));
+      firstSocket.message(bridgeState("connected", [action("old", "Old action")]));
+
+      secondSocket.open();
+      expect(sentFrames(secondSocket)).toEqual([
+        { event: "registerAgain", uuid: "context-02" },
+      ]);
+      secondSocket.message(bridgeState("connected", [action("new", "New action")]));
+      expect(environment.document.actionSelect.value).toBe("");
+      expect(environment.document.actionSelect.children).toEqual([
+        { value: "", textContent: "No action selected", disabled: false },
+        { value: "new", textContent: "New action", disabled: false },
+      ]);
+    } finally {
+      environment.restore();
+    }
+  });
 
   test("renders a saved action that is no longer advertised as unavailable", async () => {
     const environment = await installEnvironment();
@@ -369,7 +411,7 @@ describe.serial("property inspector", () => {
     }
   });
 
-  test("renders offline when WebSocket is unavailable and falls back to the UUID context", async () => {
+  test("renders offline when WebSocket is unavailable", async () => {
     const environment = await installEnvironment(false);
     try {
       environment.connect(28196, "uuid-context", "register", "", "not-json");
@@ -388,7 +430,7 @@ describe.serial("property inspector", () => {
     }
   });
 
-  test("uses the UUID context when actionInfo has no context", async () => {
+  test("does not send inspector messages without an action context", async () => {
     const environment = await installEnvironment();
     try {
       environment.connect(
@@ -403,11 +445,6 @@ describe.serial("property inspector", () => {
 
       expect(sentFrames(socket)).toEqual([
         { event: "registerPropertyInspector", uuid: "uuid-context" },
-        {
-          event: "sendToPlugin",
-          context: "uuid-context",
-          payload: { type: "requestState" },
-        },
       ]);
     } finally {
       environment.restore();
@@ -591,6 +628,7 @@ describe.serial("property inspector", () => {
       mode.dispatch("change");
       const frames = sentFrames(socket).filter((frame) => (frame as { event?: unknown }).event === "setSettings");
       expect(frames.at(-1)).toEqual({
+        action: "com.brettinternet.hammerspoon.action",
         event: "setSettings",
         context: "context-01",
         payload: {
@@ -610,7 +648,13 @@ describe.serial("property inspector", () => {
   test("didReceiveSettings round-trips per-instance values and rejects wrong types", async () => {
     const environment = await installEnvironment();
     try {
-      environment.connect(28196, "context-01", "register", "", "{}");
+      environment.connect(
+        28196,
+        "context-01",
+        "register",
+        "",
+        JSON.stringify({ context: "context-01", payload: { settings: {} } }),
+      );
       const socket = FakeSocket.instances[0]!;
       socket.open();
       socket.message(
@@ -639,8 +683,9 @@ describe.serial("property inspector", () => {
 
       count.value = "4";
       count.dispatch("change");
-      const frames = sentFrames(socket).filter((frame) => (frame as { event?: unknown }).event === "setSettings");
+      const frames = sentFrames(socket).filter((frame) => frame.event === "setSettings");
       expect(frames.at(-1)).toEqual({
+        action: "com.brettinternet.hammerspoon.action",
         event: "setSettings",
         context: "context-01",
         payload: {
@@ -657,7 +702,13 @@ describe.serial("property inspector", () => {
   test("uses Unicode code-point bounds for text settings", async () => {
     const environment = await installEnvironment();
     try {
-      environment.connect(28196, "context-01", "register", "", "{}");
+      environment.connect(
+        28196,
+        "context-01",
+        "register",
+        "",
+        JSON.stringify({ context: "context-01", payload: { settings: {} } }),
+      );
       const socket = FakeSocket.instances[0]!;
       socket.open();
       socket.message(
@@ -682,6 +733,7 @@ describe.serial("property inspector", () => {
       value.dispatch("change");
       const frames = sentFrames(socket).filter((frame) => frame.event === "setSettings");
       expect(frames.at(-1)).toEqual({
+        action: "com.brettinternet.hammerspoon.action",
         event: "setSettings",
         context: "context-01",
         payload: { actionId: "unicode", value: "😀" },

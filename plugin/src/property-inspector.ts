@@ -25,6 +25,7 @@ type DocumentLike = {
 };
 
 type StreamDeckSocket = {
+  close(): void;
   onclose: (() => void) | null;
   onerror: (() => void) | null;
   onmessage: ((message: { data: unknown }) => void) | null;
@@ -46,7 +47,12 @@ type ConnectElgatoStreamDeckSocket = (
   registerEvent: string,
   info: string,
   actionInfo: string,
-) => void;
+)=> void;
+
+type InspectorConnection = {
+  socket: StreamDeckSocket;
+  context: string;
+};
 
 type StreamDeckMessage = {
   event?: unknown;
@@ -54,6 +60,20 @@ type StreamDeckMessage = {
 };
 
 type BridgeStatus = "disconnected" | "connecting" | "authenticating" | "connected";
+
+const browserGlobal = globalThis as unknown as BrowserGlobal;
+const documentLike = browserGlobal.document;
+const actionSelect = documentLike?.getElementById("action-id");
+const connectionStatus = documentLike?.getElementById("connection-status");
+const settingsPanel = documentLike?.getElementById("action-settings");
+const settingsStatus = documentLike?.getElementById("settings-status");
+
+let inspectorConnection: InspectorConnection | undefined;
+let savedActionId = "";
+let savedSettings: JsonObject = {};
+let bridgeStatus: BridgeStatus = "connecting";
+let bridgeActions: BridgeAction[] = [];
+
 
 type SettingsFieldBase = {
   key: string;
@@ -95,20 +115,8 @@ type BridgeAction = {
   settingsSchema?: unknown[];
   settingsSchemaVersion?: number;
 };
+const ACTION_UUID = "com.brettinternet.hammerspoon.action";
 
-const browserGlobal = globalThis as unknown as BrowserGlobal;
-const documentLike = browserGlobal.document;
-const actionSelect = documentLike?.getElementById("action-id");
-const connectionStatus = documentLike?.getElementById("connection-status");
-const settingsPanel = documentLike?.getElementById("action-settings");
-const settingsStatus = documentLike?.getElementById("settings-status");
-
-let streamDeckSocket: StreamDeckSocket | undefined;
-let actionContext = "";
-let savedActionId = "";
-let savedSettings: JsonObject = {};
-let bridgeStatus: BridgeStatus = "connecting";
-let bridgeActions: BridgeAction[] = [];
 
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -176,6 +184,13 @@ function renderActionSelect(): void {
     return;
   }
 
+  if (bridgeStatus === "connected" && bridgeActions.length === 0 && savedActionId) {
+    actionSelect.replaceChildren(createOption(savedActionId, "Loading actions...", true));
+    actionSelect.value = savedActionId;
+    actionSelect.disabled = true;
+    renderSettings();
+    return;
+  }
   const unavailable = bridgeActions.length === 0 || bridgeStatus !== "connected";
   if (unavailable) {
     actionSelect.replaceChildren(createOption("", bridgeActions.length === 0 ? "No actions available" : "Offline"));
@@ -205,32 +220,20 @@ function renderActionSelect(): void {
   renderSettings();
 }
 
-function sendRequestState(): void {
-  if (!streamDeckSocket || !actionContext) {
-    return;
-  }
-
-  streamDeckSocket.send(
-    JSON.stringify({
-      event: "sendToPlugin",
-      context: actionContext,
-      payload: { type: "requestState" },
-    }),
-  );
-}
 
 function sendSettings(settings: JsonObject): void {
-  if (!streamDeckSocket || !actionContext) {
+  const connection = inspectorConnection;
+  if (!connection || !connection.context) {
     return;
   }
-  streamDeckSocket.send(
+  connection.socket.send(
     JSON.stringify({
+      action: ACTION_UUID,
       event: "setSettings",
-      context: actionContext,
+      context: connection.context,
       payload: settings,
     }),
   );
-  sendRequestState();
 }
 
 function hasSetting(settings: JsonObject, key: string): boolean {
@@ -496,9 +499,8 @@ function renderSettings(): void {
   }
   setSettingsStatus(errors.length > 0 ? errors.join(" ") : "Settings are ready.");
 }
-
 function saveSettings(fields: SettingsField[]): void {
-  if (!streamDeckSocket || !actionContext || bridgeStatus !== "connected") {
+  if (!inspectorConnection || bridgeStatus !== "connected") {
     return;
   }
   const candidate: JsonObject = { ...savedSettings };
@@ -537,7 +539,7 @@ function saveSettings(fields: SettingsField[]): void {
 }
 
 function saveActionId(): void {
-  if (!actionSelect || !streamDeckSocket || !actionContext || bridgeStatus !== "connected") {
+  if (!actionSelect || !inspectorConnection || bridgeStatus !== "connected") {
     return;
   }
   const selectedActionId = actionSelect.value;
@@ -652,8 +654,14 @@ function connectElgatoStreamDeckSocket(
   actionInfo: string,
 ): void {
   const parsedActionInfo = parseJsonObject(actionInfo);
-  actionContext =
-    typeof parsedActionInfo.context === "string" ? parsedActionInfo.context : uuid;
+  const context = uuid;
+  const previousConnection = inspectorConnection;
+  inspectorConnection = undefined;
+  try {
+    previousConnection?.socket.close();
+  } catch {
+    // The host may already have closed the superseded inspector socket.
+  }
   savedSettings = settingsFromValue(parsedActionInfo.payload);
   savedActionId = parseInitialActionInfo(actionInfo) || actionIdFromSettings(parsedActionInfo.payload);
   bridgeActions = [];
@@ -668,23 +676,31 @@ function connectElgatoStreamDeckSocket(
   }
 
   const socket = new Socket(`ws://127.0.0.1:${port}`);
-  streamDeckSocket = socket;
+  const connection: InspectorConnection = { socket, context };
+  inspectorConnection = connection;
   socket.onopen = () => {
+    if (inspectorConnection !== connection) {
+      return;
+    }
     setBridgeStatus("connecting");
     socket.send(JSON.stringify({ event: registerEvent, uuid }));
-    sendRequestState();
   };
-  socket.onmessage = handleStreamDeckMessage;
+  socket.onmessage = (message) => {
+    if (inspectorConnection === connection) {
+      handleStreamDeckMessage(message);
+    }
+  };
   socket.onerror = () => {
-    if (streamDeckSocket === socket) {
+    if (inspectorConnection === connection) {
+      inspectorConnection = undefined;
       setBridgeStatus("disconnected");
       bridgeActions = [];
       renderActionSelect();
     }
   };
   socket.onclose = () => {
-    if (streamDeckSocket === socket) {
-      streamDeckSocket = undefined;
+    if (inspectorConnection === connection) {
+      inspectorConnection = undefined;
       setBridgeStatus("disconnected");
       bridgeActions = [];
       renderActionSelect();

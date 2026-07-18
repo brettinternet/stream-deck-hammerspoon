@@ -201,6 +201,7 @@ function server.new(registry, protocol, contextFactory)
   end
 
   function object:_beginPress(instance)
+
     cancelLongPress(instance)
     if instance.definition.longPress == nil then
       instance:invoke("press")
@@ -385,6 +386,7 @@ function server.new(registry, protocol, contextFactory)
         or message.type == "dialUp"
         or message.type == "touchTap"
         or message.type == "requestAppearance" then
+
       local definition = self.registry:get(message.actionId)
       if not definition then
         self:_queueError("UNKNOWN_ACTION", nil, message.instanceId)

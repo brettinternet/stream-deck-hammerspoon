@@ -209,9 +209,12 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Added a Bun release command that builds and validates the pinned Stream Deck package, normalizes plugin and Lua archive metadata for repeatable bytes without leaving tracked build output changed, writes versioned artifacts and SHA256SUMS/RELEASE.json, and documents verified installation and uninstall flows.
 
 ### ECO-004 — Diagnostics
-- Status: ready
+- Status: done
 - Depends on: CUS-004, VSL-006
 - Acceptance: Redacted status output identifies auth, schema, reconnect, registry, and callback failures without secrets or stack traces.
+- Commits: 230682b, 8509976, a5db2e2
+- Verification: Plugin tests (94 pass); focused diagnostics tests (30 pass, 169 expect calls); TypeScript check; Lua syntax/load check; Lua bridge tests (46 pass); shipped bundle `node --check`; `git diff --check`; independent verifier PASS on the final commits for all five failure categories, redaction/bounds, failure-cause precedence, and shipped bundle/source-map parity.
+- Outcome: Added a local BridgeClient diagnostics snapshot/event and `bridge-status` logger with bounded safe metadata, stable auth/schema/reconnect/registry/callback categories, canonical protocol messages, redaction, retry bounds, duplicate suppression, and shipped artifact parity. Authenticated auth and schema causes survive a later generic disconnect while later registry/callback failures supersede the preserved cause.
 
 ### ECO-005 — Protocol compatibility policy
 - Status: done

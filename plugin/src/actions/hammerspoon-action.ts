@@ -315,6 +315,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     this.bridge.on("actions", () => {
       void this.sendBridgeState();
     });
+    streamDeck.ui.onDidAppear(() => {
+      void this.sendBridgeState();
+    });
     this.bridge.on("appearance", (appearance) => {
       void this.enqueueRender(appearance.instanceId, () => this.renderAppearance(appearance));
     });
@@ -337,7 +340,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
 
     const instanceId = ev.action.id;
+
     const settings = this.settingsFrom(ev.payload.settings);
+
     const metadata = extractDeviceMetadata(ev.action);
     const renderingProfile = selectRenderingProfile(metadata);
     const previous = this.instances.get(instanceId);
@@ -390,6 +395,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     const settings = this.settingsFrom(ev.payload.settings);
     const metadata = extractDeviceMetadata(ev.action);
     const renderingProfile = selectRenderingProfile(metadata);
+
     const previous = this.instances.get(instanceId);
     if (previous?.actionId && previous.actionId !== settings.actionId) {
       this.bridge.removeInstance(instanceId, previous.actionId);
