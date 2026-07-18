@@ -220,8 +220,11 @@ test("microphone example covers appearance, toggling, and no-device errors", fun
   assertEqual(press_context.refreshes, 1, "failed microphone press must not refresh")
 end)
 
-test("application example covers appearance, hide errors, and watcher refreshes", function()
+test("application example toggles focused and configured applications", function()
   local frontmost
+  local configured
+  local get_calls = 0
+  local get_error
   local watcher_callback
   local watcher_started = false
   local events = {
@@ -232,10 +235,51 @@ test("application example covers appearance, hide errors, and watcher refreshes"
     launched = "launched",
     terminated = "terminated",
   }
+
+  local function application(name)
+    local app = {
+      app_name = name,
+      hidden = false,
+      hide_calls = 0,
+      unhide_calls = 0,
+      hide_result = true,
+      unhide_result = true,
+      name = function(self)
+        return self.app_name
+      end,
+      isHidden = function(self)
+        return self.hidden
+      end,
+      hide = function(self)
+        self.hide_calls = self.hide_calls + 1
+        if self.hide_result then
+          self.hidden = true
+        end
+        return self.hide_result
+      end,
+      unhide = function(self)
+        self.unhide_calls = self.unhide_calls + 1
+        if self.unhide_result then
+          self.hidden = false
+        end
+        return self.unhide_result
+      end,
+    }
+    return app
+  end
+
   local fake_hs = {
     application = {
       frontmostApplication = function()
         return frontmost
+      end,
+      get = function(bundle_id)
+        get_calls = get_calls + 1
+        if get_error then
+          error(get_error)
+        end
+        assertEqual(bundle_id, "com.example.Editor", "configured lookup must use the bundle ID")
+        return configured
       end,
       watcher = {
         activated = events.activated,
@@ -255,10 +299,17 @@ test("application example covers appearance, hide errors, and watcher refreshes"
       },
     },
   }
+
   local streamdeck = load_fixture("hammerspoon/examples/application.lua", fake_hs)
   assertEqual(#streamdeck.registrations, 1, "application must register one action")
   local action = streamdeck.registrations[1]
   assertEqual(action.id, "com.brettinternet.hammerspoon.application-toggle")
+  assertEqual(action.name, "Hide/show application")
+  assertEqual(action.settingsSchemaVersion, 1)
+  assertEqual(#action.settingsSchema, 1)
+  assertEqual(action.settingsSchema[1].type, "text")
+  assertEqual(action.settingsSchema[1].key, "bundleID")
+  assertEqual(action.settingsSchema[1].maxLength, 128)
   assertEqual(streamdeck.starts, 1, "application must start the bridge")
   assertTrue(watcher_started, "application watcher must start")
 
@@ -271,31 +322,66 @@ test("application example covers appearance, hide errors, and watcher refreshes"
   end, "no frontmost application")
   assertEqual(press_context.refreshes, 0)
 
-  local hide_result = true
-  local app = {
-    app_name = "Editor",
-    hide_calls = 0,
-    name = function(self)
-      return self.app_name
-    end,
-    hide = function(self)
-      self.hide_calls = self.hide_calls + 1
-      return hide_result
-    end,
-  }
+  local app = application("Editor")
+  local other_app = application("Terminal")
   frontmost = app
   appearance = action.appearance(press_context)
   assertEqual(appearance.title, "Editor")
-  assertEqual(appearance.state, "active")
+  assertEqual(appearance.state, "inactive")
   action.press(press_context)
   assertEqual(app.hide_calls, 1)
+  assertTrue(app.hidden, "focused application must be hidden")
   assertEqual(press_context.refreshes, 1)
+  appearance = action.appearance(press_context)
+  assertEqual(appearance.title, "Editor", "hidden target must remain the focused toggle target")
+  assertEqual(appearance.state, "active")
 
-  hide_result = false
+  frontmost = other_app
+  action.press(press_context)
+  assertEqual(app.unhide_calls, 1, "second click must unhide the first target")
+  assertFalse(app.hidden)
+  assertEqual(other_app.hide_calls, 0, "second click must not hide the new frontmost app")
+  assertEqual(press_context.refreshes, 2)
+
+  frontmost = app
+  app.hide_result = false
   assertError(function()
     action.press(press_context)
-  end, "failed to hide frontmost application")
-  assertEqual(press_context.refreshes, 1, "failed hide must not refresh")
+  end, "failed to hide application")
+  assertEqual(press_context.refreshes, 2, "failed hide must not refresh")
+  app.hide_result = true
+
+  local configured_context = context("configured", {
+    bundleID = "com.example.Editor",
+  })
+  configured = app
+  frontmost = other_app
+  appearance = action.appearance(configured_context)
+  assertEqual(appearance.title, "Editor")
+  assertEqual(appearance.state, "inactive")
+  assertEqual(get_calls, 1, "appearance must resolve configured applications")
+  action.press(configured_context)
+  assertTrue(app.hidden, "configured application must be hidden")
+  assertEqual(app.hide_calls, 3)
+  assertEqual(configured_context.refreshes, 1)
+  action.press(configured_context)
+  assertFalse(app.hidden, "configured application must be shown on the next click")
+  assertEqual(app.unhide_calls, 2)
+  assertEqual(configured_context.refreshes, 2)
+
+  configured = nil
+  assertEqual(action.appearance(configured_context).title, "No app")
+  assertError(function()
+    action.press(configured_context)
+  end, "application not running: com.example.Editor")
+  assertEqual(configured_context.refreshes, 2, "missing configured application must not refresh")
+
+  get_error = "lookup unavailable"
+  assertError(function()
+    action.appearance(configured_context)
+  end, "failed to find application")
+  get_error = nil
+  configured = app
 
   local relevant = {
     events.activated,

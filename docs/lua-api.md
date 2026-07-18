@@ -201,7 +201,7 @@ When the plugin is not connected, refresh requests cannot be delivered. The plug
 The repository includes complete configuration snippets in `hammerspoon/examples/`:
 
 - `microphone.lua` toggles the default input device's input mute state and refreshes the pressed key.
-- `application.lua` shows the frontmost application, hides it on press, and refreshes from `hs.application.watcher` events.
+- `application.lua` toggles the focused application's hidden state, retaining the hidden target for the next click, or toggles a configured running application by bundle ID; it refreshes from `hs.application.watcher` events.
 - `multi-instance.lua` keeps independent toggle state for each visible key and reads an optional per-instance `label` setting.
 - `focus-timer.lua` (`com.brettinternet.hammerspoon.focus-timer`) starts and stops a per-key 25-minute focus timer, showing `Focus` while it runs and returning to `Ready` when it expires; its per-instance lifecycle owns the timer and refreshes the key on start, stop, and expiry.
 - `window-maximize.lua` (`com.brettinternet.hammerspoon.window-maximize`) shows the focused application's name and toggles its focused window between zoomed and normal states, reporting `No window` when no focused window is available; it demonstrates focused-window state checks, per-instance lifecycle, and protected operation errors.
