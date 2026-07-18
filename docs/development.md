@@ -74,12 +74,12 @@ Use the official Stream Deck CLI through Bun's package runner, with the CLI vers
 bunx --package @elgato/cli@1.7.4 streamdeck validate plugin/com.brettinternet.hammerspoon.sdPlugin
 bunx --package @elgato/cli@1.7.4 streamdeck pack plugin/com.brettinternet.hammerspoon.sdPlugin
 bunx --package @elgato/cli@1.7.4 streamdeck link plugin/com.brettinternet.hammerspoon.sdPlugin
+open com.brettinternet.hammerspoon.streamDeckPlugin
 bunx --package @elgato/cli@1.7.4 streamdeck restart com.brettinternet.hammerspoon
 bunx --package @elgato/cli@1.7.4 streamdeck dev
-
 ```
 
-`validate` checks the compiled plugin. `pack` (also named `bundle` by the CLI) creates the distributable `.streamDeckPlugin` package. `link` installs the plugin by linking the compiled directory into the official Stream Deck application. `restart` reloads the installed plugin. `dev` enables developer mode, which permits debugger attachment and property-inspector debugging; it is not a `--debug` plugin runner. Use the Node inspector or an IDE debugger to attach after enabling developer mode. Consult `bunx --package @elgato/cli@1.7.4 streamdeck --help` for version-specific options.
+`validate` checks the compiled plugin. `pack` (also named `bundle` by the CLI) creates the distributable `.streamDeckPlugin` package. `link` installs the plugin by linking the compiled directory into the official Stream Deck application. `open com.brettinternet.hammerspoon.streamDeckPlugin` opens the local extension. `restart` reloads the installed plugin. `dev` enables developer mode, which permits debugger attachment and property-inspector debugging; it is not a `--debug` plugin runner. Use the Node inspector or an IDE debugger to attach after enabling developer mode. Consult `bunx --package @elgato/cli@1.7.4 streamdeck --help` for version-specific options.
 
 Keep the official Stream Deck application running throughout this flow. Do not substitute a direct USB/HID operation or another hardware controller. The CLI flow can validate, package, install, restart, and enable debug support without a connected deck; hardware/UI completion still requires the official application and a connected device.
 For reproducible versioned plugin and Lua artifacts, checksums, installation, and uninstall steps, use the [release guide](releases.md) and run `bun run release`.
@@ -133,63 +133,7 @@ The complete hardware-facing slice cannot be automated without a connected Strea
 
 ## Troubleshooting
 
-### The plugin stays offline
-
-- Confirm Hammerspoon is running and the bridge is started.
-- Confirm both ends use the default endpoint `ws://localhost:17321/streamdeck` and that the server binds localhost/loopback only.
-- Check `~/.hammerspoon/streamdeck-token` exists, is readable by the relevant user, contains the current two-UUID token, and has mode `0600`.
-- Reload Hammerspoon after changing the module or token, then restart the plugin.
-- Verify the official Stream Deck application is still running; the bridge expects one local plugin client, not an independent hardware connection.
-
-### Authentication fails
-
-The first WebSocket message must be the protocol-v1 `hello` containing the shared token and `pluginVersion`. A valid hello always establishes a fresh session ID and invalidates any old one. Every later plugin-to-Lua application message must echo the exact current ID; an unauthenticated, malformed, missing-ID, or stale-ID message is rejected. Check the token file and permissions on both sides; never turn authentication off. Do not expect a WebSocket upgrade-header token: Hammerspoon's `hs.httpserver:websocket` exposes message callbacks rather than upgrade headers.
-
-### Reconnect and session troubleshooting
-
-If the plugin reconnects but actions do not run, treat the session as stale rather than trying to reuse a previous ID:
-
-1. Reload or restart Hammerspoon so the bridge clears its in-memory session ID and instance contexts.
-2. Restart the plugin (or use the official Stream Deck CLI `restart`) so it rereads the token and sends a new token-bearing `hello`.
-3. Confirm the plugin receives `helloAck.sessionId`, keeps it only in memory, and includes it on `listActions`, each lifecycle event, `keyDown`, `keyUp`, `dialDown`, `dialRotate`, `dialUp`, `touchTap`, and `requestAppearance`.
-4. Confirm the Lua bridge rejects missing/old IDs without invoking `appear`, `press`, `release`, `disappear`, or `touchTap`; do not log or print the ID while diagnosing.
-5. Wait for synchronization: the plugin requests actions, re-announces visible instances, and requests appearance. A repeated `instanceAppeared` for the same instance/action refreshes settings and must not run `appear` again.
-
-If Hammerspoon cannot report the old socket's close, this sequence is still safe: the next valid hello clears prior contexts and rotates the session ID, so the abandoned client cannot send tokenless application messages.
-
-### Empty frames or transport parse errors
-
-`hs.httpserver:websocket` callbacks must return a string, so a lifecycle event with no response may appear as a zero-length frame. The TypeScript transport is expected to ignore only that zero-length frame before JSON/protocol validation. Do not treat it as an additional protocol message or an authentication failure. If a frame contains any bytes, it is not an empty-frame artifact: malformed JSON, an unsupported version, an unknown type, or any other invalid non-empty frame must remain a strict validation error. Check the sender/transport framing before changing protocol or authentication behavior.
-
-### Actions or appearance are stale
-
-Reloading Lua intentionally drops the instance registry, session ID, and instance contexts. Wait for the plugin's bounded reconnect, then confirm it re-authenticates, receives a fresh session ID, requests actions, resends visible instances, and requests appearance. A repeated `instanceAppeared` for an unchanged instance/action only refreshes settings; it must not rerun `appear`. An unknown/stale instance, action, or session ID should be corrected by restarting/reconnecting the two endpoints and selecting a current registered action in the property inspector, not by editing protocol messages manually.
-
-### Module cannot be loaded
-
-Check that `~/.hammerspoon/streamdeck/` is a link or copy of the repository's `hammerspoon/streamdeck/` directory, reload Hammerspoon, and run the Lua load check again. A load check does not prove that Hammerspoon has started the server or that callbacks are registered.
-
-## Logs and diagnostics
-
-Use the official Stream Deck application/plugin logs and Hammerspoon Console for diagnostics. `BridgeClient.diagnostics` is a local, redacted snapshot and the `diagnostics` event publishes the same shape whenever a new failure is observed:
-
-```json
-{
-  "version": 1,
-  "status": "disconnected",
-  "protocolVersion": 1,
-  "pluginVersion": "0.1.0",
-  "port": 17321,
-  "retryInMs": 250,
-  "latest": {
-    "area": "auth",
-    "code": "AUTH_FAILED",
-    "at": "2026-07-17T00:00:00.000Z"
-  }
-}
-```
-
-`area` identifies `auth`, `schema`, `reconnect`, `registry`, or `callback`. Auth/schema causes are retained over a generic disconnect, while reconnect diagnostics expose bounded retry delay. Plugin versions are restricted to a short safe character set, timestamps are UTC, and optional diagnostic log lines use the `bridge-status <JSON>` prefix, stay under 384 bytes, and suppress repeated area/code pairs. The snapshot and log line never contain token or hello payloads, session/correlation IDs, URLs or token paths, callback/malformed text, or stack traces. Safe protocol error codes/messages and connection state may be logged; shared tokens, hello payloads, and session IDs must never be logged. Capture timestamps, plugin version, protocol version, port, and the safe error code when reporting a problem, but redact token paths if they reveal sensitive environment details. The server is loopback-only, Bonjour is disabled, and `hs.httpserver` effectively permits one WebSocket client; a second client is not a supported development setup.
+See the [troubleshooting guide](troubleshooting.md) for common offline, authentication, reconnect/session, transport, stale appearance, module-loading, diagnostics, and safe reporting issues. It also documents secrets that must not be logged.
 
 ## Hardware-free development
 
