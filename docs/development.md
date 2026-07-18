@@ -61,7 +61,7 @@ bun run check       # repository checks, including type and static checks
 Run the Lua load check after changing `hammerspoon/streamdeck/`:
 
 ```sh
-mise exec -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
+lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
 ```
 
 This is a syntax/load check only; it does not start Hammerspoon or exercise the bridge. The normal development loop is: edit, run the smallest relevant check, then run `bun run build` before packaging.
@@ -75,7 +75,8 @@ bunx --package @elgato/cli@1.7.4 streamdeck pack plugin/com.brettinternet.hammer
 bunx --package @elgato/cli@1.7.4 streamdeck link plugin/com.brettinternet.hammerspoon.sdPlugin
 bunx --package @elgato/cli@1.7.4 streamdeck restart com.brettinternet.hammerspoon
 bunx --package @elgato/cli@1.7.4 streamdeck dev
-```
+
+````
 
 `validate` checks the compiled plugin. `pack` (also named `bundle` by the CLI) creates the distributable `.streamDeckPlugin` package. `link` installs the plugin by linking the compiled directory into the official Stream Deck application. `restart` reloads the installed plugin. `dev` enables developer mode, which permits debugger attachment and property-inspector debugging; it is not a `--debug` plugin runner. Use the Node inspector or an IDE debugger to attach after enabling developer mode. Consult `bunx --package @elgato/cli@1.7.4 streamdeck --help` for version-specific options.
 
@@ -88,11 +89,12 @@ Authentication is required; there is no unauthenticated fallback. On first start
 
 ```text
 ~/.hammerspoon/streamdeck-token
-```
+````
 
 The file must be readable only by the current user (`chmod 0600`). The plugin reads this runtime file when it connects. Never put the token in Stream Deck settings, source control, command-line arguments, screenshots, or logs. Never paste it into an issue or chat transcript. Session IDs are separate fresh opaque values: they are generated per accepted hello, kept only in memory, rotated on reconnect/plugin restart, and never logged or persisted.
 
 To rotate credentials, stop the bridge, remove `~/.hammerspoon/streamdeck-token`, reload Hammerspoon so the Lua bridge generates a new pair of UUIDs, then restart the plugin. Token rotation invalidates old authenticated sessions; normal reconnect also invalidates the old in-memory session ID even when the token file is unchanged. If permissions or token contents are wrong, fix the file; do not disable authentication. Verify locally with:
+
 ```sh
 stat -f '%Sp %N' ~/.hammerspoon/streamdeck-token
 ```

@@ -31,7 +31,7 @@ Make the Lua module available to Hammerspoon, then start/reload the bridge:
 ```sh
 mkdir -p ~/.hammerspoon
 ln -sfn "$PWD/hammerspoon/streamdeck" ~/.hammerspoon/streamdeck
-mise exec -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
+lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
 ```
 
 Create/use `~/.hammerspoon/streamdeck-token` through the Lua bridge; it contains two UUIDs and must remain mode `0600`. Never commit or log it. Follow [the development guide](docs/development.md) for the official CLI validate/pack/install/restart flow and the manual vertical slice.

@@ -5,41 +5,49 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 ## Phase 1: Foundation
 
 ### FND-001 — Repository structure
+
 - Status: done
 - Depends on: none
 - Acceptance: Monorepo separates plugin source/artifact, Lua library, protocol, docs, examples, and tests.
 
 ### FND-002 — Build and lint configuration
+
 - Status: done
 - Depends on: FND-001
 - Acceptance: mise pins Bun, Node, and Lua; Bun installs JavaScript dependencies; check, lint, test, and build gates pass.
 
 ### FND-003 — Plugin manifest
+
 - Status: done
 - Depends on: FND-001
 - Acceptance: Official CLI validates one generic Keypad action, property inspector, runtime versions, and assets.
 
 ### FND-004 — Development packaging
+
 - Status: done
 - Depends on: FND-002, FND-003
 - Acceptance: Bun scripts build, validate, and package the `.sdPlugin` directory with the official CLI.
 
 ### FND-005 — Lua module loading
+
 - Status: done
 - Depends on: FND-001
 - Acceptance: `require("streamdeck")` loads ordinary Hammerspoon Lua modules with no direct hardware dependency.
 
 ### FND-006 — Protocol definitions
+
 - Status: done
 - Depends on: FND-001
 - Acceptance: Canonical versioned JSON Schema, TypeScript validation, Lua validation, examples, and error semantics agree.
 
 ### FND-007 — Local authentication
+
 - Status: done
 - Depends on: FND-005, FND-006
 - Acceptance: Loopback server requires a mode-0600 shared token in the first message and fails closed.
 
 ### FND-008 — Basic WebSocket transport
+
 - Status: done
 - Depends on: FND-002, FND-006, FND-007
 - Acceptance: Plugin and Hammerspoon exchange validated messages at the documented loopback endpoint without polling.
@@ -47,36 +55,43 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 ## Phase 2: Vertical slice
 
 ### VSL-001 — Action registration
+
 - Status: done
 - Depends on: FND-005
 - Acceptance: Explicit stable Lua action definitions reject malformed and duplicate IDs and isolate callback errors.
 
 ### VSL-002 — Action discovery
+
 - Status: done
 - Depends on: FND-006, VSL-001
 - Acceptance: Authenticated plugin receives labeled registered actions with optional settings schemas.
 
 ### VSL-003 — Property inspector selection
+
 - Status: done
 - Depends on: FND-003, VSL-002
 - Acceptance: Inspector shows connection state, lists actions by name, and stores `actionId` per instance.
 
 ### VSL-004 — Key press invocation
+
 - Status: done
 - Depends on: FND-008, VSL-001, VSL-003
 - Acceptance: A configured key invokes only its registered Lua press callback with instance settings.
 
 ### VSL-005 — Dynamic title or image update
+
 - Status: done
 - Depends on: VSL-004
 - Acceptance: Valid Lua appearance updates the matching key title and binary state; malformed appearance is rejected.
 
 ### VSL-006 — Reconnection
+
 - Status: done
 - Depends on: FND-008, VSL-005
 - Acceptance: Bounded backoff reauthenticates, refreshes actions, replays visible instances, and restores appearances after either process restarts.
 
 ### VSL-007 — Example action
+
 - Status: done
 - Depends on: VSL-004, VSL-005
 - Acceptance: Microphone mute example toggles `hs.audiodevice`, refreshes, and renders state without hardware-specific test requirements.
@@ -84,6 +99,7 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 ## Phase 3: Customization
 
 ### CUS-001 — Settings schema contract
+
 - Status: done
 - Depends on: VSL-003
 - Acceptance: Versioned schema supports bounded field types, defaults, constraints, validation errors, and compatibility tests at both boundaries.
@@ -93,6 +109,7 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Follow-up: JSON Schema covers structural bounds; runtime validators enforce cross-field default/range and property-uniqueness invariants that draft 2020-12 cannot express directly.
 
 ### CUS-002 — Dynamic property-inspector controls
+
 - Status: done
 - Depends on: CUS-001
 - Acceptance: Inspector renders supported schema controls, persists validated per-instance values, and clearly handles unsupported fields.
@@ -101,6 +118,7 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: The inspector renders version 1 text, number, boolean, and select controls with defaults and native constraints, preserves per-instance and opaque settings, rejects invalid edits with clear status, and reports unsupported schemas without editable controls. HammerspoonAction forwards complete JSON settings through appearance, settings updates, and keyDown.
 
 ### CUS-003 — Additional presentation fields
+
 - Status: done
 - Depends on: CUS-001, VSL-005
 - Acceptance: Foreground/background colors, progress, and badge fields are versioned, validated, rendered, and device-safe.
@@ -109,6 +127,7 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Versioned appearanceVersion 1 adds bounded foreground/background colors, progress, and UTF-8 badges across the canonical schema, TypeScript/Ajv, Lua validation, and plugin rendering. The plugin emits escaped SVG decoration through supported setImage calls, clears stale decoration safely, serializes per-instance renders across status/reconnect races, and retains the previous complete appearance when clearing fails. Legacy title/state and offline fallbacks remain supported.
 
 ### CUS-004 — Success and error APIs
+
 - Status: done
 - Depends on: VSL-004
 - Acceptance: Instance context exposes success/error feedback with bounded duration, safe messages, and callback isolation.
@@ -117,6 +136,7 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Per-instance context success/error methods emit versioned feedback with safe UTF-8 messages and 100–10,000 ms durations. Lua and TypeScript validators agree on code-point bounds; the plugin correlates feedback by instance/action, shows message plus success/alert indicators, restores appearance after expiry, and isolates stale lifecycle, emitter, listener, SDK, and timer failures.
 
 ### CUS-005 — Per-instance state
+
 - Status: done
 - Depends on: VSL-003, VSL-006
 - Acceptance: Multiple placements of one action retain independent settings/state across profiles, devices, reconnects, and disappearance.
@@ -125,16 +145,18 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Bridge and action adapters key snapshots, settings, appearances, and lifecycle events by Stream Deck instance ID. Same-action placements retain independent profile/device settings through updates and reconnect replay; Lua contexts rebuild independently from replayed settings, disappear cleanly, reject stale input/appearance, and preserve other visible instances. Explicit stale action removals cannot erase a newer binding.
 
 ### CUS-006 — Better icon handling
+
 - Status: done
 - Depends on: CUS-003
 - Acceptance: Semantic bundled icons and validated custom SVG/image inputs render at supported sizes with safe fallbacks.
 - Commits: 589dbe3, 61f28bbb945867bbb3bfb99a83c90da3cfe22f8a, 9d17210, c3e70b8, 9b39ffe, ebcb7c9, f607d8f
-- Verification: `bun run check`; `bun test plugin/tests/protocol.test.ts plugin/tests/hammerspoon-action.test.ts` (35 pass, 153 expect calls); `mise exec -- lua hammerspoon/tests/run.lua` (41 pass); `bun run build`; independent verifier PASS on HEAD `f607d8f` across bundled fallback, valid 72/144 PNG/SVG, malformed/trailing PNG rejection, SVG parity, context delegation, action preservation, SDK fallback, and generated bundle/source-map reproducibility.
+- Verification: `bun run check`; `bun test plugin/tests/protocol.test.ts plugin/tests/hammerspoon-action.test.ts` (35 pass, 153 expect calls); `lua hammerspoon/tests/run.lua` (41 pass); `bun run build`; independent verifier PASS on HEAD `f607d8f` across bundled fallback, valid 72/144 PNG/SVG, malformed/trailing PNG rejection, SVG parity, context delegation, action preservation, SDK fallback, and generated bundle/source-map reproducibility.
 - Outcome: Versioned appearance icons accept semantic bundled slugs through the shipped `imgs/key.svg` fallback and bounded custom PNG/SVG data. TypeScript and Lua validate CRCs, dimensions, decoded PNG streams, consumed zlib data, canonical base64, and constrained SVG syntax with matching casing, bounds, text, and safety rules. Context delegates icon validation to the protocol; invalid icons preserve the previous complete appearance or safely clear to the SDK default, while titles/state remain coherent.
 
 ## Phase 4: Extended Stream Deck support
 
 ### EXT-001 — Key release
+
 - Status: done
 - Depends on: CUS-005
 - Acceptance: Release events preserve instance identity/order and invoke optional protected Lua callbacks.
@@ -143,14 +165,16 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Stream Deck onKeyUp events retain instance/action identity and order through HammerspoonAction, BridgeClient, the keyUp protocol schema, and Lua validation/dispatch. Optional release callbacks are validated as functions, omitted release is a no-op, and present callbacks run under xpcall with CALLBACK_FAILED reporting while keyDown/press behavior remains intact.
 
 ### EXT-002 — Long press
+
 - Status: done
 - Depends on: EXT-001
 - Acceptance: Configurable deterministic thresholds distinguish tap and long press without duplicate callbacks.
 - Commits: 5c28cea, f72f41f
-- Verification: `mise exec -- lua hammerspoon/tests/run.lua` (44 pass); Lua syntax/load check; `git diff --check`; post-fix regression covers stale/replaced timer callbacks, duplicate timer callbacks, tap/long classification, cancellation, and callback isolation. Independent verifier identified and the review fix corrected the superseded implementation's stale-timer duplicate gap.
+- Verification: `lua hammerspoon/tests/run.lua` (44 pass); Lua syntax/load check; `git diff --check`; post-fix regression covers stale/replaced timer callbacks, duplicate timer callbacks, tap/long classification, cancellation, and callback isolation. Independent verifier identified and the review fix corrected the superseded implementation's stale-timer duplicate gap.
 - Outcome: Optional `longPress` callbacks use bounded integer thresholds from 100–10,000 ms with a deterministic 500 ms default. Per-instance timers classify taps at key-up and long presses at threshold, preserve legacy immediate press behavior when unconfigured, cancel on key-up/disappear/settings replacement, and use generation and trigger guards to suppress stale or duplicate callbacks. Release and callback-error isolation remain protected.
 
 ### EXT-003 — Stream Deck+ encoders
+
 - Status: done
 - Depends on: EXT-005, CUS-005
 - Acceptance: Rotate and push events use versioned payloads, independent contexts, SDK-compliant layouts, and hardware-free tests.
@@ -159,6 +183,7 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Stream Deck+ encoder lifecycle and input events use authenticated versioned `dialDown`, `dialRotate`, and `dialUp` payloads. Dial actions receive SDK `$A1` layouts and per-instance settings/context; push falls back to `press`, rotation carries signed ticks and pressed state, and release remains optional and protected. Lua registry, context invocation, server dispatch, schema, plugin transport, generated artifact, docs, and hardware-free tests are synchronized.
 
 ### EXT-004 — Stream Deck+ touchscreen
+
 - Status: done
 - Depends on: EXT-003
 - Acceptance: Touch/tap events and LCD updates are validated, instance-aware, and tested behind SDK interfaces.
@@ -167,6 +192,7 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Added authenticated, instance-correlated `touchTap` events carrying validated `hold` and bounded Stream Deck+ `tapPos` coordinates through the SDK adapter, BridgeClient, protocol schema/Ajv, Lua validation, registry, and protected per-instance callback dispatch. Dial LCD appearance updates remain behind SDK `setFeedback` with hardware-free coverage; manifest trigger descriptions, docs, and generated artifacts are synchronized.
 
 ### EXT-005 — Device metadata
+
 - Status: done
 - Depends on: CUS-005
 - Acceptance: Context exposes stable, privacy-bounded device/controller metadata without leaking SDK objects into protocol modules.
@@ -175,6 +201,7 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Optional `instanceAppeared.metadata` carries a closed, protocol-owned controller/device DTO with lowercase enums, unknown-device fallback, and bounded dimensions. Hammerspoon contexts expose defensive `getDevice()` snapshots; repeated announcements update metadata without rerunning `appear`, and BridgeClient retains independent metadata through reconnect replay. SDK identifiers, names, connection state, actions, coordinates, and SDK objects never cross protocol modules.
 
 ### EXT-006 — Device-aware rendering
+
 - Status: done
 - Depends on: EXT-005, CUS-003
 - Acceptance: Presentation adapts deterministically to supported key/LCD sizes and falls back safely for unknown devices.
@@ -185,22 +212,25 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 ## Phase 5: Developer ecosystem
 
 ### ECO-001 — Lua helper components
+
 - Status: done
 - Depends on: CUS-004, CUS-005
 - Acceptance: Small composable helpers reduce common action boilerplate without hiding lifecycle or globalizing instance state.
 - Commits: b9c232e, 9f0ffe8
-- Verification: `mise exec -- lua hammerspoon/tests/run.lua` (46 pass); Lua syntax/load check; `git diff --check`; independent verifier PASS on all acceptance criteria for final HEAD `9f0ffe8` (parent `b9c232e`), including stale same-ID lifecycle isolation; focused Lua smoke PASS.
+- Verification: `lua hammerspoon/tests/run.lua` (46 pass); Lua syntax/load check; `git diff --check`; independent verifier PASS on all acceptance criteria for final HEAD `9f0ffe8` (parent `b9c232e`), including stale same-ID lifecycle isolation; focused Lua smoke PASS.
 - Outcome: Added `streamdeck.helpers.perInstanceState(initializer)` with closure-scoped, context-owned state and explicit appear/disappear callbacks, plus `refreshAfter(callback)` for successful callback refreshes with return/error preservation. The multi-instance example and Lua API docs demonstrate the helpers without hiding bridge lifecycle or globalizing instance state. Stale callbacks cannot read, write, or remove a replacement lifecycle reusing an instance ID.
 
 ### ECO-002 — Example action library
+
 - Status: done
 - Depends on: ECO-001
 - Acceptance: Tested examples cover common Hammerspoon watchers, application state, audio, and multi-instance patterns.
 - Commits: a08346a, 28e1e0a, 1c778f0, 3aecf84, 1ae73fc, a034901, 7402685, fcba1af
-- Verification: `bun run lua:check`; `mise exec -- lua hammerspoon/tests/run.lua` (46 pass, including 19 example cases); independent verifier PASS on all four acceptance dimensions and hardware-free/documentation criteria.
+- Verification: `bun run lua:check`; `lua hammerspoon/tests/run.lua` (46 pass, including 19 example cases); independent verifier PASS on all four acceptance dimensions and hardware-free/documentation criteria.
 - Outcome: The documented 15-example library covers application watchers and frontmost state, input-audio mute, and independent multi-instance state with fake-Hammerspoon tests. The microphone and meeting-mode examples use the input-specific mute APIs and reject failed operations without refreshing.
 
 ### ECO-003 — Packaging and installation
+
 - Status: done
 - Depends on: FND-004, VSL-007
 - Acceptance: Reproducible release artifacts install plugin and Lua library with version/checksum documentation and uninstall steps.
@@ -209,6 +239,7 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Added a Bun release command that builds and validates the pinned Stream Deck package, normalizes plugin and Lua archive metadata for repeatable bytes without leaving tracked build output changed, writes versioned artifacts and SHA256SUMS/RELEASE.json, and documents verified installation and uninstall flows.
 
 ### ECO-004 — Diagnostics
+
 - Status: done
 - Depends on: CUS-004, VSL-006
 - Acceptance: Redacted status output identifies auth, schema, reconnect, registry, and callback failures without secrets or stack traces.
@@ -217,6 +248,7 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Added a local BridgeClient diagnostics snapshot/event and `bridge-status` logger with bounded safe metadata, stable auth/schema/reconnect/registry/callback categories, canonical protocol messages, redaction, retry bounds, duplicate suppression, and shipped artifact parity. Authenticated auth and schema causes survive a later generic disconnect while later registry/callback failures supersede the preserved cause.
 
 ### ECO-005 — Protocol compatibility policy
+
 - Status: done
 - Depends on: FND-006, VSL-006
 - Acceptance: Policy defines additive/minor and breaking/major changes, negotiation, deprecation, fixtures, and supported-version windows.
@@ -225,6 +257,7 @@ Status: `done`, `ready`, `waiting`. Dependencies are task IDs; all acceptance cr
 - Outcome: Defined the v1 exact-version posture, additive/minor and breaking/major change classes, explicit future negotiation rules, deprecation lifecycle, positive fixture ownership under `protocol/examples/`, and current-plus-previous major support windows. Contributor workflow now requires compatibility classification and synchronized schema, fixture, and validator updates.
 
 ### ECO-006 — Contributor documentation
+
 - Status: done
 - Depends on: ECO-003, ECO-004, ECO-005
 - Acceptance: Contributor guide covers architecture changes, release workflow, protocol review, security reporting, and hardware-free verification.

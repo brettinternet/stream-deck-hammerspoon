@@ -39,7 +39,7 @@ Install the Lua module into Hammerspoon's standard module directory:
 ```sh
 mkdir -p "$HOME/.hammerspoon"
 tar -xzf stream-deck-hammerspoon-lua-<version>.tar.gz -C "$HOME/.hammerspoon"
-mise exec -- lua -e 'assert(loadfile(os.getenv("HOME") .. "/.hammerspoon/streamdeck/init.lua"))'
+lua -e 'assert(loadfile(os.getenv("HOME") .. "/.hammerspoon/streamdeck/init.lua"))'
 ```
 
 Reload Hammerspoon after installing the module. Keep the token at `$HOME/.hammerspoon/streamdeck-token` outside the release archive and preserve its mode `0600`.
