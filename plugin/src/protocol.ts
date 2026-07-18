@@ -695,6 +695,7 @@ function isSvgNumber(value: string): boolean {
 }
 
 function isSvgAttributeValue(name: string, value: string, rootSize?: 72 | 144): boolean {
+  // eslint-disable-next-line no-control-regex -- reject control characters in untrusted SVG attributes
   if (value.length > 4096 || /[<&>\u0000-\u001f\u007f-\u009f]/.test(value)) {
     return false;
   }
@@ -775,6 +776,7 @@ function sanitizeSvg(value: string): string | undefined {
   } catch {
     return undefined;
   }
+  // eslint-disable-next-line no-control-regex -- reject control characters in untrusted SVG input
   if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(svg)) {
     return undefined;
   }
