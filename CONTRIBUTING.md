@@ -10,6 +10,7 @@ Provision the pinned runtimes with mise and use Bun for all JavaScript package a
 
 ```sh
 mise install
+lefthook install
 bun install
 ```
 

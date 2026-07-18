@@ -20,6 +20,7 @@ Requirements: macOS, Hammerspoon, the official Stream Deck application, Stream D
 
 ```sh
 mise install
+lefthook install
 bun install
 bun run check
 bun run test
