@@ -2,7 +2,25 @@ name: CI
 
 on:
   push:
+    paths:
+      - "protocol/schema/**"
+      - "plugin/**"
+      - "hammerspoon/**"
+      - "scripts/**"
+      - "package.json"
+      - "bun.lock"
+      - "eslint.config.js"
+      - ".github/workflows/ci.yml"
   pull_request:
+    paths:
+      - "protocol/schema/**"
+      - "plugin/**"
+      - "hammerspoon/**"
+      - "scripts/**"
+      - "package.json"
+      - "bun.lock"
+      - "eslint.config.js"
+      - ".github/workflows/ci.yml"
 
 permissions:
   contents: read
