@@ -1,5 +1,7 @@
 # Stream Deck ↔ Hammerspoon
 
+[![CI](https://github.com/brettinternet/stream-deck-hammerspoon/actions/workflows/ci.yml/badge.svg)](https://github.com/brettinternet/stream-deck-hammerspoon/actions/workflows/ci.yml)
+
 An official Elgato Stream Deck plugin bridge for Hammerspoon. The plugin uses an authenticated, localhost-only WebSocket to send key and lifecycle events to a Hammerspoon Lua module; Hammerspoon returns registered actions and appearance updates.
 
 The official Stream Deck application remains the owner of plugin lifecycle, property inspectors, rendering, and hardware access. Keep it running during development and manual checks. Direct USB/HID or other hardware control is forbidden. This project does **not** replace the official application.
