@@ -204,6 +204,7 @@ The repository includes complete configuration snippets in `hammerspoon/examples
 - `application.lua` toggles the focused application's hidden state, retaining the hidden target for the next click, or toggles a configured running application by bundle ID; it refreshes from `hs.application.watcher` events.
 - `multi-instance.lua` keeps independent toggle state for each visible key and reads an optional per-instance `label` setting.
 - `focus-timer.lua` (`com.brettinternet.hammerspoon.focus-timer`) starts and stops a per-key 25-minute focus timer, showing `Focus` while it runs and returning to `Ready` when it expires; its per-instance lifecycle owns the timer and refreshes the key on start, stop, and expiry.
+- `pomodoro.lua` (`com.brettinternet.hammerspoon.pomodoro`) runs four per-key 25-minute focus cycles with short breaks and a final long break, showing each phase and refreshing immediately after presses and timer transitions.
 - `window-maximize.lua` (`com.brettinternet.hammerspoon.window-maximize`) shows the focused application's name and toggles its focused window between zoomed and normal states, reporting `No window` when no focused window is available; it demonstrates focused-window state checks, per-instance lifecycle, and protected operation errors.
 - `clipboard-clean.lua` (`com.brettinternet.hammerspoon.clipboard-clean`) reports when no text is available, then trims surrounding whitespace on press and refreshes the appearance; it demonstrates pasteboard read/write and appearance refresh.
 - `keyboard-layout.lua` (`com.brettinternet.hammerspoon.keyboard-layout`) toggles between two keyboard layouts using `hs.keycodes`, defaults to `U.S.` and `Dvorak` when settings are absent, and refreshes the pressed key after a successful switch.
@@ -216,9 +217,9 @@ The repository includes complete configuration snippets in `hammerspoon/examples
 - `meeting-mode.lua` (`com.brettinternet.hammerspoon.meeting-mode`) coordinates microphone input mute and display-idle prevention as one global mode, refreshing every visible instance only after both changes succeed.
 - `lock-screen.lua` (`com.brettinternet.hammerspoon.lock-screen`) provides a one-shot privacy key through `hs.caffeinate.lockScreen` without pretending the locked state is observable.
 
-Copy any of the fifteen files into `~/.hammerspoon` or adapt it in your existing configuration. Each file registers a namespaced action for the generic Stream Deck action; select that registered action ID in the property inspector. The official bridge owns the connection, so the examples use `require("streamdeck")`, never `hs.streamdeck` or direct hardware access. The current v1 inspector edits `actionId` only, so settings-based examples use their documented defaults unless their settings are supplied by an adapted configuration.
+Copy any of the sixteen files into `~/.hammerspoon` or adapt it in your existing configuration. Each file registers a namespaced action for the generic Stream Deck action; select that registered action ID in the property inspector. The official bridge owns the connection, so the examples use `require("streamdeck")`, never `hs.streamdeck` or direct hardware access. The current v1 inspector edits `actionId` only, so settings-based examples use their documented defaults unless their settings are supplied by an adapted configuration.
 
-All fifteen examples are hardware-free and use ordinary Hammerspoon APIs; they can be copied or adapted without a connected Stream Deck. They run without Hammerspoon or hardware in the repository's Lua test harness.
+All sixteen examples are hardware-free and use ordinary Hammerspoon APIs; they can be copied or adapted without a connected Stream Deck. They run without Hammerspoon or hardware in the repository's Lua test harness.
 
 ## Complete example: microphone mute
 

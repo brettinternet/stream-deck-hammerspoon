@@ -648,6 +648,8 @@ dofile("hammerspoon/tests/window-center-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/meeting-mode-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
+dofile("hammerspoon/tests/pomodoro-example.lua")(
+  test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/lock-screen-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 
