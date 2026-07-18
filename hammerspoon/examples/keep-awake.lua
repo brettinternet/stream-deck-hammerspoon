@@ -6,6 +6,43 @@ local streamdeck = require("streamdeck")
 local action_id = "com.brettinternet.hammerspoon.keep-awake"
 local idle_type = "displayIdle"
 
+local base64_characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local function base64_encode(value)
+  local encoded = {}
+  for index = 1, #value, 3 do
+    local first = value:byte(index)
+    local second = value:byte(index + 1)
+    local third = value:byte(index + 2)
+    local combined = first * 65536 + (second or 0) * 256 + (third or 0)
+
+    encoded[#encoded + 1] = base64_characters:sub(math.floor(combined / 262144) % 64 + 1, math.floor(combined / 262144) % 64 + 1)
+    encoded[#encoded + 1] = base64_characters:sub(math.floor(combined / 4096) % 64 + 1, math.floor(combined / 4096) % 64 + 1)
+    encoded[#encoded + 1] = second and base64_characters:sub(math.floor(combined / 64) % 64 + 1, math.floor(combined / 64) % 64 + 1) or "="
+    encoded[#encoded + 1] = third and base64_characters:sub(combined % 64 + 1, combined % 64 + 1) or "="
+    if not second then
+      encoded[#encoded - 2] = "="
+    end
+  end
+  return table.concat(encoded)
+end
+
+local awake_icon = {
+  kind = "custom",
+  mediaType = "image/svg+xml",
+  dataBase64 = base64_encode(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><rect x="5" y="7" width="62" height="46" rx="7" fill="#064E3B"/><rect x="11" y="13" width="50" height="34" rx="3" fill="#34D399"/><path d="M18 59h36M36 53v6" stroke="#A7F3D0" stroke-width="4" stroke-linecap="round"/><path d="M36 19v10M31 24h10" stroke="#064E3B" stroke-width="3" stroke-linecap="round"/></svg>'
+  ),
+}
+
+local allow_sleep_icon = {
+  kind = "custom",
+  mediaType = "image/svg+xml",
+  dataBase64 = base64_encode(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><circle cx="36" cy="36" r="25" fill="#1E293B"/><circle cx="43" cy="29" r="19" fill="#64748B"/><circle cx="48" cy="24" r="19" fill="#1E293B"/><circle cx="20" cy="21" r="2" fill="#F8FAFC"/><circle cx="54" cy="51" r="2" fill="#F8FAFC"/><path d="M19 50l5 5M24 50l-5 5" stroke="#CBD5E1" stroke-width="3" stroke-linecap="round"/></svg>'
+  ),
+}
+
+
 local function caffeinate_api()
   if type(hs) ~= "table"
     or type(hs.caffeinate) ~= "table"
@@ -33,16 +70,27 @@ streamdeck.register({
   name = "Keep awake",
 
   appearance = function(_context)
-    if display_idle_state() then
+    local enabled = display_idle_state()
+    if enabled then
       return {
         title = "Awake",
         state = "active",
+        appearanceVersion = 1,
+        foregroundColor = "#D1FAE5",
+        backgroundColor = "#064E3B",
+        badge = "ON",
+        icon = awake_icon,
       }
     end
 
     return {
       title = "Allow sleep",
       state = "inactive",
+      appearanceVersion = 1,
+      foregroundColor = "#E2E8F0",
+      backgroundColor = "#1E293B",
+      badge = "OFF",
+      icon = allow_sleep_icon,
     }
   end,
 
