@@ -9,6 +9,17 @@ bun run release
 
 The release version is read from `plugin/com.brettinternet.hammerspoon.sdPlugin/manifest.json` and must use the four-part form required by the Stream Deck CLI (for example, `1.2.3.4`). The command does not change source files or version declarations. Update the manifest version as part of a release change, then commit that change with the release source. Build output is written to `dist/releases/<version>/`, which is ignored by Git.
 
+## Publish a GitHub release
+
+The GitHub Actions release workflow runs when a `v*` tag is pushed. The tag must exactly match the manifest version, including the required four-part format:
+
+```sh
+git tag v1.2.3.4
+git push origin v1.2.3.4
+```
+
+The workflow runs `bun run release`, includes the generated SHA-256 checksums, and publishes every file from `dist/releases/<version>/` to the GitHub release. It uses GitHub's generated release notes; no release is created for ordinary branch pushes or pull requests.
+
 Each release directory contains:
 
 - `<plugin UUID>-<version>.streamDeckPlugin` — the official Stream Deck package.
