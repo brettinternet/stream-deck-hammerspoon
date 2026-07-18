@@ -70,13 +70,14 @@ This is a syntax/load check only; it does not start Hammerspoon or exercise the 
 
 Use the official Stream Deck CLI through Bun's package runner, with the CLI version locked by this repository (`@elgato/cli` 1.7.4). The executable is `streamdeck`; `link` is the CLI's install operation. Run these from the repository root after a successful build:
 
+```sh
 bunx --package @elgato/cli@1.7.4 streamdeck validate plugin/com.brettinternet.hammerspoon.sdPlugin
 bunx --package @elgato/cli@1.7.4 streamdeck pack plugin/com.brettinternet.hammerspoon.sdPlugin
 bunx --package @elgato/cli@1.7.4 streamdeck link plugin/com.brettinternet.hammerspoon.sdPlugin
 bunx --package @elgato/cli@1.7.4 streamdeck restart com.brettinternet.hammerspoon
 bunx --package @elgato/cli@1.7.4 streamdeck dev
 
-````
+```
 
 `validate` checks the compiled plugin. `pack` (also named `bundle` by the CLI) creates the distributable `.streamDeckPlugin` package. `link` installs the plugin by linking the compiled directory into the official Stream Deck application. `restart` reloads the installed plugin. `dev` enables developer mode, which permits debugger attachment and property-inspector debugging; it is not a `--debug` plugin runner. Use the Node inspector or an IDE debugger to attach after enabling developer mode. Consult `bunx --package @elgato/cli@1.7.4 streamdeck --help` for version-specific options.
 
@@ -89,7 +90,7 @@ Authentication is required; there is no unauthenticated fallback. On first start
 
 ```text
 ~/.hammerspoon/streamdeck-token
-````
+```
 
 The file must be readable only by the current user (`chmod 0600`). The plugin reads this runtime file when it connects. Never put the token in Stream Deck settings, source control, command-line arguments, screenshots, or logs. Never paste it into an issue or chat transcript. Session IDs are separate fresh opaque values: they are generated per accepted hello, kept only in memory, rotated on reconnect/plugin restart, and never logged or persisted.
 
