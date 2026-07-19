@@ -1350,6 +1350,22 @@ test("helper components isolate state and refresh only after success", function(
   assertEqual(refreshes, 1, "failed callback must not refresh")
   assertFalse(pcall(Helpers.refreshAfter, "not a function"))
 end)
+test("SVG helper wraps canonical base64 custom icons", function()
+  local vectors = {
+    { "", "" },
+    { "f", "Zg==" },
+    { "fo", "Zm8=" },
+    { "foo", "Zm9v" },
+  }
+  for _, vector in ipairs(vectors) do
+    local icon = Helpers.svg(vector[1])
+    assertEqual(icon.kind, "custom")
+    assertEqual(icon.mediaType, "image/svg+xml")
+    assertEqual(icon.dataBase64, vector[2])
+  end
+  assertFalse(pcall(Helpers.svg, 123), "SVG helper must reject non-string input")
+end)
+
 
 
 test("requestAppearance refreshes an instance without pressing it", function()

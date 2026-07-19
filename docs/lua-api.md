@@ -103,6 +103,11 @@ The optional `streamdeck.helpers` module provides small components for common pe
 
 Returns a state component with `appear`, `disappear`, `get`, and `set` functions. The initializer runs once for each context on its first `appear(context)`. Repeated appearances preserve that context's value, `disappear(context)` removes only that active context, and `get`/`set` can be used from the other action callbacks. Entries are bound to the context table as well as its instance ID, so stale callbacks cannot read, write, or remove a replacement lifecycle that reuses an ID. The initializer and every component context must be valid, and initializer errors remain callback errors.
 
+### `helpers.svg(svg)`
+
+Returns a custom SVG icon table with canonical padded base64 in `dataBase64`. The `svg` argument must be a string; bytes are encoded as-is, without markup sanitization. The normal appearance validator still applies its bounded safe-SVG profile before the icon is sent to the plugin.
+
+
 ### `helpers.refreshAfter(callback)`
 
 Returns a callback wrapper that invokes `callback(context, ...)`, refreshes that same context once after a successful callback, and returns the callback's values unchanged. Errors propagate without refreshing. The callback must be a function.

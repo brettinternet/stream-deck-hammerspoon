@@ -1,4 +1,36 @@
 local helpers = {}
+local base64Characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+local function base64Encode(value)
+  local encoded = {}
+  for index = 1, #value, 3 do
+    local first = value:byte(index)
+    local second = value:byte(index + 1)
+    local third = value:byte(index + 2)
+    local combined = first * 65536 + (second or 0) * 256 + (third or 0)
+    local firstDigit = math.floor(combined / 262144) % 64
+    local secondDigit = math.floor(combined / 4096) % 64
+    local thirdDigit = math.floor(combined / 64) % 64
+    local fourthDigit = combined % 64
+
+    encoded[#encoded + 1] = base64Characters:sub(firstDigit + 1, firstDigit + 1)
+    encoded[#encoded + 1] = base64Characters:sub(secondDigit + 1, secondDigit + 1)
+    encoded[#encoded + 1] = second and base64Characters:sub(thirdDigit + 1, thirdDigit + 1) or "="
+    encoded[#encoded + 1] = third and base64Characters:sub(fourthDigit + 1, fourthDigit + 1) or "="
+  end
+  return table.concat(encoded)
+end
+
+function helpers.svg(svg)
+  if type(svg) ~= "string" then
+    error("Stream Deck SVG helper expects a string", 2)
+  end
+  return {
+    kind = "custom",
+    mediaType = "image/svg+xml",
+    dataBase64 = base64Encode(svg),
+  }
+end
 
 local function validateContext(context)
   if type(context) ~= "table" or type(context.instanceId) ~= "string" or context.instanceId == "" then
