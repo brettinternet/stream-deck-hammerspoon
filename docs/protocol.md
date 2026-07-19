@@ -12,7 +12,7 @@ This document is the wire contract for the first bridge slice. It describes JSON
 - Because `hs.httpserver` does not provide reliable close identity, Lua cannot bind authorization to a transport-close callback. The rotating `sessionId` binds every application message instead: closing/reconnecting clears contexts, and an old ID is rejected even if a stale client can still write.
 - The token is read by the plugin from `~/.hammerspoon/streamdeck-token` by default and is created by Lua from two UUIDs with mode `0600`. It is an opaque shared value on the wire. It is never logged, put in Stream Deck settings, or included in an error.
 
-The Stream Deck action UUID is the single generic UUID `com.brettinternet.hammerspoon.action`. Protocol `actionId` values identify registered Hammerspoon actions and are separate from that Stream Deck UUID.
+The Stream Deck manifest exposes the generic button UUID `com.brettinternet.hammerspoon.button` and toggle UUID `com.brettinternet.hammerspoon.action`. Both can select any registered Hammerspoon action. Protocol `actionId` values identify those Lua registrations and are separate from either Stream Deck UUID.
 
 ## Envelope and common constraints
 

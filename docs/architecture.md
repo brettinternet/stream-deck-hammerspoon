@@ -11,7 +11,7 @@ This document is the architecture contract for protocol v1 and the first vertica
 The Stream Deck application and the official plugin own all Stream Deck-facing concerns:
 
 - the plugin UUID is `com.brettinternet.hammerspoon`;
-- the one keypad action UUID is `com.brettinternet.hammerspoon.action`;
+- the generic action UUIDs are `com.brettinternet.hammerspoon.button` for one-state buttons and `com.brettinternet.hammerspoon.action` for two-state toggles;
 - device connection, key lifecycle events, titles, state, icons, and per-instance settings stay in the official plugin;
 - the property inspector uses the official Stream Deck UI WebSocket and custom `sendToPlugin` events;
 - the compiled plugin is installed and managed as an Elgato `.sdPlugin`.
@@ -92,7 +92,7 @@ Every protocol message has `protocolVersion: 1` and a `type`. After `helloAck`, 
 ## Identity and state ownership
 
 - **Plugin identity:** `com.brettinternet.hammerspoon` identifies the official plugin.
-- **Action identity:** `com.brettinternet.hammerspoon.action` is the single generic keypad action UUID. It is not one UUID per Lua action.
+- **Action identity:** `com.brettinternet.hammerspoon.button` is the generic one-state action UUID and `com.brettinternet.hammerspoon.action` is the generic two-state toggle UUID. Neither is one UUID per Lua action.
 - **Lua action identity:** each registered Lua definition has an explicit, stable `actionId`. Duplicate IDs are rejected. Titles, key positions, and array order are never identifiers.
 - **Instance identity:** each configured Stream Deck key is represented by its Stream Deck-provided `instanceId`. The plugin retains visible instance metadata; the Lua registry keeps independent contexts keyed by instance identity. Multiple instances may select the same or different stable Lua `actionId`s.
 - **Settings:** the property inspector stores the selected `actionId` in Stream Deck per-instance settings. For initial action events, the plugin reads real Stream Deck settings from `actionInfo.payload.settings`; it uses that setting when sending lifecycle and key events. A repeated `instanceAppeared` updates the existing context's settings instead of creating a second appearance lifecycle.
@@ -185,13 +185,13 @@ Each record is intentionally short but complete. Reversibility describes what ca
 - **Tradeoffs / consequences:** The boundary remains small, testable, and preserves official plugin ownership. Optional decoration is bounded and safely escaped, while malformed appearances are rejected. Rendering and action behavior remain separate, so appearance can be refreshed without pressing a key.
 - **Reversibility:** New appearance fields can be added as a later versioned schema extension. Changing existing field meaning or moving rendering responsibility to Lua requires a protocol and ownership decision.
 
-### ADR-004: One generic action UUID
+### ADR-004: Generic button and toggle UUIDs
 
-- **Problem:** Lua users can register many actions without rebuilding or publishing a new Stream Deck action for each one.
-- **Choice:** Ship one keypad action UUID, `com.brettinternet.hammerspoon.action`; the selected stable Lua `actionId` is stored in per-instance settings.
-- **Alternatives:** One Stream Deck UUID per Lua action; a generated action manifest; hard-coded action names inferred from titles.
-- **Tradeoffs / consequences:** The plugin and manifest stay stable and the Lua registry remains extensible, but the property inspector must present the action registry and report unavailable IDs. Explicit IDs are required; titles and positions cannot identify behavior.
-- **Reversibility:** Additional Stream Deck action UUIDs can coexist in a later manifest, but changing the existing UUID or settings identity requires migration and is not reversible within v1.
+- **Problem:** Lua users can register many actions without rebuilding or publishing a new Stream Deck action for each one, but Stream Deck must know whether to offer one configurable image or separate inactive and active images.
+- **Choice:** Ship one generic button UUID, `com.brettinternet.hammerspoon.button`, and retain `com.brettinternet.hammerspoon.action` as the generic toggle UUID. Both store the selected stable Lua `actionId` in per-instance settings.
+- **Alternatives:** One Stream Deck UUID per Lua action; a generated action manifest; one two-state action for every behavior; hard-coded action names inferred from titles.
+- **Tradeoffs / consequences:** The Lua registry remains extensible and existing toggle profiles keep their UUID. Users choose the presentation type when adding a key, and the shared property inspector must target the UUID of the inspected action.
+- **Reversibility:** Additional generic presentation types can coexist in a later manifest, but changing either existing UUID or settings identity requires migration.
 
 ### ADR-005: Bun monorepo with separated source and artifact trees
 

@@ -53,7 +53,7 @@
     let bridgeDiagnostics;
     let bridgeActions = [];
     let inspectorSocketReady = false;
-    const ACTION_UUID = "com.brettinternet.hammerspoon.action";
+    const DEFAULT_ACTION_UUID = "com.brettinternet.hammerspoon.action";
     const SETUP_GUIDE_URL = "https://github.com/brettinternet/stream-deck-hammerspoon/blob/main/docs/setup.md";
     function isJsonObject(value) {
         return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -210,7 +210,7 @@
             return;
         }
         connection.socket.send(JSON.stringify({
-            action: ACTION_UUID,
+            action: connection.action,
             event: "setSettings",
             context: connection.context,
             payload: settings,
@@ -624,6 +624,9 @@
     }
     function connectElgatoStreamDeckSocket(port, uuid, registerEvent, _info, actionInfo) {
         const parsedActionInfo = parseJsonObject(actionInfo);
+        const action = typeof parsedActionInfo.action === "string" && parsedActionInfo.action.length > 0
+            ? parsedActionInfo.action
+            : DEFAULT_ACTION_UUID;
         const context = uuid;
         const previousConnection = inspectorConnection;
         inspectorConnection = undefined;
@@ -648,7 +651,7 @@
             return;
         }
         const socket = new Socket(`ws://127.0.0.1:${port}`);
-        const connection = { socket, context };
+        const connection = { socket, action, context };
         inspectorConnection = connection;
         socket.onopen = () => {
             if (inspectorConnection !== connection) {

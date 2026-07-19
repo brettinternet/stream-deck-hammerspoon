@@ -19751,6 +19751,7 @@ function cloneJsonValue(value) {
     return value;
 }
 const HAMMERSPOON_ACTION_UUID = "com.brettinternet.hammerspoon.action";
+const HAMMERSPOON_BUTTON_UUID = "com.brettinternet.hammerspoon.button";
 function escapeXml(value) {
     return value.replace(/[&<>"']/g, (character) => ({
         "&": "&amp;",
@@ -19953,16 +19954,19 @@ function isRequestStateMessage(value) {
 /** Bridges the official generic keypad action to one shared Hammerspoon connection. */
 class HammerspoonAction extends SingletonAction {
     bridge;
-    manifestId = HAMMERSPOON_ACTION_UUID;
+    manifestId;
     instances = new Map();
     synchronized = new Set();
     renderQueues = new Map();
     scheduleTimeout;
     cancelTimeout;
+    mode;
     subscribed = false;
     constructor(bridge, options = {}) {
         super();
         this.bridge = bridge;
+        this.manifestId = options.manifestId ?? HAMMERSPOON_ACTION_UUID;
+        this.mode = options.mode ?? "toggle";
         this.scheduleTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
         this.cancelTimeout = options.clearTimeout ?? ((handle) => clearTimeout(handle));
     }
@@ -20025,7 +20029,7 @@ class HammerspoonAction extends SingletonAction {
             metadata,
             renderingProfile,
             settings,
-            imageApplied: previous?.imageApplied ?? false,
+            imageAppliedStates: new Set(previous?.imageAppliedStates),
         });
         this.synchronized.delete(instanceId);
         await this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
@@ -20073,7 +20077,7 @@ class HammerspoonAction extends SingletonAction {
             metadata,
             renderingProfile,
             settings,
-            imageApplied: previous?.imageApplied ?? false,
+            imageAppliedStates: new Set(previous?.imageAppliedStates),
         });
         this.synchronized.delete(instanceId);
         this.cancelFeedbackTimer(previous);
@@ -20178,23 +20182,23 @@ class HammerspoonAction extends SingletonAction {
             return;
         }
         if (!instance.actionId) {
-            if (instance.action.isKey() && !(await this.clearImage(instance))) {
-                return;
+            if (instance.action.isKey()) {
+                const stateApplied = await this.setState(instance.action, 0);
+                if (stateApplied && !(await this.clearImage(instance, 0))) {
+                    return;
+                }
             }
             await this.setActionTitle(instance.action, "Select action", instance.renderingProfile);
-            if (instance.action.isKey()) {
-                await this.setState(instance.action, 0);
-            }
             return;
         }
         if (this.bridge.status !== "connected" || !this.synchronized.has(instanceId)) {
-            if (instance.action.isKey() && !(await this.clearImage(instance))) {
-                return;
+            if (instance.action.isKey()) {
+                const stateApplied = await this.setState(instance.action, 0);
+                if (stateApplied && !(await this.clearImage(instance, 0))) {
+                    return;
+                }
             }
             await this.setActionTitle(instance.action, disconnectedTitle(this.bridge.status), instance.renderingProfile);
-            if (instance.action.isKey()) {
-                await this.setState(instance.action, 0);
-            }
             return;
         }
         await this.setActionTitle(instance.action, "Hammerspoon", instance.renderingProfile);
@@ -20244,13 +20248,20 @@ class HammerspoonAction extends SingletonAction {
             await this.alert(instance.action);
             return;
         }
-        if (!(await this.applyImage(instance, image))) {
+        const targetState = this.mode === "toggle" ? appearance.state : 0;
+        const previousState = instance.lastAppearance?.state ?? 0;
+        if (this.mode === "toggle" && !(await this.setState(instance.action, targetState))) {
+            return;
+        }
+        if (!(await this.applyImage(instance, image, targetState))) {
+            if (this.mode === "toggle") {
+                await this.setState(instance.action, previousState);
+            }
             return;
         }
         instance.lastAppearance = appearance;
         this.synchronized.add(appearance.instanceId);
         await this.setActionTitle(instance.action, appearance.title, instance.renderingProfile);
-        await this.setState(instance.action, appearance.state);
     }
     async renderFeedback(feedback) {
         const instance = this.instances.get(feedback.instanceId);
@@ -20308,32 +20319,29 @@ class HammerspoonAction extends SingletonAction {
         }
         instance.feedbackTimer = undefined;
     }
-    async clearImage(instance) {
-        if (!instance.action.isKey() || !instance.imageApplied) {
+    async clearImage(instance, state) {
+        if (!instance.action.isKey() || !instance.imageAppliedStates.has(state)) {
             return true;
         }
-        if (await this.setImage(instance.action, undefined)) {
-            instance.imageApplied = false;
+        if (await this.setImage(instance.action, undefined, this.mode === "toggle" ? state : undefined)) {
+            instance.imageAppliedStates.delete(state);
             return true;
         }
         return false;
     }
-    async applyImage(instance, image) {
+    async applyImage(instance, image, state) {
         if (!instance.action.isKey()) {
             return true;
         }
         if (image === undefined) {
-            return this.clearImage(instance);
+            return this.clearImage(instance, state);
         }
-        if (!(await this.clearImage(instance))) {
-            return false;
-        }
-        if (await this.setImage(instance.action, image)) {
-            instance.imageApplied = true;
+        if (await this.setImage(instance.action, image, this.mode === "toggle" ? state : undefined)) {
+            instance.imageAppliedStates.add(state);
             return true;
         }
-        if (await this.setImage(instance.action, undefined)) {
-            instance.imageApplied = false;
+        if (await this.setImage(instance.action, undefined, this.mode === "toggle" ? state : undefined)) {
+            instance.imageAppliedStates.delete(state);
             return true;
         }
         return false;
@@ -20410,9 +20418,9 @@ class HammerspoonAction extends SingletonAction {
             return false;
         }
     }
-    async setImage(action, image) {
+    async setImage(action, image, state) {
         try {
-            await action.setImage(image);
+            await action.setImage(image, state === undefined ? undefined : { state });
             return true;
         }
         catch {
@@ -20431,9 +20439,11 @@ class HammerspoonAction extends SingletonAction {
     async setState(action, state) {
         try {
             await action.setState(state);
+            return true;
         }
         catch {
             await this.alert(action);
+            return false;
         }
     }
     async alert(action) {
@@ -20474,9 +20484,15 @@ const bridge = new BridgeClient({
     pluginVersion: PLUGIN_VERSION,
     logger: (line) => streamDeck.logger.info(line),
 });
-const hammerspoonAction = new HammerspoonAction(bridge);
-hammerspoonAction.subscribe();
-streamDeck.actions.registerAction(hammerspoonAction);
+const hammerspoonToggle = new HammerspoonAction(bridge);
+const hammerspoonButton = new HammerspoonAction(bridge, {
+    manifestId: HAMMERSPOON_BUTTON_UUID,
+    mode: "button",
+});
+hammerspoonToggle.subscribe();
+hammerspoonButton.subscribe();
+streamDeck.actions.registerAction(hammerspoonToggle);
+streamDeck.actions.registerAction(hammerspoonButton);
 bridge.start();
 streamDeck.connect();
 

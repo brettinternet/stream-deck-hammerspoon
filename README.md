@@ -9,7 +9,7 @@ The official Stream Deck application remains the owner of plugin lifecycle, prop
 
 ## What this is and is not
 
-- One generic action, `com.brettinternet.hammerspoon.action`, points a Stream Deck instance at a registered Hammerspoon action.
+- Two generic actions point a Stream Deck instance at any registered Hammerspoon action: **Hammerspoon Button** has one configurable image, while **Hammerspoon Toggle** has inactive and active images.
 - `hammerspoon/streamdeck/` is the reusable Lua API (`register`, `start`, `stop`, `refresh`, and context helpers).
 - `protocol/schema/` is the canonical protocol-v1 JSON Schema.
 - `plugin/` contains TypeScript and the compiled official plugin layout.
@@ -39,7 +39,7 @@ The installer builds, validates, links, and restarts the plugin, symlinks the Lu
 
 The bridge creates `~/.hammerspoon/streamdeck-token` on its first successful start; it contains two UUIDs and must remain mode `0600`. Never commit or log it. Follow [the development guide](docs/development.md) for the release installation flow and manual vertical slice.
 
-For the smallest working example, start with the registration and context example in [the Lua API guide](docs/lua-api.md), then add the generic action in the official Stream Deck application and select its registered action ID in the property inspector. The development guide describes the expected key press, appearance, and reconnect observations.
+For the smallest working example, start with the registration and context example in [the Lua API guide](docs/lua-api.md), then add a Hammerspoon Button or Hammerspoon Toggle in the official Stream Deck application and select its registered action ID in the property inspector. Use Toggle when the Lua appearance's `state` should select separate inactive and active images.
 
 ## Architecture and protocol
 
@@ -57,7 +57,7 @@ Read the design records before changing a boundary:
 
 ## Current limitations and roadmap
 
-Version 1 supports title and Stream Deck state (`0`/`1`) appearance, one generic action, one local client, and a plain TypeScript/HTML property inspector that stores an `actionId`. Hardware/UI completion requires a connected Stream Deck and active property inspector; core behavior can be verified with fake transports, tests, Lua load checks, and official CLI validation.
+Version 1 supports title and Stream Deck state (`0`/`1`) appearance, generic one-state button and two-state toggle actions, one local client, and a plain TypeScript/HTML property inspector that stores an `actionId`. Hardware/UI completion requires a connected Stream Deck and active property inspector; core behavior can be verified with fake transports, tests, Lua load checks, and official CLI validation.
 
 The near-term roadmap is to stabilize this v1 contract, improve diagnostics without exposing secrets, and expand inspector behavior only through a reviewed protocol/API change. No roadmap item permits bypassing the official Stream Deck application or adding direct hardware control.
 

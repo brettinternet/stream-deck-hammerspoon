@@ -85,7 +85,7 @@ local streamdeck = require("streamdeck")
 streamdeck.start()
 ```
 
-Add that configuration to `~/.hammerspoon/init.lua`, register your actions, and reload Hammerspoon. Then add the Hammerspoon Action in Stream Deck and select a registered action ID in its inspector.
+Add that configuration to `~/.hammerspoon/init.lua`, register your actions, and reload Hammerspoon. Then add a Hammerspoon Button or Hammerspoon Toggle in Stream Deck and select a registered action ID in its inspector.
 
 ## Official CLI flow
 
@@ -147,7 +147,7 @@ The complete hardware-facing slice cannot be automated without a connected Strea
 2. Run the Lua load check and link or copy `hammerspoon/streamdeck/` into `~/.hammerspoon/`.
 3. Ensure `~/.hammerspoon/streamdeck-token` exists with mode `0600`; start/reload Hammerspoon and start the bridge with its configured action registration, using the default endpoint `ws://localhost:17321/streamdeck` when checking the bridge connection.
 4. Validate, pack, install, and restart the plugin with the official CLI commands above. Leave the official Stream Deck application running.
-5. On the official Stream Deck, add the generic action `com.brettinternet.hammerspoon.action` to a key. For the initial action event, confirm the plugin reads settings from Stream Deck's `actionInfo.payload.settings`; select a registered action ID in its property inspector and save it to that instance's settings.
+5. On the official Stream Deck, add **Hammerspoon Button** (`com.brettinternet.hammerspoon.button`) or **Hammerspoon Toggle** (`com.brettinternet.hammerspoon.action`) to a key. For the initial action event, confirm the plugin reads settings from Stream Deck's `actionInfo.payload.settings`; select a registered action ID in its property inspector and save it to that instance's settings.
 6. Press and release the key. Confirm the registered Hammerspoon callback runs and that the key renders the configured title and state (`0` or `1`).
 7. Confirm the offline/reconnect path by reloading Hammerspoon: the key should temporarily show `Hammerspoon Offline`, then reconnect, receive a fresh `helloAck.sessionId`, refresh the action list, resend visible instances with that ID, and restore appearance.
 8. Stop and restart only the bridge/plugin as needed; do not use direct hardware APIs or a second hardware controller.

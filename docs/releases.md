@@ -56,7 +56,7 @@ chmod +x stream-deck-hammerspoon-install.sh
 
 The installer preserves previous managed modules under `~/.hammerspoon/.streamdeck-backups/`; reinstall an earlier archive or use `--rollback` to recover a previous version. It never edits `~/.hammerspoon/init.lua` or touches `$HOME/.hammerspoon/streamdeck-token`.
 
-Follow the [stable setup guide](setup.md) to configure and reload Hammerspoon, then add the generic action in Stream Deck.
+Follow the [stable setup guide](setup.md) to configure and reload Hammerspoon, then add a Hammerspoon Button or Hammerspoon Toggle in Stream Deck.
 
 ## Uninstall
 

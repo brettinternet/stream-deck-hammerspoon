@@ -113,6 +113,7 @@ function cloneJsonValue(value: JsonValue): JsonValue {
 }
 
 export const HAMMERSPOON_ACTION_UUID = "com.brettinternet.hammerspoon.action";
+export const HAMMERSPOON_BUTTON_UUID = "com.brettinternet.hammerspoon.button";
 
 function escapeXml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -338,7 +339,7 @@ type TrackedInstance = {
   renderingProfile?: RenderingProfile;
   encoderLayout?: "$A0" | "$A1";
   settings: HammerspoonActionSettings;
-  imageApplied: boolean;
+  imageAppliedStates: Set<0 | 1>;
 };
 type RequestStateMessage = {
   type: "requestState";
@@ -350,18 +351,21 @@ function isRequestStateMessage(value: JsonValue): value is RequestStateMessage {
 }
 
 type HammerspoonActionOptions = {
-  setTimeout?: (callback: () => void, delay: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
+  manifestId?: string;
+  mode?: "button" | "toggle";
+  setTimeout?: (callback: () => void, delay: number) => unknown;
 };
 
 /** Bridges the official generic keypad action to one shared Hammerspoon connection. */
 export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings> {
-  public override readonly manifestId = HAMMERSPOON_ACTION_UUID;
+  public override readonly manifestId: string;
   private readonly instances = new Map<string, TrackedInstance>();
   private readonly synchronized = new Set<string>();
   private readonly renderQueues = new Map<string, Promise<void>>();
   private readonly scheduleTimeout: (callback: () => void, delay: number) => unknown;
   private readonly cancelTimeout: (handle: unknown) => void;
+  private readonly mode: "button" | "toggle";
   private subscribed = false;
 
   public constructor(
@@ -369,6 +373,8 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     options: HammerspoonActionOptions = {},
   ) {
     super();
+    this.manifestId = options.manifestId ?? HAMMERSPOON_ACTION_UUID;
+    this.mode = options.mode ?? "toggle";
     this.scheduleTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
     this.cancelTimeout = options.clearTimeout ?? ((handle) => clearTimeout(handle as NodeJS.Timeout));
   }
@@ -436,7 +442,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       metadata,
       renderingProfile,
       settings,
-      imageApplied: previous?.imageApplied ?? false,
+      imageAppliedStates: new Set(previous?.imageAppliedStates),
     });
     this.synchronized.delete(instanceId);
     await this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
@@ -487,7 +493,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       metadata,
       renderingProfile,
       settings,
-      imageApplied: previous?.imageApplied ?? false,
+      imageAppliedStates: new Set(previous?.imageAppliedStates),
     });
     this.synchronized.delete(instanceId);
     this.cancelFeedbackTimer(previous);
@@ -621,28 +627,28 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
 
     if (!instance.actionId) {
-      if (instance.action.isKey() && !(await this.clearImage(instance))) {
-        return;
+      if (instance.action.isKey()) {
+        const stateApplied = await this.setState(instance.action, 0);
+        if (stateApplied && !(await this.clearImage(instance, 0))) {
+          return;
+        }
       }
       await this.setActionTitle(instance.action, "Select action", instance.renderingProfile);
-      if (instance.action.isKey()) {
-        await this.setState(instance.action, 0);
-      }
       return;
     }
 
     if (this.bridge.status !== "connected" || !this.synchronized.has(instanceId)) {
-      if (instance.action.isKey() && !(await this.clearImage(instance))) {
-        return;
+      if (instance.action.isKey()) {
+        const stateApplied = await this.setState(instance.action, 0);
+        if (stateApplied && !(await this.clearImage(instance, 0))) {
+          return;
+        }
       }
       await this.setActionTitle(
         instance.action,
         disconnectedTitle(this.bridge.status),
         instance.renderingProfile,
       );
-      if (instance.action.isKey()) {
-        await this.setState(instance.action, 0);
-      }
       return;
     }
 
@@ -699,13 +705,20 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       await this.alert(instance.action);
       return;
     }
-    if (!(await this.applyImage(instance, image))) {
+    const targetState = this.mode === "toggle" ? appearance.state : 0;
+    const previousState = instance.lastAppearance?.state ?? 0;
+    if (this.mode === "toggle" && !(await this.setState(instance.action, targetState))) {
+      return;
+    }
+    if (!(await this.applyImage(instance, image, targetState))) {
+      if (this.mode === "toggle") {
+        await this.setState(instance.action, previousState);
+      }
       return;
     }
     instance.lastAppearance = appearance;
     this.synchronized.add(appearance.instanceId);
     await this.setActionTitle(instance.action, appearance.title, instance.renderingProfile);
-    await this.setState(instance.action, appearance.state);
   }
 
   private async renderFeedback(feedback: BridgeFeedback): Promise<void> {
@@ -762,32 +775,34 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     instance.feedbackTimer = undefined;
   }
 
-  private async clearImage(instance: TrackedInstance): Promise<boolean> {
-    if (!instance.action.isKey() || !instance.imageApplied) {
+  private async clearImage(instance: TrackedInstance, state: 0 | 1): Promise<boolean> {
+    if (!instance.action.isKey() || !instance.imageAppliedStates.has(state)) {
       return true;
     }
-    if (await this.setImage(instance.action, undefined)) {
-      instance.imageApplied = false;
+    if (await this.setImage(instance.action, undefined, this.mode === "toggle" ? state : undefined)) {
+      instance.imageAppliedStates.delete(state);
       return true;
     }
     return false;
   }
-  private async applyImage(instance: TrackedInstance, image: string | undefined): Promise<boolean> {
+
+  private async applyImage(
+    instance: TrackedInstance,
+    image: string | undefined,
+    state: 0 | 1,
+  ): Promise<boolean> {
     if (!instance.action.isKey()) {
       return true;
     }
     if (image === undefined) {
-      return this.clearImage(instance);
+      return this.clearImage(instance, state);
     }
-    if (!(await this.clearImage(instance))) {
-      return false;
-    }
-    if (await this.setImage(instance.action, image)) {
-      instance.imageApplied = true;
+    if (await this.setImage(instance.action, image, this.mode === "toggle" ? state : undefined)) {
+      instance.imageAppliedStates.add(state);
       return true;
     }
-    if (await this.setImage(instance.action, undefined)) {
-      instance.imageApplied = false;
+    if (await this.setImage(instance.action, undefined, this.mode === "toggle" ? state : undefined)) {
+      instance.imageAppliedStates.delete(state);
       return true;
     }
     return false;
@@ -880,9 +895,13 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
   }
 
-  private async setImage(action: KeyAction<HammerspoonActionSettings>, image: string | undefined): Promise<boolean> {
+  private async setImage(
+    action: KeyAction<HammerspoonActionSettings>,
+    image: string | undefined,
+    state?: 0 | 1,
+  ): Promise<boolean> {
     try {
-      await action.setImage(image);
+      await action.setImage(image, state === undefined ? undefined : { state });
       return true;
     } catch {
       await this.alert(action);
@@ -898,11 +917,13 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
   }
 
-  private async setState(action: KeyAction<HammerspoonActionSettings>, state: 0 | 1): Promise<void> {
+  private async setState(action: KeyAction<HammerspoonActionSettings>, state: 0 | 1): Promise<boolean> {
     try {
       await action.setState(state);
+      return true;
     } catch {
       await this.alert(action);
+      return false;
     }
   }
 

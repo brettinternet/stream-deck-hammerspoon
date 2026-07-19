@@ -1,6 +1,9 @@
 import streamDeck from "@elgato/streamdeck";
 import { BridgeClient } from "./bridge.js";
-import { HammerspoonAction } from "./actions/hammerspoon-action.js";
+import {
+  HAMMERSPOON_BUTTON_UUID,
+  HammerspoonAction,
+} from "./actions/hammerspoon-action.js";
 
 export const PLUGIN_VERSION = "0.1.0";
 
@@ -11,8 +14,14 @@ const bridge = new BridgeClient({
   pluginVersion: PLUGIN_VERSION,
   logger: (line) => streamDeck.logger.info(line),
 });
-const hammerspoonAction = new HammerspoonAction(bridge);
-hammerspoonAction.subscribe();
-streamDeck.actions.registerAction(hammerspoonAction);
+const hammerspoonToggle = new HammerspoonAction(bridge);
+const hammerspoonButton = new HammerspoonAction(bridge, {
+  manifestId: HAMMERSPOON_BUTTON_UUID,
+  mode: "button",
+});
+hammerspoonToggle.subscribe();
+hammerspoonButton.subscribe();
+streamDeck.actions.registerAction(hammerspoonToggle);
+streamDeck.actions.registerAction(hammerspoonButton);
 bridge.start();
 streamDeck.connect();

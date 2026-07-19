@@ -1,5 +1,3 @@
-local protocol = require("streamdeck.protocol")
-
 return function(test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
   test("keep awake example toggles display idle prevention globally and reports failures", function()
     local display_idle = false
@@ -39,24 +37,13 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local action_id = "com.brettinternet.hammerspoon.keep-awake"
     assertEqual(action.id, action_id)
     assertEqual(action.name, "Keep awake")
-    local function assert_icon(appearance, expected_badge, expected_foreground, expected_background)
-      assertEqual(appearance.appearanceVersion, 1)
-      assertEqual(appearance.badge, expected_badge)
-      assertEqual(appearance.foregroundColor, expected_foreground)
-      assertEqual(appearance.backgroundColor, expected_background)
-      assertTrue(protocol.validateAppearanceIcon(appearance.icon), "appearance must contain a valid custom icon")
-    end
     local first_context = context("first")
     local second_context = context("second")
     local appearance = action.appearance(first_context)
     assertEqual(appearance.title, "Allow sleep")
     assertEqual(appearance.state, "inactive")
-    assert_icon(appearance, "OFF", "#E2E8F0", "#1E293B")
-    local allow_sleep_icon = appearance.icon.dataBase64
-    appearance = action.appearance(second_context)
-    assertEqual(appearance.title, "Allow sleep")
-    assertEqual(appearance.state, "inactive")
-    assertEqual(appearance.icon.dataBase64, allow_sleep_icon)
+    assertEqual(appearance.icon, nil, "Stream Deck must own the toggle state icons")
+    assertEqual(appearance.appearanceVersion, nil)
     action.press(first_context)
     assertEqual(toggle_calls[1], "displayIdle")
     assertTrue(display_idle, "first toggle must prevent display idle sleep")
@@ -68,13 +55,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     appearance = action.appearance(first_context)
     assertEqual(appearance.title, "Awake")
     assertEqual(appearance.state, "active")
-    assert_icon(appearance, "ON", "#D1FAE5", "#064E3B")
-    assertFalse(appearance.icon.dataBase64 == allow_sleep_icon, "awake state must use a different icon")
-    local awake_icon = appearance.icon.dataBase64
-    appearance = action.appearance(second_context)
-    assertEqual(appearance.title, "Awake")
-    assertEqual(appearance.state, "active")
-    assertEqual(appearance.icon.dataBase64, awake_icon)
+    assertEqual(appearance.icon, nil, "Stream Deck must own the toggle state icons")
 
 
     action.press(second_context)
@@ -87,8 +68,6 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     appearance = action.appearance(first_context)
     assertEqual(appearance.title, "Allow sleep")
     assertEqual(appearance.state, "inactive")
-    assert_icon(appearance, "OFF", "#E2E8F0", "#1E293B")
-    assertEqual(appearance.icon.dataBase64, allow_sleep_icon)
 
     failure = "get"
     assertError(function()

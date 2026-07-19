@@ -2,7 +2,36 @@
   "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
   "Actions": [
     {
-      "Name": "Hammerspoon Action",
+      "Name": "Hammerspoon Button",
+      "Controllers": [
+        "Keypad",
+        "Encoder"
+      ],
+      "DisableAutomaticStates": true,
+      "Encoder": {
+        "layout": "$A1",
+        "TriggerDescription": {
+          "Push": "Run Hammerspoon action",
+          "Rotate": "Adjust Hammerspoon action",
+          "Touch": "Tap Hammerspoon action"
+        }
+      },
+      "Icon": "imgs/action",
+      "PropertyInspectorPath": "ui/property-inspector.html",
+      "States": [
+        {
+          "FontSize": 14,
+          "Image": "imgs/key",
+          "Name": "Button",
+          "ShowTitle": true,
+          "Title": "Hammerspoon Action",
+          "TitleAlignment": "middle"
+        }
+      ],
+      "UUID": "com.brettinternet.hammerspoon.button"
+    },
+    {
+      "Name": "Hammerspoon Toggle",
       "Controllers": [
         "Keypad",
         "Encoder"

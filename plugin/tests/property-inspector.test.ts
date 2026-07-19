@@ -197,7 +197,7 @@ function sentFrames(socket: FakeSocket): Array<Record<string, unknown>> {
 }
 
 describe.serial("property inspector", () => {
-  test("uses the registration UUID for settings commands", async () => {
+  test("uses the inspected action UUID for settings commands", async () => {
     const environment = await installEnvironment();
     try {
       environment.connect(
@@ -206,6 +206,7 @@ describe.serial("property inspector", () => {
         "registerPropertyInspector",
         "ignored-info",
         JSON.stringify({
+          action: "com.brettinternet.hammerspoon.button",
           context: "action-context",
           payload: { settings: { actionId: "action-two" } },
         }),
@@ -264,7 +265,7 @@ describe.serial("property inspector", () => {
       environment.document.actionSelect.dispatch("change");
       expect(sentFrames(socket).slice(-1)).toEqual([
         {
-          action: "com.brettinternet.hammerspoon.action",
+          action: "com.brettinternet.hammerspoon.button",
           event: "setSettings",
           context: "fallback-context",
           payload: { actionId: "action-two" },

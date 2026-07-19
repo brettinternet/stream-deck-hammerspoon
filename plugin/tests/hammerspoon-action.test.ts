@@ -6,7 +6,11 @@ import type {
   BridgeDiagnosticStatus,
   BridgeProtocolError,
 } from "../src/bridge";
-import { HAMMERSPOON_ACTION_UUID, type HammerspoonActionSettings } from "../src/actions/hammerspoon-action";
+import {
+  HAMMERSPOON_ACTION_UUID,
+  HAMMERSPOON_BUTTON_UUID,
+  type HammerspoonActionSettings,
+} from "../src/actions/hammerspoon-action";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -20,6 +24,7 @@ class FakeAction {
   readonly calls: ActionCalls = { titles: [], states: [], images: [], alerts: 0 };
   rejectTitle = false;
   readonly feedbacks: Array<Record<string, unknown>> = [];
+  readonly imageStates: Array<0 | 1 | undefined> = [];
   readonly layouts: string[] = [];
   rejectState = false;
   rejectImage = false;
@@ -58,8 +63,9 @@ class FakeAction {
     }
   }
 
-  async setImage(image?: string): Promise<void> {
+  async setImage(image?: string, options?: { state?: 0 | 1 }): Promise<void> {
     this.calls.images.push(image);
+    this.imageStates.push(options?.state);
     if (this.imageDelay) {
       await this.imageDelay;
     }
@@ -891,6 +897,7 @@ describe("HammerspoonAction", () => {
     expect(action.calls.images.at(-1)).toBe(
       `data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2072%2072%22%3E%3C%2Fsvg%3E`,
     );
+    expect(action.imageStates.at(-1)).toBe(1);
     bridge.emit("appearance", {
       type: "appearance",
       protocolVersion: 1,
@@ -904,6 +911,31 @@ describe("HammerspoonAction", () => {
     await flush();
     expect(action.calls.images.at(-1)).toContain("data:image/svg+xml,");
     expect(action.calls.titles.at(-1)).toBe("Custom");
+  });
+
+  test("keeps button actions on their single manifest state", async () => {
+    const bridge = new FakeBridge();
+    const adapter = new HammerspoonAction(bridge as unknown as BridgeClient, {
+      manifestId: HAMMERSPOON_BUTTON_UUID,
+      mode: "button",
+    });
+    const action = new FakeAction("button");
+    adapter.subscribe();
+    expect(adapter.manifestId).toBe(HAMMERSPOON_BUTTON_UUID);
+    await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+    bridge.status = "connected";
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "button",
+      actionId: "action.id",
+      title: "Available",
+      state: 1,
+    });
+    await flush();
+
+    expect(action.calls.states).toEqual([0]);
+    expect(action.calls.titles).toEqual(["Offline", "Available"]);
   });
 
   test("retains the previous appearance when decoration cannot be cleared", async () => {
@@ -933,14 +965,15 @@ describe("HammerspoonAction", () => {
       instanceId: "clear-failure",
       actionId: "action.id",
       title: "Plain",
-      state: 0,
+      state: 1,
     });
     await flush();
 
     expect(action.calls.images).toHaveLength(2);
     expect(action.calls.images[1]).toBeUndefined();
+    expect(action.imageStates[1]).toBe(1);
     expect(action.calls.titles).toEqual(["Offline", "Decorated"]);
-    expect(action.calls.states).toEqual([0, 1]);
+    expect(action.calls.states).toEqual([0, 1, 1, 1]);
     expect(action.calls.alerts).toBe(1);
   });
 
@@ -975,7 +1008,7 @@ describe("HammerspoonAction", () => {
       instanceId: "serialized",
       actionId: "action.id",
       title: "Plain",
-      state: 0,
+      state: 1,
     });
     releaseImage();
     await flush();
@@ -983,7 +1016,7 @@ describe("HammerspoonAction", () => {
     expect(action.calls.images).toHaveLength(2);
     expect(action.calls.images[1]).toBeUndefined();
     expect(action.calls.titles.at(-1)).toBe("Plain");
-    expect(action.calls.states.at(-1)).toBe(0);
+    expect(action.calls.states.at(-1)).toBe(1);
   });
 
   test("keeps offline fallback when disconnect interrupts appearance rendering", async () => {
@@ -1014,8 +1047,7 @@ describe("HammerspoonAction", () => {
     releaseImage();
     await flush();
 
-    expect(action.calls.images).toHaveLength(2);
-    expect(action.calls.images[1]).toBeUndefined();
+    expect(action.calls.images).toHaveLength(1);
     expect(action.calls.titles.at(-1)).toBe("Offline");
     expect(action.calls.states.at(-1)).toBe(0);
   });

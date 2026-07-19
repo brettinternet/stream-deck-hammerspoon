@@ -5,7 +5,7 @@ These examples register Stream Deck actions backed by Hammerspoon. Each file is 
 ## Use an example
 
 1. Make the `streamdeck` Lua module available at `~/.hammerspoon/streamdeck` using the project setup instructions.
-2. Keep the official Stream Deck application running and add the generic Hammerspoon action (`com.brettinternet.hammerspoon.action`) to a key.
+2. Keep the official Stream Deck application running and add **Hammerspoon Button** for a single custom image or **Hammerspoon Toggle** for inactive and active images. Toggle-style examples such as `keep-awake.lua` should use Hammerspoon Toggle.
 3. Select the example's action ID in that key's property inspector. If the example exposes settings, configure them there.
 4. Reload Hammerspoon.
 
@@ -22,7 +22,7 @@ All examples require macOS, Hammerspoon, the official Stream Deck application, a
 | [`clipboard-clean.lua`](clipboard-clean.lua) | `com.brettinternet.hammerspoon.clipboard-clean` | Removes leading and trailing whitespace from the current text clipboard when pressed. | Uses `hs.pasteboard`. A text clipboard is required. |
 | [`clipboard-stash.lua`](clipboard-stash.lua) | `com.brettinternet.hammerspoon.clipboard-stash` | Stashes text on the first press and restores it on the next press for each key instance. | Uses `hs.pasteboard`. Stashes are in memory and require a text clipboard. |
 | [`focus-timer.lua`](focus-timer.lua) | `com.brettinternet.hammerspoon.focus-timer` | Starts or cancels a 25-minute focus timer per key; when it finishes, the key returns to Ready. | Uses `hs.timer`. No action settings. |
-| [`keep-awake.lua`](keep-awake.lua) | `com.brettinternet.hammerspoon.keep-awake` | Toggles display sleep prevention and shows Awake/Allow sleep with matching colors, badges, and SVG icons. | Uses `hs.caffeinate` and `streamdeck.helpers.svg`. No action settings. |
+| [`keep-awake.lua`](keep-awake.lua) | `com.brettinternet.hammerspoon.keep-awake` | Toggles display sleep prevention and reports Awake/Allow sleep through the toggle state. | Uses `hs.caffeinate`. Add it as a Hammerspoon Toggle and choose both state images in Stream Deck. |
 | [`keyboard-layout.lua`](keyboard-layout.lua) | `com.brettinternet.hammerspoon.keyboard-layout` | Switches between two keyboard layouts and highlights the key for the second layout. | Uses `hs.keycodes`. Set the first and second layout names in the action settings; defaults are U.S. and Dvorak. |
 | [`lock-screen.lua`](lock-screen.lua) | `com.brettinternet.hammerspoon.lock-screen` | Locks the screen when pressed. | Uses `hs.caffeinate.lockScreen`. No persistent active state or action settings. |
 | [`meeting-mode.lua`](meeting-mode.lua) | `com.brettinternet.hammerspoon.meeting-mode` | Toggles meeting mode by muting the default microphone and preventing display sleep together. | Uses `hs.audiodevice` and `hs.caffeinate`. A default input device is required. |

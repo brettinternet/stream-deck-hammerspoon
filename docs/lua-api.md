@@ -288,7 +288,7 @@ streamdeck.register({
 streamdeck.start()
 ```
 
-To verify the action, reload Hammerspoon, add the generic bridge action in Stream Deck, select `com.example.microphone-toggle` in its action settings, and press the key. A successful press toggles the default input mute state and refreshes only that key. If another application changes the mute state, run `streamdeck.refresh("com.example.microphone-toggle")` from the Hammerspoon configuration or another local Hammerspoon event handler to refresh all visible instances.
+To verify the action, reload Hammerspoon, add Hammerspoon Toggle in Stream Deck, select `com.example.microphone-toggle` in its action settings, and press the key. Choose inactive and active images in Stream Deck for the live and muted states. A successful press toggles the default input mute state and refreshes only that key. If another application changes the mute state, run `streamdeck.refresh("com.example.microphone-toggle")` from the Hammerspoon configuration or another local Hammerspoon event handler to refresh all visible instances.
 
 ## Lifecycle and reload behavior
 
