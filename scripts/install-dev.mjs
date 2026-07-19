@@ -1,7 +1,14 @@
 #!/usr/bin/env bun
 /* global Bun, console, process */
 
-import { lstat, mkdir, readFile, realpath, symlink } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  stat,
+  symlink,
+} from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -60,6 +67,20 @@ async function requirePath(path, description) {
   }
 }
 
+async function requireDirectory(path, description) {
+  let current;
+  try {
+    current = await stat(path);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error(`${description} directory not found at ${path}`);
+    }
+    throw error;
+  }
+  if (!current.isDirectory()) {
+    throw new Error(`${description} directory not found at ${path}`);
+  }
+}
 async function inspectLuaTarget() {
   if (!home) throw new Error("HOME is not set");
 
@@ -95,8 +116,8 @@ async function inspectLuaTarget() {
 async function preflight() {
   if (!home) throw new Error("HOME is not set");
 
-  await requirePath(luaSource, "Hammerspoon Lua module source");
-  await requirePath(pluginDirectory, "compiled plugin directory");
+  await requireDirectory(luaSource, "Hammerspoon Lua module source");
+  await requireDirectory(pluginDirectory, "compiled plugin");
   await requirePath(
     join(root, "node_modules", "@elgato", "cli", "package.json"),
     "CLI dependency",
