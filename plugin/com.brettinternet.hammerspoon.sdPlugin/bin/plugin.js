@@ -19865,6 +19865,44 @@ function dialAppearanceImage(appearance) {
         return undefined;
     }
 }
+function disconnectedTitle(status, code) {
+    if (status === "connected") {
+        return "Hammerspoon\nSynchronizing...";
+    }
+    if (status === "connecting") {
+        return "Hammerspoon\nConnecting...";
+    }
+    if (status === "authenticating") {
+        return "Hammerspoon\nAuthenticating...";
+    }
+    switch (code) {
+        case "TOKEN_UNAVAILABLE":
+            return "Hammerspoon\nToken unavailable\nCheck token file";
+        case "AUTH_REQUIRED":
+            return "Hammerspoon\nAuthentication required\nCheck token";
+        case "AUTH_FAILED":
+            return "Hammerspoon\nAuthentication failed\nCheck token";
+        case "VERSION_MISMATCH":
+            return "Hammerspoon\nVersion mismatch\nUpdate bridge/plugin";
+        case "UNKNOWN_ACTION":
+        case "STALE_INSTANCE":
+            return "Hammerspoon\nAction unavailable\nCheck action ID";
+        case "CALLBACK_FAILED":
+            return "Hammerspoon\nAction failed\nCheck Hammerspoon";
+        case "MALFORMED_MESSAGE":
+        case "UNKNOWN_TYPE":
+        case "INVALID_FIELD":
+            return "Hammerspoon\nProtocol error\nUpdate bridge/plugin";
+        case "INVALID_STATE":
+        case "INTERNAL":
+            return "Hammerspoon\nBridge error\nReload Hammerspoon";
+        case "SOCKET_FAILED":
+        case "DISCONNECTED":
+        case "RECONNECTING":
+        default:
+            return "Hammerspoon\nNot running?\nStart Hammerspoon";
+    }
+}
 function isDialAction(value) {
     if (value === null || typeof value !== "object") {
         return false;
@@ -19906,6 +19944,9 @@ class HammerspoonAction extends SingletonAction {
             }
             this.renderStatus();
             void this.sendBridgeState();
+        });
+        this.bridge.on("diagnostics", () => {
+            this.renderStatus();
         });
         this.bridge.on("actions", () => {
             void this.sendBridgeState();
@@ -20112,7 +20153,7 @@ class HammerspoonAction extends SingletonAction {
             if (instance.action.isKey() && !(await this.clearImage(instance))) {
                 return;
             }
-            await this.setActionTitle(instance.action, "Hammerspoon\nOffline", instance.renderingProfile);
+            await this.setActionTitle(instance.action, disconnectedTitle(this.bridge.status, this.bridge.diagnostics.latest?.code), instance.renderingProfile);
             if (instance.action.isKey()) {
                 await this.setState(instance.action, 0);
             }
