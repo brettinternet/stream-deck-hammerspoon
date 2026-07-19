@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144" role="img" aria-labelledby="title">
+  <title id="title">Hammerspoon toggle off</title>
+  <rect width="144" height="144" rx="32" fill="#101820"/>
+  <rect x="16" y="36" width="112" height="72" rx="36" fill="#243244" stroke="#fff" stroke-width="8"/>
+  <circle cx="52" cy="72" r="22" fill="#cbd5e1"/>
+</svg>

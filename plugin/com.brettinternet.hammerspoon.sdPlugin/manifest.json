@@ -3,6 +3,7 @@
   "Actions": [
     {
       "Name": "Hammerspoon Button",
+      "Tooltip": "Run a Hammerspoon action",
       "Controllers": [
         "Keypad",
         "Encoder"
@@ -20,11 +21,11 @@
       "PropertyInspectorPath": "ui/property-inspector.html",
       "States": [
         {
-          "FontSize": 14,
-          "Image": "imgs/key",
+          "FontSize": 12,
+          "Image": "imgs/button",
           "Name": "Button",
           "ShowTitle": true,
-          "Title": "Hammerspoon Action",
+          "Title": "Button",
           "TitleAlignment": "middle"
         }
       ],
@@ -32,6 +33,7 @@
     },
     {
       "Name": "Hammerspoon Toggle",
+      "Tooltip": "Toggle a Hammerspoon action",
       "Controllers": [
         "Keypad",
         "Encoder"
@@ -49,19 +51,19 @@
       "PropertyInspectorPath": "ui/property-inspector.html",
       "States": [
         {
-          "FontSize": 14,
-          "Image": "imgs/key",
+          "FontSize": 12,
+          "Image": "imgs/toggle-off",
           "Name": "Inactive",
           "ShowTitle": true,
-          "Title": "Hammerspoon Action",
+          "Title": "Off",
           "TitleAlignment": "middle"
         },
         {
-          "FontSize": 14,
-          "Image": "imgs/key",
+          "FontSize": 12,
+          "Image": "imgs/toggle-on",
           "Name": "Active",
           "ShowTitle": true,
-          "Title": "Hammerspoon Action",
+          "Title": "On",
           "TitleAlignment": "middle"
         }
       ],

@@ -881,7 +881,7 @@ describe("HammerspoonAction", () => {
       icon: { kind: "bundled", name: "hammerspoon" },
     });
     await flush();
-    expect(action.calls.images.at(-1)).toBe("imgs/key.svg");
+    expect(action.calls.images.at(-1)).toBe("imgs/toggle-off.svg");
     const custom = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"></svg>').toString("base64");
     bridge.emit("appearance", {
       type: "appearance",
@@ -931,10 +931,13 @@ describe("HammerspoonAction", () => {
       actionId: "action.id",
       title: "Available",
       state: 1,
+      appearanceVersion: 1,
+      icon: { kind: "bundled", name: "hammerspoon" },
     });
     await flush();
 
     expect(action.calls.states).toEqual([0]);
+    expect(action.calls.images.at(-1)).toBe("imgs/button.svg");
     expect(action.calls.titles).toEqual(["Offline", "Available"]);
   });
 

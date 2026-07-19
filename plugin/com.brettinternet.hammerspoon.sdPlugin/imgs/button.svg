@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72" role="img" aria-labelledby="title">
+  <title id="title">Hammerspoon button</title>
+  <rect width="72" height="72" rx="16" fill="#101820"/>
+  <rect x="8" y="8" width="56" height="56" rx="14" fill="none" stroke="#fff" stroke-width="4"/>
+  <path d="M36 22v28M22 36h28" fill="none" stroke="#67e8f9" stroke-linecap="round" stroke-width="6"/>
+</svg>

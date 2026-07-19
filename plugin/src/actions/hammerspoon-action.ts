@@ -126,9 +126,16 @@ function escapeXml(value: string): string {
 }
 
 
-const BUNDLED_ICON_PATH = "imgs/key.svg";
+const BUNDLED_BUTTON_ICON_PATH = "imgs/button.svg";
+const BUNDLED_TOGGLE_INACTIVE_ICON_PATH = "imgs/toggle-off.svg";
+const BUNDLED_TOGGLE_ACTIVE_ICON_PATH = "imgs/toggle-on.svg";
 
-function appearanceImage(appearance: BridgeAppearance, keyImageSize = 72): string | undefined {
+
+function appearanceImage(
+  appearance: BridgeAppearance,
+  keyImageSize = 72,
+  bundledIcon = BUNDLED_BUTTON_ICON_PATH,
+): string | undefined {
   const icon = appearance.icon;
   const hasDecoration = appearance.foregroundColor !== undefined
     || appearance.backgroundColor !== undefined
@@ -148,7 +155,7 @@ function appearanceImage(appearance: BridgeAppearance, keyImageSize = 72): strin
         return customIconImage;
       }
     } else if (!hasDecoration) {
-      return BUNDLED_ICON_PATH;
+      return bundledIcon;
     }
   }
   if (appearance.appearanceVersion !== 1 || !hasDecoration) {
@@ -189,7 +196,7 @@ function appearanceImage(appearance: BridgeAppearance, keyImageSize = 72): strin
     }
   }
   const iconMarkup = icon?.kind === "bundled"
-    ? `<image href="${BUNDLED_ICON_PATH}" x="0" y="0" width="${keyImageSize}" height="${keyImageSize}"/>`
+    ? `<image href="${bundledIcon}" x="0" y="0" width="${keyImageSize}" height="${keyImageSize}"/>`
     : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="0" y="0" width="${keyImageSize}" height="${keyImageSize}"/>`;
   const progressBar = progress === undefined
     ? ""
@@ -208,15 +215,15 @@ function appearanceImage(appearance: BridgeAppearance, keyImageSize = 72): strin
   }
 }
 
-function dialAppearanceImage(appearance: BridgeAppearance): string | undefined {
-  const keyImage = appearanceImage(appearance);
+function dialAppearanceImage(appearance: BridgeAppearance, bundledIcon = BUNDLED_BUTTON_ICON_PATH): string | undefined {
+  const keyImage = appearanceImage(appearance, 72, bundledIcon);
   if (keyImage === undefined) {
     return undefined;
   }
   const icon = appearance.icon;
   const customIconImage = icon?.kind === "custom" ? safeAppearanceIconImage(icon) : undefined;
   const iconMarkup = icon?.kind === "bundled"
-    ? `<image href="${BUNDLED_ICON_PATH}" x="16" y="40" width="48" height="48"/>`
+    ? `<image href="${bundledIcon}" x="16" y="40" width="48" height="48"/>`
     : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="16" y="40" width="48" height="48"/>`;
   const foreground = appearance.foregroundColor ?? "#FFFFFF";
   const background = appearance.backgroundColor ?? "#000000";
@@ -692,15 +699,22 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       await this.renderInstance(appearance.instanceId);
       return;
     }
+    const bundledIcon = this.mode === "button"
+      ? BUNDLED_BUTTON_ICON_PATH
+      : appearance.state === 1 ? BUNDLED_TOGGLE_ACTIVE_ICON_PATH : BUNDLED_TOGGLE_INACTIVE_ICON_PATH;
     if (isDialAction(instance.action)) {
-      if (!(await this.setDialTitle(instance.action, appearance.title, instance.renderingProfile, appearance))) {
+      if (!(await this.setDialTitle(instance.action, appearance.title, instance.renderingProfile, appearance, bundledIcon))) {
         return;
       }
       instance.lastAppearance = appearance;
       this.synchronized.add(appearance.instanceId);
       return;
     }
-    const image = appearanceImage(appearance, instance.renderingProfile?.keyImageSize ?? 72);
+    const image = appearanceImage(
+      appearance,
+      instance.renderingProfile?.keyImageSize ?? 72,
+      bundledIcon,
+    );
     if (appearance.icon !== undefined && image === undefined) {
       await this.alert(instance.action);
       return;
@@ -846,6 +860,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     title: string,
     renderingProfile?: RenderingProfile,
     appearance?: BridgeAppearance,
+    bundledIcon = BUNDLED_BUTTON_ICON_PATH,
   ): Promise<boolean> {
     const hasDecoration = appearance !== undefined && (
       appearance.icon !== undefined
@@ -860,7 +875,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
 
     try {
       if (hasDecoration && layout === "$A0") {
-        const image = dialAppearanceImage(appearance);
+        const image = dialAppearanceImage(appearance, bundledIcon);
         if (image === undefined) {
           await this.alert(action);
           return false;
