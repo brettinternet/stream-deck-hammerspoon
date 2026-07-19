@@ -221,7 +221,12 @@ end
 
 local function restore_fallback_application(context, application)
   local key = target_key(context)
-  local fallback = fallback_by_instance[key] or frontmost_application()
+  local stored_fallback = fallback_by_instance[key]
+  local current_frontmost = frontmost_application()
+  local fallback = current_frontmost
+  if not fallback or fallback == application then
+    fallback = stored_fallback
+  end
   if not fallback then
     return
   end

@@ -388,6 +388,7 @@ test("application example toggles focused and configured applications", function
 
   local app = application("Editor")
   local other_app = application("Terminal")
+  local latest_app = application("Notes")
   frontmost = app
   appearance = action.appearance(press_context)
   assertEqual(appearance.title, "Editor")
@@ -476,11 +477,12 @@ test("application example toggles focused and configured applications", function
   assertTrue(app.activate_all_windows, "show focus must bring all application windows forward")
   assertEqual(other_app.activate_calls, 1, "show must not refocus the fallback before hiding")
   assertEqual(focus_context.refreshes, 1)
-  frontmost = app
+  frontmost = latest_app
   action.press(focus_context)
   assertTrue(app.hidden)
-  assertEqual(other_app.activate_calls, 2, "hiding the shown app must refocus the previous app")
-  assertTrue(other_app.activate_all_windows)
+  assertEqual(other_app.activate_calls, 1, "hiding must not use a stale fallback")
+  assertEqual(latest_app.activate_calls, 1, "hiding the shown app must refocus the current fallback")
+  assertTrue(latest_app.activate_all_windows)
   assertEqual(focus_context.refreshes, 2)
   app.hidden = true
   frontmost = other_app
