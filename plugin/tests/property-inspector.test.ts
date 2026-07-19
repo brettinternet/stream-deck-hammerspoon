@@ -46,6 +46,7 @@ class FakeElement {
 class FakeDocument {
   readonly actionSelect = new FakeElement("select");
   readonly connectionStatus = new FakeElement("p");
+  readonly connectionDetails = new FakeElement("p");
   readonly actionSettings = new FakeElement("section");
   readonly settingsStatus = new FakeElement("p");
 
@@ -55,6 +56,9 @@ class FakeDocument {
     }
     if (id === "connection-status") {
       return this.connectionStatus;
+    }
+    if (id === "connection-details") {
+      return this.connectionDetails;
     }
     if (id === "action-settings") {
       return this.actionSettings;
@@ -167,10 +171,16 @@ async function installEnvironment(withWebSocket = true): Promise<TestEnvironment
 function bridgeState(
   status: "disconnected" | "connecting" | "authenticating" | "connected",
   actions: Array<Record<string, unknown>>,
+  diagnostics?: Record<string, unknown>,
 ): string {
   return JSON.stringify({
     event: "sendToPropertyInspector",
-    payload: { type: "bridgeState", status, actions },
+    payload: {
+      type: "bridgeState",
+      status,
+      actions,
+      ...(diagnostics === undefined ? {} : { diagnostics }),
+    },
   });
 }
 
@@ -406,6 +416,42 @@ describe.serial("property inspector", () => {
       socket.close();
       expect(environment.document.connectionStatus.textContent).toBe("Offline");
       expect(environment.document.actionSelect.disabled).toBe(true);
+    } finally {
+      environment.restore();
+    }
+  });
+
+  test("shows offline diagnostic detail and clears it when connected", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(28196, "context-01", "register", "", "{}");
+      const socket = FakeSocket.instances[0]!;
+      socket.open();
+      socket.message(
+        bridgeState("disconnected", [], {
+          version: 1,
+          status: "disconnected",
+          protocolVersion: 1,
+          pluginVersion: "test",
+          port: 17321,
+          latest: {
+            area: "auth",
+            code: "TOKEN_UNAVAILABLE",
+            at: "2026-07-18T00:00:00.000Z",
+          },
+        }),
+      );
+      expect(environment.document.connectionStatus.textContent).toBe("Offline");
+      expect(environment.document.connectionDetails.textContent).toBe(
+        "The Hammerspoon token is unavailable. Check ~/.hammerspoon/streamdeck-token, then reload Hammerspoon.",
+      );
+
+      socket.message(bridgeState("connected", []));
+      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.connectionDetails.textContent).toBe("");
+
+      socket.message(bridgeState("disconnected", [], { latest: { code: "SECRET" } }));
+      expect(environment.document.connectionDetails.textContent).toContain("Hammerspoon is not connected");
     } finally {
       environment.restore();
     }

@@ -60,11 +60,35 @@ type StreamDeckMessage = {
 };
 
 type BridgeStatus = "disconnected" | "connecting" | "authenticating" | "connected";
+type BridgeDiagnosticCode = "AUTH_REQUIRED" | "AUTH_FAILED" | "VERSION_MISMATCH" | "MALFORMED_MESSAGE" | "UNKNOWN_TYPE" | "INVALID_FIELD" | "INVALID_STATE" | "UNKNOWN_ACTION" | "STALE_INSTANCE" | "CALLBACK_FAILED" | "INTERNAL" | "TOKEN_UNAVAILABLE" | "SOCKET_FAILED" | "DISCONNECTED" | "RECONNECTING";
+type BridgeDiagnostics = {
+  port: number;
+  retryInMs?: number;
+  latest?: { code: BridgeDiagnosticCode };
+};
+const BRIDGE_DIAGNOSTIC_CODES: readonly BridgeDiagnosticCode[] = [
+  "AUTH_REQUIRED",
+  "AUTH_FAILED",
+  "VERSION_MISMATCH",
+  "MALFORMED_MESSAGE",
+  "UNKNOWN_TYPE",
+  "INVALID_FIELD",
+  "INVALID_STATE",
+  "UNKNOWN_ACTION",
+  "STALE_INSTANCE",
+  "CALLBACK_FAILED",
+  "INTERNAL",
+  "TOKEN_UNAVAILABLE",
+  "SOCKET_FAILED",
+  "DISCONNECTED",
+  "RECONNECTING",
+];
 
 const browserGlobal = globalThis as unknown as BrowserGlobal;
 const documentLike = browserGlobal.document;
 const actionSelect = documentLike?.getElementById("action-id");
 const connectionStatus = documentLike?.getElementById("connection-status");
+const connectionDetails = documentLike?.getElementById("connection-details");
 const settingsPanel = documentLike?.getElementById("action-settings");
 const settingsStatus = documentLike?.getElementById("settings-status");
 
@@ -72,6 +96,7 @@ let inspectorConnection: InspectorConnection | undefined;
 let savedActionId = "";
 let savedSettings: JsonObject = {};
 let bridgeStatus: BridgeStatus = "connecting";
+let bridgeDiagnostics: BridgeDiagnostics | undefined;
 let bridgeActions: BridgeAction[] = [];
 
 
@@ -145,14 +170,61 @@ function setStatus(message: string): void {
   }
 }
 
+function setConnectionDetails(message: string): void {
+  if (connectionDetails) {
+    connectionDetails.textContent = message;
+  }
+}
+
+function diagnosticDetails(): string {
+  const code = bridgeDiagnostics?.latest?.code;
+  const port = bridgeDiagnostics?.port || 17321;
+  const retry = bridgeDiagnostics?.retryInMs === undefined
+    ? " The plugin will retry automatically."
+    : ` Retrying in about ${Math.max(1, Math.ceil(bridgeDiagnostics.retryInMs / 1000))} seconds.`;
+  switch (code) {
+    case "TOKEN_UNAVAILABLE":
+      return "The Hammerspoon token is unavailable. Check ~/.hammerspoon/streamdeck-token, then reload Hammerspoon.";
+    case "AUTH_REQUIRED":
+      return "Hammerspoon requested authentication. Reload Hammerspoon so the bridge can reconnect.";
+    case "AUTH_FAILED":
+      return "Authentication failed. Check the shared token file and reload Hammerspoon.";
+    case "VERSION_MISMATCH":
+      return "The plugin and Hammerspoon bridge use different protocol versions. Update or rebuild both sides.";
+    case "MALFORMED_MESSAGE":
+    case "UNKNOWN_TYPE":
+    case "INVALID_FIELD":
+      return "The bridge reported a protocol error. Update or reload Hammerspoon and the Stream Deck plugin.";
+    case "UNKNOWN_ACTION":
+    case "STALE_INSTANCE":
+      return "The selected action is unavailable in Hammerspoon. Register it and select it again.";
+    case "CALLBACK_FAILED":
+      return "Hammerspoon reported an action error. Check the Hammerspoon console and selected action.";
+    case "INVALID_STATE":
+    case "INTERNAL":
+      return "The bridge reported an internal error. Reload Hammerspoon and the Stream Deck plugin.";
+    case "SOCKET_FAILED":
+      return `The bridge socket could not be reached on port ${port}. Start Hammerspoon and ensure the bridge is running.${retry}`;
+    case "DISCONNECTED":
+    case "RECONNECTING":
+    default:
+      return `Hammerspoon is not connected. Start Hammerspoon and ensure the bridge is running on port ${port}.${retry}`;
+  }
+}
+
+function renderConnectionDetails(): void {
+  setConnectionDetails(bridgeStatus === "disconnected" ? diagnosticDetails() : "");
+}
+
 function setSettingsStatus(message: string): void {
   if (settingsStatus) {
     settingsStatus.textContent = message;
   }
 }
 
-function setBridgeStatus(status: BridgeStatus): void {
+function setBridgeStatus(status: BridgeStatus, diagnostics?: BridgeDiagnostics): void {
   bridgeStatus = status;
+  bridgeDiagnostics = diagnostics;
   if (status === "connected") {
     setStatus("Connected");
   } else if (status === "connecting" || status === "authenticating") {
@@ -160,6 +232,7 @@ function setBridgeStatus(status: BridgeStatus): void {
   } else {
     setStatus("Offline");
   }
+  renderConnectionDetails();
 }
 
 function actionIdFromSettings(value: unknown): string {
@@ -559,9 +632,29 @@ function saveActionId(): void {
   sendSettings(savedSettings);
 }
 
+function parseBridgeDiagnostics(value: unknown): BridgeDiagnostics | undefined {
+  if (!isJsonObject(value) || value.version !== 1 || value.status !== "disconnected") {
+    return undefined;
+  }
+  const port = typeof value.port === "number" && Number.isInteger(value.port) && value.port > 0
+    ? value.port
+    : 17321;
+  const retryInMs = typeof value.retryInMs === "number"
+    && Number.isInteger(value.retryInMs)
+    && value.retryInMs >= 0
+    ? value.retryInMs
+    : undefined;
+  const latest = isJsonObject(value.latest) && typeof value.latest.code === "string"
+    && BRIDGE_DIAGNOSTIC_CODES.includes(value.latest.code as BridgeDiagnosticCode)
+    ? { code: value.latest.code as BridgeDiagnosticCode }
+    : undefined;
+  return { port, ...(retryInMs === undefined ? {} : { retryInMs }), ...(latest === undefined ? {} : { latest }) };
+}
+
 function parseBridgeState(value: unknown): {
   status: BridgeStatus;
   actions: BridgeAction[];
+  diagnostics?: BridgeDiagnostics;
 } | undefined {
   if (!isJsonObject(value) || value.type !== "bridgeState") {
     return undefined;
@@ -616,7 +709,8 @@ function parseBridgeState(value: unknown): {
     });
   }
 
-  return { status, actions };
+  const diagnostics = status === "disconnected" ? parseBridgeDiagnostics(value.diagnostics) : undefined;
+  return { status, actions, ...(diagnostics === undefined ? {} : { diagnostics }) };
 }
 
 function handleStreamDeckMessage(message: { data: unknown }): void {
@@ -642,7 +736,7 @@ function handleStreamDeckMessage(message: { data: unknown }): void {
   }
 
   bridgeActions = bridgeState.actions;
-  setBridgeStatus(bridgeState.status);
+  setBridgeStatus(bridgeState.status, bridgeState.diagnostics);
   renderActionSelect();
 }
 

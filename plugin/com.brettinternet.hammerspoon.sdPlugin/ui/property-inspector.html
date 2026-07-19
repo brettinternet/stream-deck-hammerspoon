@@ -75,17 +75,24 @@
         color: #bdbdbd;
         font-size: 11px;
       }
+      #connection-details {
+        margin: 0;
+        color: #bdbdbd;
+        font-size: 11px;
+        line-height: 1.4;
+      }
     </style>
   </head>
   <body>
     <main>
       <label for="action-id">Hammerspoon action</label>
-      <select id="action-id" name="actionId" aria-describedby="connection-status" disabled>
+      <select id="action-id" name="actionId" aria-describedby="connection-status connection-details" disabled>
         <option value="">No actions available</option>
       </select>
       <section id="action-settings" aria-live="polite"></section>
       <p id="settings-status" role="status" aria-live="polite">Select an action to edit its settings.</p>
       <p id="connection-status" role="status" aria-live="polite">Connecting</p>
+      <p id="connection-details" role="note" aria-live="polite"></p>
     </main>
     <script src="property-inspector.js"></script>
   </body>
