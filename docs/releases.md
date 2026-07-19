@@ -9,6 +9,14 @@ bun run release
 
 The release version is read from `plugin/com.brettinternet.hammerspoon.sdPlugin/manifest.json` and must use the four-part form required by the Stream Deck CLI (for example, `1.2.3.4`). The command does not change source files or version declarations. Update the manifest version as part of a release change, then commit that change with the release source. Build output is written to `dist/releases/<version>/`, which is ignored by Git.
 
+## Version format
+
+The Stream Deck plugin manifest follows Elgato's platform/package convention: `Version` uses `{major}.{minor}.{patch}.{build}`. This is not standard three-part SemVer. For example, `0.1.0.0` means major `0`, minor `1`, patch `0`, and build `0`. The four-part requirement comes from the Stream Deck plugin format, not from this repository; do not change it to `0.1.0`.
+
+The source/package and runtime diagnostic versions remain three-part values such as `0.1.0` in `plugin/package.json` and `plugin/src/index.ts`. The four-part value belongs to `plugin/com.brettinternet.hammerspoon.sdPlugin/manifest.json`; the release script and GitHub Actions workflow require that format and use it in artifact names and release tags.
+
+See Elgato's [manifest reference](https://docs.elgato.com/streamdeck/sdk/references/manifest/) for the upstream version-format definition.
+
 ## Publish a GitHub release
 
 The GitHub Actions release workflow runs when a `v*` tag is pushed. The tag must exactly match the manifest version, including the required four-part format:
