@@ -31,16 +31,35 @@ local function reload()
   end
 end
 
+local CONSOLE_ICON = { kind = "bundled", name = "hammerspoon" }
+
 local function consoleApi()
   local hsapi = hammerspoon()
-  if type(hsapi.openConsole) ~= "function" then
+  if type(hsapi.toggleConsole) ~= "function"
+      or type(hsapi.console) ~= "table"
+      or type(hsapi.console.hswindow) ~= "function" then
     error("Hammerspoon console API is unavailable", 3)
   end
   return hsapi
 end
 
-local function openConsole()
-  consoleApi().openConsole(true)
+local function consoleIsVisible()
+  local consoleWindow = consoleApi().console.hswindow()
+  if consoleWindow == nil or type(consoleWindow.isVisible) ~= "function" then
+    error("Hammerspoon console window API is unavailable", 3)
+  end
+  local ok, visible = pcall(function()
+    return consoleWindow:isVisible()
+  end)
+  if not ok or type(visible) ~= "boolean" then
+    error("Hammerspoon console visibility API is unavailable", 3)
+  end
+  return visible
+end
+
+local function toggleConsole(context)
+  consoleApi().toggleConsole()
+  context:refresh()
 end
 
 local definitions = {
@@ -55,12 +74,17 @@ local definitions = {
   },
   {
     id = CONSOLE_ID,
-    name = "Open Hammerspoon Console",
+    name = "Toggle Hammerspoon Console",
     appearance = function()
-      consoleApi()
-      return { title = "Console", state = "inactive" }
+      local visible = consoleIsVisible()
+      return {
+        title = "Console",
+        state = visible and "active" or "inactive",
+        appearanceVersion = 1,
+        icon = CONSOLE_ICON,
+      }
     end,
-    press = openConsole,
+    press = toggleConsole,
   },
 }
 

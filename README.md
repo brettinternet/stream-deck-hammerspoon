@@ -10,7 +10,7 @@ The official Stream Deck application remains the owner of plugin lifecycle, prop
 ## What this is and is not
 
 - Two generic actions point a Stream Deck instance at any registered Hammerspoon action: **Hammerspoon Button** has one configurable image, while **Hammerspoon Toggle** has inactive and active images.
-- Requiring `streamdeck` also provides **Reload Hammerspoon** and **Open Hammerspoon Console** in the same action selector; see the [Lua API guide](docs/lua-api.md).
+- Requiring `streamdeck` also provides **Reload Hammerspoon** and **Toggle Hammerspoon Console** in the same action selector; see the [Lua API guide](docs/lua-api.md).
 - `hammerspoon/streamdeck/` is the reusable Lua API (`register`, `start`, `stop`, `refresh`, and context helpers).
 - `protocol/schema/` is the canonical protocol-v1 JSON Schema.
 - `plugin/` contains TypeScript and the compiled official plugin layout.
