@@ -61,7 +61,7 @@ bun run check       # repository checks, including type and static checks
 Run the Lua load check after changing `hammerspoon/streamdeck/`:
 
 ```sh
-mise exec lua -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
+lua -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
 ```
 
 This is a syntax/load check only; it does not start Hammerspoon or exercise the bridge. The normal development loop is: edit, run the smallest relevant check, then run `bun run build` before packaging.
