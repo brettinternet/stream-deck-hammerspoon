@@ -79,7 +79,7 @@ local function load_fixture(path, fake_hs)
     for key, value in pairs(definition) do
       registered[key] = value
     end
-    for _, field in ipairs({ "appearance", "press", "appear", "disappear" }) do
+    for _, field in ipairs({ "appearance", "press", "longPress", "appear", "disappear" }) do
       if type(definition[field]) == "function" then
         local callback = definition[field]
         registered[field] = function(...)
@@ -224,6 +224,8 @@ test("application example toggles focused and configured applications", function
   local frontmost
   local configured
   local get_calls = 0
+  local launch_calls = 0
+  local launch_result = true
   local get_error
   local watcher_callback
   local watcher_started = false
@@ -242,10 +244,15 @@ test("application example toggles focused and configured applications", function
       hidden = false,
       hide_calls = 0,
       unhide_calls = 0,
+      kill_calls = 0,
       hide_result = true,
       unhide_result = true,
+      kill_result = true,
       name = function(self)
         return self.app_name
+      end,
+      bundleID = function(self)
+        return "com.example." .. self.app_name
       end,
       isHidden = function(self)
         return self.hidden
@@ -264,6 +271,10 @@ test("application example toggles focused and configured applications", function
         end
         return self.unhide_result
       end,
+      kill = function(self)
+        self.kill_calls = self.kill_calls + 1
+        return self.kill_result
+      end,
     }
     return app
   end
@@ -280,6 +291,14 @@ test("application example toggles focused and configured applications", function
         end
         assertEqual(bundle_id, "com.example.Editor", "configured lookup must use the bundle ID")
         return configured
+      end,
+      launchOrFocusByBundleID = function(bundle_id)
+        launch_calls = launch_calls + 1
+        assertEqual(bundle_id, "com.example.Editor", "launch must use the bundle ID")
+        if launch_result and configured then
+          configured.hidden = false
+        end
+        return launch_result
       end,
       watcher = {
         activated = events.activated,
@@ -344,37 +363,55 @@ test("application example toggles focused and configured applications", function
   assertEqual(press_context.refreshes, 2)
 
   frontmost = app
+  app.kill_result = false
+  assertError(function()
+    action.longPress(press_context)
+  end, "failed to close application")
+  assertEqual(app.kill_calls, 1)
+  assertEqual(press_context.refreshes, 2, "failed close must not refresh")
+  app.kill_result = true
+  action.longPress(press_context)
+  assertEqual(app.kill_calls, 2, "long press must close the tracked application")
+  assertEqual(press_context.refreshes, 3)
+
   app.hide_result = false
   assertError(function()
     action.press(press_context)
   end, "failed to hide application")
-  assertEqual(press_context.refreshes, 2, "failed hide must not refresh")
+  assertEqual(press_context.refreshes, 3, "failed hide must not refresh")
   app.hide_result = true
 
   local configured_context = context("configured", {
     bundleID = "com.example.Editor",
   })
   configured = app
-  frontmost = other_app
+  frontmost = app
   appearance = action.appearance(configured_context)
   assertEqual(appearance.title, "Editor")
   assertEqual(appearance.state, "inactive")
   assertEqual(get_calls, 1, "appearance must resolve configured applications")
   action.press(configured_context)
-  assertTrue(app.hidden, "configured application must be hidden")
+  assertTrue(app.hidden, "configured frontmost application must be hidden")
   assertEqual(app.hide_calls, 3)
   assertEqual(configured_context.refreshes, 1)
+  frontmost = other_app
   action.press(configured_context)
-  assertFalse(app.hidden, "configured application must be shown on the next click")
-  assertEqual(app.unhide_calls, 2)
+  assertFalse(app.hidden, "configured non-frontmost application must be opened")
+  assertEqual(launch_calls, 1, "non-frontmost configured applications must be focused")
+  assertEqual(app.unhide_calls, 1, "opening must not call unhide directly")
   assertEqual(configured_context.refreshes, 2)
 
   configured = nil
   assertEqual(action.appearance(configured_context).title, "No app")
+  action.press(configured_context)
+  assertEqual(launch_calls, 2, "missing configured applications must be opened")
+  assertEqual(configured_context.refreshes, 3, "opening a configured application must refresh")
+  launch_result = false
   assertError(function()
     action.press(configured_context)
-  end, "application not running: com.example.Editor")
-  assertEqual(configured_context.refreshes, 2, "missing configured application must not refresh")
+  end, "failed to open application")
+  assertEqual(configured_context.refreshes, 3, "failed open must not refresh")
+  launch_result = true
 
   get_error = "lookup unavailable"
   assertError(function()
@@ -635,6 +672,8 @@ end)
 dofile("hammerspoon/tests/keyboard-layout-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/url-launcher-example.lua")(
+  test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
+dofile("hammerspoon/tests/youtube-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/window-snap-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)

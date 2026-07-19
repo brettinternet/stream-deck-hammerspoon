@@ -1,5 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that hides or shows an application.
--- Set an application bundle ID in the action settings, or omit it to track the frontmost application.
+-- Hammerspoon configuration example: a Stream Deck key that opens, hides, shows, or closes an application.
+-- Set an application bundle ID in the action settings, or omit it to track the frontmost application. Tap to open/hide/show; hold to close.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")
@@ -56,6 +56,22 @@ local function frontmost_application()
   return application
 end
 
+local function application_is_frontmost_bundle(bundle_id)
+  local application = frontmost_application()
+  if not application then
+    return false
+  end
+  if type(application.bundleID) ~= "function" then
+    error("application bundle ID unavailable")
+  end
+
+  local ok, frontmost_bundle_id = pcall(application.bundleID, application)
+  if not ok then
+    error("failed to inspect frontmost application bundle ID: " .. tostring(frontmost_bundle_id))
+  end
+  return frontmost_bundle_id == bundle_id
+end
+
 local function configured_application(bundle_id)
   require_application_api("get")
 
@@ -64,6 +80,18 @@ local function configured_application(bundle_id)
     error("failed to find application " .. bundle_id .. ": " .. tostring(application))
   end
   return application
+end
+
+local function launch_or_focus_application(bundle_id)
+  require_application_api("launchOrFocusByBundleID")
+
+  local ok, result = pcall(hs.application.launchOrFocusByBundleID, bundle_id)
+  if not ok then
+    error("failed to open application: " .. tostring(result))
+  end
+  if result ~= true then
+    error("failed to open application")
+  end
 end
 
 local function application_for(context)
@@ -113,6 +141,20 @@ local function toggle_application(application)
   return hidden
 end
 
+local function close_application(application)
+  if type(application.kill) ~= "function" then
+    error("application cannot close")
+  end
+
+  local ok, result = pcall(application.kill, application)
+  if not ok then
+    error("failed to close application: " .. tostring(result))
+  end
+  if result ~= true then
+    error("failed to close application")
+  end
+end
+
 streamdeck.register({
   id = action_id,
   name = "Hide/show application",
@@ -138,6 +180,29 @@ streamdeck.register({
 
   press = function(context)
     local application, bundle_id = application_for(context)
+    if bundle_id ~= nil then
+      if not application
+        or application_is_hidden(application)
+        or not application_is_frontmost_bundle(bundle_id) then
+        launch_or_focus_application(bundle_id)
+      else
+        toggle_application(application)
+      end
+      context:refresh()
+      return
+    end
+
+    if not application then
+      error("no frontmost application")
+    end
+
+    local was_hidden = toggle_application(application)
+    local key = target_key(context)
+    target_by_instance[key] = was_hidden and nil or application
+    context:refresh()
+  end,
+  longPress = function(context)
+    local application, bundle_id = application_for(context)
     if not application then
       if bundle_id ~= nil then
         error("application not running: " .. bundle_id)
@@ -145,12 +210,10 @@ streamdeck.register({
       error("no frontmost application")
     end
 
-    local was_hidden = toggle_application(application)
+    close_application(application)
     if bundle_id == nil then
-      local key = target_key(context)
-      target_by_instance[key] = was_hidden and nil or application
+      target_by_instance[target_key(context)] = nil
     end
-
     context:refresh()
   end,
 })
