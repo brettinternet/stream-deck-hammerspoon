@@ -1,11 +1,12 @@
 -- Hammerspoon configuration example: a Stream Deck key that toggles an application's hidden state and uses its system icon.
--- Set an application bundle ID in the action settings, or omit it to track the frontmost application. Active means hidden; hold to close. Enable focusing when showing if the app should also come to the front.
+-- Set an application bundle ID in the action settings, or omit it to track the frontmost application. Active means hidden; hold to close. Enable focusing when showing if the app should also come to the front; hiding it restores the previous frontmost application.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.application-toggle"
 local target_by_instance = {}
+local fallback_by_instance = {}
 local relevant_events = {
   [hs.application.watcher.activated] = true,
   [hs.application.watcher.deactivated] = true,
@@ -200,12 +201,42 @@ local function focus_application(application)
   end
 end
 
-local function reopen_application(application, configured_bundle_id)
-  local bundle_id = configured_bundle_id or application_bundle_id(application)
+local function focus_application_with_fallback(context, application, fallback)
+  focus_application(application)
+  if fallback and fallback ~= application then
+    fallback_by_instance[target_key(context)] = fallback
+  end
+end
+
+local function launch_or_focus_with_fallback(context, application, bundle_id)
   if not bundle_id then
     error("application cannot reopen without a bundle ID")
   end
+  local fallback = frontmost_application()
   launch_or_focus_application(bundle_id)
+  if fallback and fallback ~= application then
+    fallback_by_instance[target_key(context)] = fallback
+  end
+end
+
+local function restore_fallback_application(context, application)
+  local key = target_key(context)
+  local stored_fallback = fallback_by_instance[key]
+  local current_frontmost = frontmost_application()
+  local fallback = current_frontmost
+  if not fallback or fallback == application then
+    fallback = stored_fallback
+  end
+  if not fallback then
+    return
+  end
+  if fallback == application then
+    fallback_by_instance[key] = nil
+    return
+  end
+
+  focus_application(fallback)
+  fallback_by_instance[key] = nil
 end
 
 local function toggle_application(application)
@@ -277,20 +308,27 @@ streamdeck.register({
     local application, bundle_id, focus_on_show = application_for(context)
     if not application then
       if bundle_id ~= nil then
-        launch_or_focus_application(bundle_id)
+        launch_or_focus_with_fallback(context, nil, bundle_id)
       else
         error("no frontmost application")
       end
     elseif not application_has_main_window(application) then
-      reopen_application(application, bundle_id)
+      launch_or_focus_with_fallback(context, application, bundle_id or application_bundle_id(application))
     else
-      local was_hidden = toggle_application(application)
+      local was_hidden = application_is_hidden(application)
       if was_hidden and focus_on_show then
-        focus_application(application)
+        local fallback = frontmost_application()
+        toggle_application(application)
+        focus_application_with_fallback(context, application, fallback)
+      else
+        was_hidden = toggle_application(application)
       end
       if bundle_id == nil then
         local key = target_key(context)
         target_by_instance[key] = was_hidden and nil or application
+      end
+      if not was_hidden then
+        restore_fallback_application(context, application)
       end
     end
     context:refresh()
@@ -305,8 +343,10 @@ streamdeck.register({
     end
 
     close_application(application)
+    local key = target_key(context)
+    fallback_by_instance[key] = nil
     if bundle_id == nil then
-      target_by_instance[target_key(context)] = nil
+      target_by_instance[key] = nil
     end
     context:refresh()
   end,
