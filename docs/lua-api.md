@@ -56,7 +56,7 @@ Requiring `streamdeck` automatically registers these stable utility actions befo
 | Action ID | Name | Behavior |
 | --- | --- | --- |
 | `com.brettinternet.hammerspoon.reload` | Reload Hammerspoon | Reloads the Hammerspoon configuration. |
-| `com.brettinternet.hammerspoon.console` | Open Hammerspoon Console | Opens and focuses the Hammerspoon Console window. |
+| `com.brettinternet.hammerspoon.console` | Toggle Hammerspoon Console | Toggles the Hammerspoon Console window, reports whether it is visible, and uses the bundled Hammerspoon icon. |
 
 They appear in the existing Hammerspoon Button and Hammerspoon Toggle action selector; no separate Stream Deck action or manual registration is required. The reload action schedules `hs.reload()` on the next timer tick so the bridge can finish handling the button event before Hammerspoon resets its Lua environment. The plugin reconnects and restores visible instances after the reload.
 

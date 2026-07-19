@@ -33,16 +33,28 @@ end
 
 local reloadCalls = 0
 local consoleCalls = 0
-local consoleBringToFront
+local consoleVisible = false
 
 local function fakeReload()
   reloadCalls = reloadCalls + 1
 end
 
-local function fakeOpenConsole(bringToFront)
+local function fakeToggleConsole()
   consoleCalls = consoleCalls + 1
-  consoleBringToFront = bringToFront
+  consoleVisible = not consoleVisible
 end
+
+local fakeConsoleWindow = {
+  isVisible = function()
+    return consoleVisible
+  end,
+}
+
+local fakeConsole = {
+  hswindow = function()
+    return fakeConsoleWindow
+  end,
+}
 
 local lastRunTimer
 local lastScheduledTimer
@@ -112,7 +124,8 @@ _G.hs = {
     end,
   },
   reload = fakeReload,
-  openConsole = fakeOpenConsole,
+  toggleConsole = fakeToggleConsole,
+  console = fakeConsole,
   timer = fakeTimer,
   audiodevice = {},
   httpserver = {
@@ -327,7 +340,7 @@ test("built-in Hammerspoon utility actions register idempotently", function()
   assertEqual(actions[1].actionId, "com.brettinternet.hammerspoon.reload")
   assertEqual(actions[1].name, "Reload Hammerspoon")
   assertEqual(actions[2].actionId, "com.brettinternet.hammerspoon.console")
-  assertEqual(actions[2].name, "Open Hammerspoon Console")
+  assertEqual(actions[2].name, "Toggle Hammerspoon Console")
 
   local reloadAction = registry:get("com.brettinternet.hammerspoon.reload")
   assertEqual(reloadAction.appearance().title, "Reload")
@@ -341,21 +354,53 @@ test("built-in Hammerspoon utility actions register idempotently", function()
   assertEqual(reloadCalls, 1, "reload must invoke Hammerspoon after dispatch")
 
   local consoleAction = registry:get("com.brettinternet.hammerspoon.console")
-  assertEqual(consoleAction.appearance().title, "Console")
+  local inactiveAppearance = consoleAction.appearance()
+  assertEqual(inactiveAppearance.title, "Console")
+  assertEqual(inactiveAppearance.state, "inactive")
+  assertEqual(inactiveAppearance.appearanceVersion, 1)
+  assertEqual(inactiveAppearance.icon.kind, "bundled")
+  assertEqual(inactiveAppearance.icon.name, "hammerspoon")
+
   consoleCalls = 0
-  consoleBringToFront = nil
-  consoleAction.press({})
+  consoleVisible = false
+  local refreshCalls = 0
+  local context = {
+    refresh = function()
+      refreshCalls = refreshCalls + 1
+    end,
+  }
+  consoleAction.press(context)
   assertEqual(consoleCalls, 1)
-  assertTrue(consoleBringToFront, "console action must focus the console")
+  assertTrue(consoleVisible, "console action must show the console")
+  assertEqual(refreshCalls, 1, "console action must refresh its appearance")
+
+  local activeAppearance = consoleAction.appearance()
+  assertEqual(activeAppearance.title, "Console")
+  assertEqual(activeAppearance.state, "active")
+  assertEqual(activeAppearance.appearanceVersion, 1)
+  assertEqual(activeAppearance.icon.kind, "bundled")
+  assertEqual(activeAppearance.icon.name, "hammerspoon")
+
+  consoleAction.press(context)
+  assertEqual(consoleCalls, 2)
+  assertFalse(consoleVisible, "console action must hide the console")
+  assertEqual(refreshCalls, 2, "console action must refresh after hiding")
+  assertEqual(consoleAction.appearance().state, "inactive")
+
   local savedReload = _G.hs.reload
   _G.hs.reload = nil
   assertFalse(pcall(reloadAction.appearance), "reload must report missing API")
   _G.hs.reload = savedReload
 
-  local savedConsole = _G.hs.openConsole
-  _G.hs.openConsole = nil
+  local savedToggleConsole = _G.hs.toggleConsole
+  _G.hs.toggleConsole = nil
   assertFalse(pcall(consoleAction.appearance), "console must report missing API")
-  _G.hs.openConsole = savedConsole
+  _G.hs.toggleConsole = savedToggleConsole
+
+  local savedConsole = _G.hs.console
+  _G.hs.console = nil
+  assertFalse(pcall(consoleAction.appearance), "console window API must be available")
+  _G.hs.console = savedConsole
 end)
 
 test("streamdeck module publishes built-in utility actions", function()
@@ -377,7 +422,7 @@ test("streamdeck module publishes built-in utility actions", function()
         names[action.actionId] = action.name
       end
       assertEqual(names["com.brettinternet.hammerspoon.reload"], "Reload Hammerspoon")
-      assertEqual(names["com.brettinternet.hammerspoon.console"], "Open Hammerspoon Console")
+      assertEqual(names["com.brettinternet.hammerspoon.console"], "Toggle Hammerspoon Console")
     end, debug.traceback)
     StreamDeck.stop()
     if not ok then
