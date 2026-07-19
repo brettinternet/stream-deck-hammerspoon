@@ -89,6 +89,7 @@ const documentLike = browserGlobal.document;
 const actionSelect = documentLike?.getElementById("action-id");
 const connectionStatus = documentLike?.getElementById("connection-status");
 const connectionDetails = documentLike?.getElementById("connection-details");
+const setupGuideButton = documentLike?.getElementById("setup-guide");
 const settingsPanel = documentLike?.getElementById("action-settings");
 const settingsStatus = documentLike?.getElementById("settings-status");
 
@@ -98,6 +99,7 @@ let savedSettings: JsonObject = {};
 let bridgeStatus: BridgeStatus = "connecting";
 let bridgeDiagnostics: BridgeDiagnostics | undefined;
 let bridgeActions: BridgeAction[] = [];
+let inspectorSocketReady = false;
 
 
 type SettingsFieldBase = {
@@ -141,6 +143,7 @@ type BridgeAction = {
   settingsSchemaVersion?: number;
 };
 const ACTION_UUID = "com.brettinternet.hammerspoon.action";
+const SETUP_GUIDE_URL = "https://github.com/brettinternet/stream-deck-hammerspoon/blob/main/docs/setup.md";
 
 
 function isJsonObject(value: unknown): value is JsonObject {
@@ -214,6 +217,23 @@ function diagnosticDetails(): string {
 
 function renderConnectionDetails(): void {
   setConnectionDetails(bridgeStatus === "disconnected" ? diagnosticDetails() : "");
+}
+function renderSetupGuideButton(): void {
+  if (setupGuideButton) {
+    setupGuideButton.disabled = !inspectorSocketReady;
+  }
+}
+
+function openSetupGuide(): void {
+  if (!inspectorConnection || !inspectorSocketReady) {
+    return;
+  }
+  inspectorConnection.socket.send(
+    JSON.stringify({
+      event: "openUrl",
+      payload: { url: SETUP_GUIDE_URL },
+    }),
+  );
 }
 
 function setSettingsStatus(message: string): void {
@@ -751,6 +771,8 @@ function connectElgatoStreamDeckSocket(
   const context = uuid;
   const previousConnection = inspectorConnection;
   inspectorConnection = undefined;
+  inspectorSocketReady = false;
+  renderSetupGuideButton();
   try {
     previousConnection?.socket.close();
   } catch {
@@ -766,6 +788,7 @@ function connectElgatoStreamDeckSocket(
   if (!Socket) {
     setBridgeStatus("disconnected");
     renderActionSelect();
+    renderSetupGuideButton();
     return;
   }
 
@@ -777,6 +800,8 @@ function connectElgatoStreamDeckSocket(
       return;
     }
     setBridgeStatus("connecting");
+    inspectorSocketReady = true;
+    renderSetupGuideButton();
     socket.send(JSON.stringify({ event: registerEvent, uuid }));
   };
   socket.onmessage = (message) => {
@@ -790,6 +815,8 @@ function connectElgatoStreamDeckSocket(
       setBridgeStatus("disconnected");
       bridgeActions = [];
       renderActionSelect();
+      inspectorSocketReady = false;
+      renderSetupGuideButton();
     }
   };
   socket.onclose = () => {
@@ -798,12 +825,17 @@ function connectElgatoStreamDeckSocket(
       setBridgeStatus("disconnected");
       bridgeActions = [];
       renderActionSelect();
+      inspectorSocketReady = false;
+      renderSetupGuideButton();
     }
   };
 }
 
 if (actionSelect) {
   actionSelect.addEventListener("change", saveActionId);
+}
+if (setupGuideButton) {
+  setupGuideButton.addEventListener("click", openSetupGuide);
 }
 
 browserGlobal.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;

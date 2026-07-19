@@ -52,6 +52,7 @@ Read the design records before changing a boundary:
 - [Lua API](docs/lua-api.md)
 - [Security](docs/security.md)
 - [Development](docs/development.md)
+- [Setup](docs/setup.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
 ## Current limitations and roadmap

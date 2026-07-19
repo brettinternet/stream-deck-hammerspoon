@@ -43,6 +43,7 @@
     const actionSelect = documentLike?.getElementById("action-id");
     const connectionStatus = documentLike?.getElementById("connection-status");
     const connectionDetails = documentLike?.getElementById("connection-details");
+    const setupGuideButton = documentLike?.getElementById("setup-guide");
     const settingsPanel = documentLike?.getElementById("action-settings");
     const settingsStatus = documentLike?.getElementById("settings-status");
     let inspectorConnection;
@@ -51,7 +52,9 @@
     let bridgeStatus = "connecting";
     let bridgeDiagnostics;
     let bridgeActions = [];
+    let inspectorSocketReady = false;
     const ACTION_UUID = "com.brettinternet.hammerspoon.action";
+    const SETUP_GUIDE_URL = "https://github.com/brettinternet/stream-deck-hammerspoon/blob/main/docs/setup.md";
     function isJsonObject(value) {
         return typeof value === "object" && value !== null && !Array.isArray(value);
     }
@@ -118,6 +121,20 @@
     }
     function renderConnectionDetails() {
         setConnectionDetails(bridgeStatus === "disconnected" ? diagnosticDetails() : "");
+    }
+    function renderSetupGuideButton() {
+        if (setupGuideButton) {
+            setupGuideButton.disabled = !inspectorSocketReady;
+        }
+    }
+    function openSetupGuide() {
+        if (!inspectorConnection || !inspectorSocketReady) {
+            return;
+        }
+        inspectorConnection.socket.send(JSON.stringify({
+            event: "openUrl",
+            payload: { url: SETUP_GUIDE_URL },
+        }));
     }
     function setSettingsStatus(message) {
         if (settingsStatus) {
@@ -610,6 +627,8 @@
         const context = uuid;
         const previousConnection = inspectorConnection;
         inspectorConnection = undefined;
+        inspectorSocketReady = false;
+        renderSetupGuideButton();
         try {
             previousConnection?.socket.close();
         }
@@ -625,6 +644,7 @@
         if (!Socket) {
             setBridgeStatus("disconnected");
             renderActionSelect();
+            renderSetupGuideButton();
             return;
         }
         const socket = new Socket(`ws://127.0.0.1:${port}`);
@@ -635,6 +655,8 @@
                 return;
             }
             setBridgeStatus("connecting");
+            inspectorSocketReady = true;
+            renderSetupGuideButton();
             socket.send(JSON.stringify({ event: registerEvent, uuid }));
         };
         socket.onmessage = (message) => {
@@ -648,6 +670,8 @@
                 setBridgeStatus("disconnected");
                 bridgeActions = [];
                 renderActionSelect();
+                inspectorSocketReady = false;
+                renderSetupGuideButton();
             }
         };
         socket.onclose = () => {
@@ -656,11 +680,16 @@
                 setBridgeStatus("disconnected");
                 bridgeActions = [];
                 renderActionSelect();
+                inspectorSocketReady = false;
+                renderSetupGuideButton();
             }
         };
     }
     if (actionSelect) {
         actionSelect.addEventListener("change", saveActionId);
+    }
+    if (setupGuideButton) {
+        setupGuideButton.addEventListener("click", openSetupGuide);
     }
     browserGlobal.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
 

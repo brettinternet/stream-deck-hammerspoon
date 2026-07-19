@@ -47,6 +47,7 @@ class FakeDocument {
   readonly actionSelect = new FakeElement("select");
   readonly connectionStatus = new FakeElement("p");
   readonly connectionDetails = new FakeElement("p");
+  readonly setupGuideButton = new FakeElement("button");
   readonly actionSettings = new FakeElement("section");
   readonly settingsStatus = new FakeElement("p");
 
@@ -59,6 +60,9 @@ class FakeDocument {
     }
     if (id === "connection-details") {
       return this.connectionDetails;
+    }
+    if (id === "setup-guide") {
+      return this.setupGuideButton;
     }
     if (id === "action-settings") {
       return this.actionSettings;
@@ -269,6 +273,55 @@ describe.serial("property inspector", () => {
 
       socket.message(JSON.stringify({ event: "didReceiveSettings", payload: {} }));
       expect(environment.document.actionSelect.value).toBe("");
+    } finally {
+      environment.restore();
+    }
+  });
+  test("opens the setup guide through the Stream Deck UI socket", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(28196, "context-setup", "registerPropertyInspector", "", "{}");
+      const socket = FakeSocket.instances[0]!;
+      expect(environment.document.setupGuideButton.disabled).toBe(true);
+
+      socket.open();
+      expect(environment.document.setupGuideButton.disabled).toBe(false);
+      environment.document.setupGuideButton.dispatch("click");
+
+      expect(sentFrames(socket)).toEqual([
+        { event: "registerPropertyInspector", uuid: "context-setup" },
+        {
+          event: "openUrl",
+          payload: {
+            url: "https://github.com/brettinternet/stream-deck-hammerspoon/blob/main/docs/setup.md",
+          },
+        },
+      ]);
+    } finally {
+      environment.restore();
+    }
+  });
+
+  test("disables the setup guide when the Stream Deck UI socket fails or closes", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(28196, "context-setup-lifecycle", "registerPropertyInspector", "", "{}");
+      const socket = FakeSocket.instances[0]!;
+
+      socket.open();
+      expect(environment.document.setupGuideButton.disabled).toBe(false);
+
+      socket.error();
+      expect(environment.document.setupGuideButton.disabled).toBe(true);
+
+      environment.connect(28196, "context-setup-lifecycle-2", "registerPropertyInspector", "", "{}");
+      const secondSocket = FakeSocket.instances[1]!;
+
+      secondSocket.open();
+      expect(environment.document.setupGuideButton.disabled).toBe(false);
+
+      secondSocket.close();
+      expect(environment.document.setupGuideButton.disabled).toBe(true);
     } finally {
       environment.restore();
     }

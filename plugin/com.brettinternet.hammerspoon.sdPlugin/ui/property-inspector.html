@@ -81,6 +81,22 @@
         font-size: 11px;
         line-height: 1.4;
       }
+      #setup-guide {
+        width: 100%;
+        min-height: 30px;
+        padding: 6px 8px;
+        border: 1px solid #666;
+        border-radius: 4px;
+        background: #3a3a3a;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      #setup-guide:disabled {
+        cursor: default;
+        opacity: 0.55;
+      }
     </style>
   </head>
   <body>
@@ -93,6 +109,7 @@
       <p id="settings-status" role="status" aria-live="polite">Select an action to edit its settings.</p>
       <p id="connection-status" role="status" aria-live="polite">Connecting</p>
       <p id="connection-details" role="note" aria-live="polite"></p>
+      <button id="setup-guide" type="button" disabled>Complete setup / Open setup guide</button>
     </main>
     <script src="property-inspector.js"></script>
   </body>

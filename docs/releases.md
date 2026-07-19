@@ -24,7 +24,8 @@ Each release directory contains:
 
 - `<plugin UUID>-<version>.streamDeckPlugin` — the official Stream Deck package.
 - `stream-deck-hammerspoon-lua-<version>.tar.gz` — the `hammerspoon/streamdeck` module under `streamdeck/`, including a `VERSION` file.
-- `SHA256SUMS` — SHA-256 checksums for both artifacts.
+- `stream-deck-hammerspoon-install.sh` — a dependency-free macOS installer for the Lua archive.
+- `SHA256SUMS` — SHA-256 checksums for the plugin, Lua archive, and installer.
 - `RELEASE.json` — the versioned artifact manifest.
 
 The plugin package is produced and validated with the pinned `@elgato/cli` before its archive timestamps and file order are normalized. The Lua archive uses sorted paths, fixed timestamps, USTAR format, and gzip without a timestamp. Running `bun run release` twice for the same source and version must produce identical artifact checksums.
@@ -45,15 +46,17 @@ open <plugin-uuid>-<version>.streamDeckPlugin
 
 The exact filename uses the UUID from the manifest. Keep the official Stream Deck application running; do not use direct USB/HID access.
 
-Install the Lua module into Hammerspoon's standard module directory:
+Install the versioned Lua module with the dependency-free release installer. It verifies the archive before extraction and refuses to replace an existing symlink, file, or unversioned module directory:
 
 ```sh
-mkdir -p "$HOME/.hammerspoon"
-tar -xzf stream-deck-hammerspoon-lua-<version>.tar.gz -C "$HOME/.hammerspoon"
-lua -e 'assert(loadfile(os.getenv("HOME") .. "/.hammerspoon/streamdeck/init.lua"))'
+chmod +x stream-deck-hammerspoon-install.sh
+./stream-deck-hammerspoon-install.sh \
+  stream-deck-hammerspoon-lua-<version>.tar.gz
 ```
 
-Reload Hammerspoon after installing the module. Keep the token at `$HOME/.hammerspoon/streamdeck-token` outside the release archive and preserve its mode `0600`.
+The installer preserves previous managed modules under `~/.hammerspoon/.streamdeck-backups/`; reinstall an earlier archive or use `--rollback` to recover a previous version. It never edits `~/.hammerspoon/init.lua` or touches `$HOME/.hammerspoon/streamdeck-token`.
+
+Follow the [stable setup guide](setup.md) to configure and reload Hammerspoon, then add the generic action in Stream Deck.
 
 ## Uninstall
 
@@ -67,6 +70,7 @@ Remove the Lua module from Hammerspoon's module directory with Finder's Move to 
 
 ```sh
 trash "$HOME/.hammerspoon/streamdeck"
+trash "$HOME/.hammerspoon/.streamdeck-backups"
 ```
 
 Do not remove `$HOME/.hammerspoon/streamdeck-token` unless rotating credentials; removing it rotates the shared token on the next bridge start.

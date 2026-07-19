@@ -10,6 +10,7 @@ const root = resolve(import.meta.dirname, "..");
 const pluginDirectory = join(root, "plugin/com.brettinternet.hammerspoon.sdPlugin");
 const manifestPath = join(pluginDirectory, "manifest.json");
 const luaDirectory = join(root, "hammerspoon/streamdeck");
+const installerSource = join(root, "scripts/install-release.sh");
 const generatedFiles = [
   join(pluginDirectory, "bin/plugin.js"),
   join(pluginDirectory, "bin/plugin.js.map"),
@@ -187,9 +188,12 @@ try {
   const luaTarPath = join(temporaryDirectory, `stream-deck-hammerspoon-lua-${version}.tar`);
   await run(["tar", "-cf", luaTarPath, "--format", "ustar", "-C", luaStageDirectory, ...luaFiles]);
   const luaArtifact = join(outputDirectory, `stream-deck-hammerspoon-lua-${version}.tar.gz`);
+  const installerArtifact = join(outputDirectory, "stream-deck-hammerspoon-install.sh");
+  await cp(installerSource, installerArtifact);
+  await chmod(installerArtifact, 0o755);
   await writeFile(luaArtifact, await capture(["gzip", "-n", "-c", luaTarPath]));
 
-  const artifacts = [basename(pluginArtifact), basename(luaArtifact)].sort();
+  const artifacts = [basename(pluginArtifact), basename(luaArtifact), basename(installerArtifact)].sort();
   const sums = [];
   for (const artifact of artifacts) {
     const bytes = await readFile(join(outputDirectory, artifact));
@@ -198,7 +202,7 @@ try {
   await writeFile(join(outputDirectory, "SHA256SUMS"), `${sums.join("\n")}\n`);
   await writeFile(
     join(outputDirectory, "RELEASE.json"),
-    `${JSON.stringify({ version, plugin: artifacts.find((artifact) => artifact.endsWith(".streamDeckPlugin")), lua: artifacts.find((artifact) => artifact.endsWith(".tar.gz")), checksums: "SHA256SUMS" }, null, 2)}\n`,
+    `${JSON.stringify({ version, plugin: artifacts.find((artifact) => artifact.endsWith(".streamDeckPlugin")), lua: artifacts.find((artifact) => artifact.endsWith(".tar.gz")), installer: basename(installerArtifact), checksums: "SHA256SUMS" }, null, 2)}\n`,
   );
   console.log(`Release artifacts written to ${relative(root, outputDirectory)}`);
 } finally {
