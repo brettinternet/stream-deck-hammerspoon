@@ -4,7 +4,6 @@ import type {
   BridgeAction,
   BridgeClient,
   BridgeDiagnosticStatus,
-  BridgeDiagnosticCode,
   BridgeProtocolError,
 } from "../src/bridge";
 import { HAMMERSPOON_ACTION_UUID, type HammerspoonActionSettings } from "../src/actions/hammerspoon-action";
@@ -305,7 +304,7 @@ describe("HammerspoonAction", () => {
 
     await adapter.onWillAppear(appear(configured, { actionId: "action.offline" }));
     expect(configured.calls).toEqual({
-      titles: ["Hammerspoon\nNot running?\nStart Hammerspoon"],
+      titles: ["Offline"],
       states: [0],
       images: [],
       alerts: 0,
@@ -317,7 +316,7 @@ describe("HammerspoonAction", () => {
     bridge.status = "connected";
     await adapter.onWillAppear(appear(unsynchronized, { actionId: "action.unsynchronized" }));
     expect(unsynchronized.calls).toEqual({
-      titles: ["Hammerspoon\nSynchronizing..."],
+      titles: ["Syncing"],
       states: [0],
       images: [],
       alerts: 0,
@@ -344,43 +343,13 @@ describe("HammerspoonAction", () => {
     });
     await flush();
     expect(configured.calls).toEqual({
-      titles: ["Hammerspoon\nNot running?\nStart Hammerspoon", "Playing"],
+      titles: ["Offline", "Playing"],
       states: [0, 1],
       images: [],
       alerts: 0,
     });
   });
 
-  test("updates disconnected guidance when diagnostics change", async () => {
-    const cases: Array<[BridgeDiagnosticCode, string]> = [
-      ["TOKEN_UNAVAILABLE", "Hammerspoon\nToken unavailable\nCheck token file"],
-      ["AUTH_REQUIRED", "Hammerspoon\nAuthentication required\nCheck token"],
-      ["AUTH_FAILED", "Hammerspoon\nAuthentication failed\nCheck token"],
-      ["VERSION_MISMATCH", "Hammerspoon\nVersion mismatch\nUpdate bridge/plugin"],
-      ["UNKNOWN_ACTION", "Hammerspoon\nAction unavailable\nCheck action ID"],
-      ["CALLBACK_FAILED", "Hammerspoon\nAction failed\nCheck Hammerspoon"],
-      ["MALFORMED_MESSAGE", "Hammerspoon\nProtocol error\nUpdate bridge/plugin"],
-      ["INVALID_STATE", "Hammerspoon\nBridge error\nReload Hammerspoon"],
-      ["RECONNECTING", "Hammerspoon\nNot running?\nStart Hammerspoon"],
-    ];
-
-    for (const [code, title] of cases) {
-      const bridge = new FakeBridge();
-      const adapter = makeAction(bridge);
-      const action = new FakeAction(`diagnostic-${code}`);
-      adapter.subscribe();
-      await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
-
-      bridge.diagnostics = {
-        ...bridge.diagnostics,
-        latest: { area: "reconnect", code, at: "2026-07-18T00:00:00.000Z" },
-      };
-      bridge.emit("diagnostics", bridge.diagnostics);
-      await flush();
-
-      expect(action.calls.titles.at(-1)).toBe(title);
-    }
-  });
 
   test("handles appearance, settings, and disappearance transitions without stale actions", async () => {
     const bridge = new FakeBridge();
@@ -767,6 +736,24 @@ describe("HammerspoonAction", () => {
     expect(propertyInspectorMessages).toHaveLength(1);
   });
 
+  test("includes safe diagnostics in offline bridge state", async () => {
+    propertyInspectorMessages.length = 0;
+    const bridge = new FakeBridge();
+    bridge.diagnostics = {
+      ...bridge.diagnostics,
+      latest: { area: "auth", code: "TOKEN_UNAVAILABLE", at: "2026-07-18T00:00:00.000Z" },
+    };
+    const adapter = makeAction(bridge);
+    await adapter.onSendToPlugin({ payload: { type: "requestState" } } as never);
+
+    expect(propertyInspectorMessages).toEqual([{
+      type: "bridgeState",
+      status: "disconnected",
+      actions: [],
+      diagnostics: bridge.diagnostics,
+    }]);
+  });
+
   test("listens for appearances and protocol errors", async () => {
     const bridge = new FakeBridge();
     const adapter = makeAction(bridge);
@@ -796,7 +783,7 @@ describe("HammerspoonAction", () => {
     } satisfies BridgeProtocolError);
     await flush();
 
-    expect(action.calls.titles).toEqual(["Hammerspoon\nNot running?\nStart Hammerspoon", "Ready"]);
+    expect(action.calls.titles).toEqual(["Offline", "Ready"]);
     expect(action.calls.states).toEqual([0, 0]);
     expect(action.calls.alerts).toBe(1);
   });
@@ -835,7 +822,7 @@ describe("HammerspoonAction", () => {
     );
     expect(decodeURIComponent(image!.slice("data:image/svg+xml,".length))).toContain("&lt;&amp;&apos;&quot;");
     expect(decodeURIComponent(image!.slice("data:image/svg+xml,".length))).not.toContain("<&'\"");
-    expect(action.calls.titles).toEqual(["Hammerspoon\nNot running?\nStart Hammerspoon", "Ready"]);
+    expect(action.calls.titles).toEqual(["Offline", "Ready"]);
     expect(action.calls.states).toEqual([0, 1]);
 
     bridge.emit("appearance", {
@@ -865,7 +852,7 @@ describe("HammerspoonAction", () => {
     });
     await flush();
     expect(failed.calls.images).toEqual([expect.any(String), undefined]);
-    expect(failed.calls.titles).toEqual(["Hammerspoon\nSynchronizing...", "Fallback"]);
+    expect(failed.calls.titles).toEqual(["Syncing", "Fallback"]);
     expect(failed.calls.states).toEqual([0, 1]);
     expect(failed.calls.alerts).toBe(1);
   });
@@ -952,7 +939,7 @@ describe("HammerspoonAction", () => {
 
     expect(action.calls.images).toHaveLength(2);
     expect(action.calls.images[1]).toBeUndefined();
-    expect(action.calls.titles).toEqual(["Hammerspoon\nNot running?\nStart Hammerspoon", "Decorated"]);
+    expect(action.calls.titles).toEqual(["Offline", "Decorated"]);
     expect(action.calls.states).toEqual([0, 1]);
     expect(action.calls.alerts).toBe(1);
   });
@@ -1029,7 +1016,7 @@ describe("HammerspoonAction", () => {
 
     expect(action.calls.images).toHaveLength(2);
     expect(action.calls.images[1]).toBeUndefined();
-    expect(action.calls.titles.at(-1)).toBe("Hammerspoon\nNot running?\nStart Hammerspoon");
+    expect(action.calls.titles.at(-1)).toBe("Offline");
     expect(action.calls.states.at(-1)).toBe(0);
   });
 

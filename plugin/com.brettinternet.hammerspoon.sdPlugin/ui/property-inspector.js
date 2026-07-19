@@ -21,16 +21,35 @@
         }
     }
 
+    const BRIDGE_DIAGNOSTIC_CODES = [
+        "AUTH_REQUIRED",
+        "AUTH_FAILED",
+        "VERSION_MISMATCH",
+        "MALFORMED_MESSAGE",
+        "UNKNOWN_TYPE",
+        "INVALID_FIELD",
+        "INVALID_STATE",
+        "UNKNOWN_ACTION",
+        "STALE_INSTANCE",
+        "CALLBACK_FAILED",
+        "INTERNAL",
+        "TOKEN_UNAVAILABLE",
+        "SOCKET_FAILED",
+        "DISCONNECTED",
+        "RECONNECTING",
+    ];
     const browserGlobal = globalThis;
     const documentLike = browserGlobal.document;
     const actionSelect = documentLike?.getElementById("action-id");
     const connectionStatus = documentLike?.getElementById("connection-status");
+    const connectionDetails = documentLike?.getElementById("connection-details");
     const settingsPanel = documentLike?.getElementById("action-settings");
     const settingsStatus = documentLike?.getElementById("settings-status");
     let inspectorConnection;
     let savedActionId = "";
     let savedSettings = {};
     let bridgeStatus = "connecting";
+    let bridgeDiagnostics;
     let bridgeActions = [];
     const ACTION_UUID = "com.brettinternet.hammerspoon.action";
     function isJsonObject(value) {
@@ -57,13 +76,57 @@
             connectionStatus.textContent = message;
         }
     }
+    function setConnectionDetails(message) {
+        if (connectionDetails) {
+            connectionDetails.textContent = message;
+        }
+    }
+    function diagnosticDetails() {
+        const code = bridgeDiagnostics?.latest?.code;
+        const port = bridgeDiagnostics?.port || 17321;
+        const retry = bridgeDiagnostics?.retryInMs === undefined
+            ? " The plugin will retry automatically."
+            : ` Retrying in about ${Math.max(1, Math.ceil(bridgeDiagnostics.retryInMs / 1000))} seconds.`;
+        switch (code) {
+            case "TOKEN_UNAVAILABLE":
+                return "The Hammerspoon token is unavailable. Check ~/.hammerspoon/streamdeck-token, then reload Hammerspoon.";
+            case "AUTH_REQUIRED":
+                return "Hammerspoon requested authentication. Reload Hammerspoon so the bridge can reconnect.";
+            case "AUTH_FAILED":
+                return "Authentication failed. Check the shared token file and reload Hammerspoon.";
+            case "VERSION_MISMATCH":
+                return "The plugin and Hammerspoon bridge use different protocol versions. Update or rebuild both sides.";
+            case "MALFORMED_MESSAGE":
+            case "UNKNOWN_TYPE":
+            case "INVALID_FIELD":
+                return "The bridge reported a protocol error. Update or reload Hammerspoon and the Stream Deck plugin.";
+            case "UNKNOWN_ACTION":
+            case "STALE_INSTANCE":
+                return "The selected action is unavailable in Hammerspoon. Register it and select it again.";
+            case "CALLBACK_FAILED":
+                return "Hammerspoon reported an action error. Check the Hammerspoon console and selected action.";
+            case "INVALID_STATE":
+            case "INTERNAL":
+                return "The bridge reported an internal error. Reload Hammerspoon and the Stream Deck plugin.";
+            case "SOCKET_FAILED":
+                return `The bridge socket could not be reached on port ${port}. Start Hammerspoon and ensure the bridge is running.${retry}`;
+            case "DISCONNECTED":
+            case "RECONNECTING":
+            default:
+                return `Hammerspoon is not connected. Start Hammerspoon and ensure the bridge is running on port ${port}.${retry}`;
+        }
+    }
+    function renderConnectionDetails() {
+        setConnectionDetails(bridgeStatus === "disconnected" ? diagnosticDetails() : "");
+    }
     function setSettingsStatus(message) {
         if (settingsStatus) {
             settingsStatus.textContent = message;
         }
     }
-    function setBridgeStatus(status) {
+    function setBridgeStatus(status, diagnostics) {
         bridgeStatus = status;
+        bridgeDiagnostics = diagnostics;
         if (status === "connected") {
             setStatus("Connected");
         }
@@ -73,6 +136,7 @@
         else {
             setStatus("Offline");
         }
+        renderConnectionDetails();
     }
     function actionIdFromSettings(value) {
         const settings = settingsFromValue(value);
@@ -452,6 +516,24 @@
         renderSettings();
         sendSettings(savedSettings);
     }
+    function parseBridgeDiagnostics(value) {
+        if (!isJsonObject(value) || value.version !== 1 || value.status !== "disconnected") {
+            return undefined;
+        }
+        const port = typeof value.port === "number" && Number.isInteger(value.port) && value.port > 0
+            ? value.port
+            : 17321;
+        const retryInMs = typeof value.retryInMs === "number"
+            && Number.isInteger(value.retryInMs)
+            && value.retryInMs >= 0
+            ? value.retryInMs
+            : undefined;
+        const latest = isJsonObject(value.latest) && typeof value.latest.code === "string"
+            && BRIDGE_DIAGNOSTIC_CODES.includes(value.latest.code)
+            ? { code: value.latest.code }
+            : undefined;
+        return { port, ...(retryInMs === undefined ? {} : { retryInMs }), ...(latest === undefined ? {} : { latest }) };
+    }
     function parseBridgeState(value) {
         if (!isJsonObject(value) || value.type !== "bridgeState") {
             return undefined;
@@ -498,7 +580,8 @@
                     : {}),
             });
         }
-        return { status, actions };
+        const diagnostics = status === "disconnected" ? parseBridgeDiagnostics(value.diagnostics) : undefined;
+        return { status, actions, ...(diagnostics === undefined ? {} : { diagnostics }) };
     }
     function handleStreamDeckMessage(message) {
         if (typeof message.data !== "string") {
@@ -519,7 +602,7 @@
             return;
         }
         bridgeActions = bridgeState.actions;
-        setBridgeStatus(bridgeState.status);
+        setBridgeStatus(bridgeState.status, bridgeState.diagnostics);
         renderActionSelect();
     }
     function connectElgatoStreamDeckSocket(port, uuid, registerEvent, _info, actionInfo) {

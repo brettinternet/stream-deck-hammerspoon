@@ -4,7 +4,7 @@ import streamDeck, {
   type KeyAction,
   type SendToPluginEvent,
 } from "@elgato/streamdeck";
-import type { BridgeAppearance, BridgeClient, BridgeDiagnosticCode, BridgeFeedback } from "../bridge.js";
+import type { BridgeAppearance, BridgeClient, BridgeDiagnosticArea, BridgeDiagnosticCode, BridgeFeedback } from "../bridge.js";
 import { isSafeAppearanceIcon, safeAppearanceIconImage, sanitizeDeviceMetadata, type DeviceMetadata, type JsonSettings } from "../protocol.js";
 type JsonObject = { [key: string]: JsonValue };
 type JsonPrimitive = boolean | number | string | null | undefined;
@@ -240,43 +240,81 @@ export type HammerspoonActionSettings = JsonObject & {
   actionId?: string;
 };
 
-function disconnectedTitle(status: BridgeClient["status"], code: BridgeDiagnosticCode | undefined): string {
+function disconnectedTitle(status: BridgeClient["status"]): string {
+  if (status === "connecting" || status === "authenticating") {
+    return "Connecting";
+  }
   if (status === "connected") {
-    return "Hammerspoon\nSynchronizing...";
+    return "Syncing";
   }
-  if (status === "connecting") {
-    return "Hammerspoon\nConnecting...";
+  return "Offline";
+}
+const DIAGNOSTIC_AREAS: readonly BridgeDiagnosticArea[] = ["auth", "schema", "reconnect", "registry", "callback"];
+const DIAGNOSTIC_CODES: readonly BridgeDiagnosticCode[] = [
+  "AUTH_REQUIRED",
+  "AUTH_FAILED",
+  "VERSION_MISMATCH",
+  "MALFORMED_MESSAGE",
+  "UNKNOWN_TYPE",
+  "INVALID_FIELD",
+  "INVALID_STATE",
+  "UNKNOWN_ACTION",
+  "STALE_INSTANCE",
+  "CALLBACK_FAILED",
+  "INTERNAL",
+  "TOKEN_UNAVAILABLE",
+  "SOCKET_FAILED",
+  "DISCONNECTED",
+  "RECONNECTING",
+];
+
+function safeDiagnosticsSnapshot(value: unknown): JsonObject {
+  const fallback: JsonObject = {
+    version: 1,
+    status: "disconnected",
+    protocolVersion: 1,
+    pluginVersion: "unknown",
+    port: 0,
+  };
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return fallback;
   }
-  if (status === "authenticating") {
-    return "Hammerspoon\nAuthenticating...";
+  const candidate = value as Record<string, unknown>;
+  const snapshot: JsonObject = {
+    ...fallback,
+    ...(typeof candidate.pluginVersion === "string" && /^[A-Za-z0-9._-]{1,32}$/.test(candidate.pluginVersion)
+      ? { pluginVersion: candidate.pluginVersion }
+      : {}),
+    ...(typeof candidate.port === "number" && Number.isInteger(candidate.port) && candidate.port >= 1 && candidate.port <= 65535
+      ? { port: candidate.port }
+      : {}),
+    ...(typeof candidate.retryInMs === "number" &&
+      Number.isInteger(candidate.retryInMs) &&
+      candidate.retryInMs >= 0 &&
+      candidate.retryInMs <= 600000
+      ? { retryInMs: candidate.retryInMs }
+      : {}),
+  };
+  const latest = candidate.latest;
+  if (latest !== null && typeof latest === "object" && !Array.isArray(latest)) {
+    const latestCandidate = latest as Record<string, unknown>;
+    const at = typeof latestCandidate.at === "string" ? new Date(latestCandidate.at) : undefined;
+    if (
+      typeof latestCandidate.area === "string" &&
+      DIAGNOSTIC_AREAS.includes(latestCandidate.area as BridgeDiagnosticArea) &&
+      typeof latestCandidate.code === "string" &&
+      DIAGNOSTIC_CODES.includes(latestCandidate.code as BridgeDiagnosticCode) &&
+      at !== undefined &&
+      Number.isFinite(at.getTime())
+    ) {
+      snapshot.latest = {
+        area: latestCandidate.area,
+        code: latestCandidate.code,
+        at: at.toISOString(),
+      };
+    }
   }
-  switch (code) {
-    case "TOKEN_UNAVAILABLE":
-      return "Hammerspoon\nToken unavailable\nCheck token file";
-    case "AUTH_REQUIRED":
-      return "Hammerspoon\nAuthentication required\nCheck token";
-    case "AUTH_FAILED":
-      return "Hammerspoon\nAuthentication failed\nCheck token";
-    case "VERSION_MISMATCH":
-      return "Hammerspoon\nVersion mismatch\nUpdate bridge/plugin";
-    case "UNKNOWN_ACTION":
-    case "STALE_INSTANCE":
-      return "Hammerspoon\nAction unavailable\nCheck action ID";
-    case "CALLBACK_FAILED":
-      return "Hammerspoon\nAction failed\nCheck Hammerspoon";
-    case "MALFORMED_MESSAGE":
-    case "UNKNOWN_TYPE":
-    case "INVALID_FIELD":
-      return "Hammerspoon\nProtocol error\nUpdate bridge/plugin";
-    case "INVALID_STATE":
-    case "INTERNAL":
-      return "Hammerspoon\nBridge error\nReload Hammerspoon";
-    case "SOCKET_FAILED":
-    case "DISCONNECTED":
-    case "RECONNECTING":
-    default:
-      return "Hammerspoon\nNot running?\nStart Hammerspoon";
-  }
+  return snapshot;
 }
 
 type TrackedAction =
@@ -353,6 +391,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     });
     this.bridge.on("diagnostics", () => {
       this.renderStatus();
+      void this.sendBridgeState();
     });
     this.bridge.on("actions", () => {
       void this.sendBridgeState();
@@ -598,7 +637,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       }
       await this.setActionTitle(
         instance.action,
-        disconnectedTitle(this.bridge.status, this.bridge.diagnostics.latest?.code),
+        disconnectedTitle(this.bridge.status),
         instance.renderingProfile,
       );
       if (instance.action.isKey()) {
@@ -894,6 +933,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       type: "bridgeState",
       status: this.bridge.status,
       actions,
+      ...(this.bridge.status === "disconnected" ? { diagnostics: safeDiagnosticsSnapshot(this.bridge.diagnostics) } : {}),
     });
-  }
+}
 }
