@@ -2,9 +2,11 @@ local Registry = require("streamdeck.registry")
 local Protocol = require("streamdeck.protocol")
 local Context = require("streamdeck.context")
 local Server = require("streamdeck.server")
+local Builtins = require("streamdeck.builtins")
 
 local module = {}
 local actions = Registry.new()
+Builtins.register(actions)
 local bridge = Server.new(actions, Protocol, Context)
 
 function module.register(definition)

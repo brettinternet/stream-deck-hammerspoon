@@ -31,6 +31,19 @@ local function fileExists(path)
   return true
 end
 
+local reloadCalls = 0
+local consoleCalls = 0
+local consoleBringToFront
+
+local function fakeReload()
+  reloadCalls = reloadCalls + 1
+end
+
+local function fakeOpenConsole(bringToFront)
+  consoleCalls = consoleCalls + 1
+  consoleBringToFront = bringToFront
+end
+
 local lastRunTimer
 local lastScheduledTimer
 
@@ -98,6 +111,8 @@ _G.hs = {
       return "00000000-0000-4000-8000-000000000001"
     end,
   },
+  reload = fakeReload,
+  openConsole = fakeOpenConsole,
   timer = fakeTimer,
   audiodevice = {},
   httpserver = {
@@ -154,6 +169,8 @@ _G.hs = {
 }
 
 local Registry = require("streamdeck.registry")
+local Builtins = require("streamdeck.builtins")
+local StreamDeck = require("streamdeck")
 local Protocol = require("streamdeck.protocol")
 local Context = require("streamdeck.context")
 local Helpers = require("streamdeck.helpers")
@@ -298,6 +315,75 @@ test("registry rejects malformed definitions and duplicate IDs", function()
   registry:register(definition)
   assertFalse(pcall(registry.register, registry, definition), "duplicate IDs must be rejected")
   assertEqual(#registry:list(), 1, "duplicate registration must not append")
+end)
+
+test("built-in Hammerspoon utility actions register idempotently", function()
+  local registry = Registry.new()
+  Builtins.register(registry)
+  Builtins.register(registry)
+
+  local actions = registry:list()
+  assertEqual(#actions, 2, "built-ins must not be duplicated")
+  assertEqual(actions[1].actionId, "com.brettinternet.hammerspoon.reload")
+  assertEqual(actions[1].name, "Reload Hammerspoon")
+  assertEqual(actions[2].actionId, "com.brettinternet.hammerspoon.console")
+  assertEqual(actions[2].name, "Open Hammerspoon Console")
+
+  local reloadAction = registry:get("com.brettinternet.hammerspoon.reload")
+  assertEqual(reloadAction.appearance().title, "Reload")
+  clearPendingTimers()
+  lastScheduledTimer = nil
+  reloadCalls = 0
+  reloadAction.press({})
+  assertEqual(reloadCalls, 0, "reload must wait for the timer callback")
+  assertEqual(lastScheduledTimer.delay, 0)
+  assertEqual(runPendingTimer(), 0)
+  assertEqual(reloadCalls, 1, "reload must invoke Hammerspoon after dispatch")
+
+  local consoleAction = registry:get("com.brettinternet.hammerspoon.console")
+  assertEqual(consoleAction.appearance().title, "Console")
+  consoleCalls = 0
+  consoleBringToFront = nil
+  consoleAction.press({})
+  assertEqual(consoleCalls, 1)
+  assertTrue(consoleBringToFront, "console action must focus the console")
+  local savedReload = _G.hs.reload
+  _G.hs.reload = nil
+  assertFalse(pcall(reloadAction.appearance), "reload must report missing API")
+  _G.hs.reload = savedReload
+
+  local savedConsole = _G.hs.openConsole
+  _G.hs.openConsole = nil
+  assertFalse(pcall(consoleAction.appearance), "console must report missing API")
+  _G.hs.openConsole = savedConsole
+end)
+
+test("streamdeck module publishes built-in utility actions", function()
+  withTokenPath(function(path)
+    StreamDeck.start({ port = 17321, tokenPath = path })
+    local ok, err = xpcall(function()
+      local hello = fakeDecode(fakeHttp.websocketCallback(fakeEncode(message("hello", {
+        token = tokenAt(path),
+        pluginVersion = "test-plugin",
+      }))))
+      assertEqual(hello.type, "helloAck")
+
+      local actions = fakeDecode(fakeHttp.websocketCallback(fakeEncode(message("listActions", {
+        sessionId = hello.sessionId,
+        requestId = "built-in-actions",
+      }))))
+      local names = {}
+      for _, action in ipairs(actions.actions) do
+        names[action.actionId] = action.name
+      end
+      assertEqual(names["com.brettinternet.hammerspoon.reload"], "Reload Hammerspoon")
+      assertEqual(names["com.brettinternet.hammerspoon.console"], "Open Hammerspoon Console")
+    end, debug.traceback)
+    StreamDeck.stop()
+    if not ok then
+      error(err, 0)
+    end
+  end)
 end)
 
 test("action listing preserves names and order", function()
