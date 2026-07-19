@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: a configurable Stream Deck URL shortcut.
+-- Hammerspoon configuration example: a configurable Stream Deck key that opens a URL.
+-- Set the label and URL in the action settings; pressing the key opens it with Hammerspoon's URL event API.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

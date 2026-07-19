@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: a configurable Stream Deck app launcher.
+-- Hammerspoon configuration example: a configurable Stream Deck key that launches or focuses an app.
+-- Set the app name and key label in the action settings; the key is active while that app is frontmost.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

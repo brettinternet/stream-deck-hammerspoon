@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key for meeting mode.
+-- Hammerspoon configuration example: a Stream Deck key that toggles meeting mode.
+-- Meeting mode mutes the default microphone and prevents display sleep; the key is active only when both are set.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

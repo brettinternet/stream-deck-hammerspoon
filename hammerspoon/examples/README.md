@@ -1,0 +1,35 @@
+# Hammerspoon examples
+
+These examples register Stream Deck actions backed by Hammerspoon. Each file is a standalone starting point: copy it into your Hammerspoon configuration directory, or paste its contents into `~/.hammerspoon/init.lua` and adapt it.
+
+## Use an example
+
+1. Make the `streamdeck` Lua module available at `~/.hammerspoon/streamdeck` using the project setup instructions.
+2. Keep the official Stream Deck application running and add the generic Hammerspoon action (`com.brettinternet.hammerspoon.action`) to a key.
+3. Select the example's action ID in that key's property inspector. If the example exposes settings, configure them there.
+4. Reload Hammerspoon.
+
+Every example calls `streamdeck.start()`. When combining examples in one `init.lua`, keep all registrations but leave only one `streamdeck.start()` call at the end.
+
+All examples require macOS, Hammerspoon, the official Stream Deck application, and the project's `streamdeck` Lua module. The table lists additional APIs, settings, and permissions for each example.
+
+## Catalog
+
+| File | Action ID | What it does | Additional setup or dependencies |
+| --- | --- | --- | --- |
+| [`app-launcher.lua`](app-launcher.lua) | `com.brettinternet.hammerspoon.app-launcher` | Launches an application if needed, then focuses it. The key is active while the configured app is frontmost. | Uses `hs.application`. Set the app name and optional label in the action settings. |
+| [`application.lua`](application.lua) | `com.brettinternet.hammerspoon.application-toggle` | Hides or shows an application and updates the key when the app's visibility or lifecycle changes. Without a bundle ID, it follows the frontmost app. | Uses `hs.application`. Optionally set an application bundle ID in the action settings. |
+| [`clipboard-clean.lua`](clipboard-clean.lua) | `com.brettinternet.hammerspoon.clipboard-clean` | Removes leading and trailing whitespace from the current text clipboard when pressed. | Uses `hs.pasteboard`. A text clipboard is required. |
+| [`clipboard-stash.lua`](clipboard-stash.lua) | `com.brettinternet.hammerspoon.clipboard-stash` | Stashes text on the first press and restores it on the next press for each key instance. | Uses `hs.pasteboard`. Stashes are in memory and require a text clipboard. |
+| [`focus-timer.lua`](focus-timer.lua) | `com.brettinternet.hammerspoon.focus-timer` | Starts or cancels a 25-minute focus timer per key; when it finishes, the key returns to Ready. | Uses `hs.timer`. No action settings. |
+| [`keep-awake.lua`](keep-awake.lua) | `com.brettinternet.hammerspoon.keep-awake` | Toggles display sleep prevention and shows Awake/Allow sleep with matching colors, badges, and SVG icons. | Uses `hs.caffeinate` and `streamdeck.helpers.svg`. No action settings. |
+| [`keyboard-layout.lua`](keyboard-layout.lua) | `com.brettinternet.hammerspoon.keyboard-layout` | Switches between two keyboard layouts and highlights the key for the second layout. | Uses `hs.keycodes`. Set the first and second layout names in the action settings; defaults are U.S. and Dvorak. |
+| [`lock-screen.lua`](lock-screen.lua) | `com.brettinternet.hammerspoon.lock-screen` | Locks the screen when pressed. | Uses `hs.caffeinate.lockScreen`. No persistent active state or action settings. |
+| [`meeting-mode.lua`](meeting-mode.lua) | `com.brettinternet.hammerspoon.meeting-mode` | Toggles meeting mode by muting the default microphone and preventing display sleep together. | Uses `hs.audiodevice` and `hs.caffeinate`. A default input device is required. |
+| [`microphone.lua`](microphone.lua) | `com.brettinternet.hammerspoon.microphone-toggle` | Toggles the default microphone and shows Muted, Live, or No mic. | Uses `hs.audiodevice`. A default input device is required. |
+| [`multi-instance.lua`](multi-instance.lua) | `com.brettinternet.hammerspoon.per-instance-toggle` | Demonstrates independent toggle state on every key instance, including a configurable label. | Uses `streamdeck.helpers.perInstanceState` and `refreshAfter`. Set an optional label in the action settings. |
+| [`pomodoro.lua`](pomodoro.lua) | `com.brettinternet.hammerspoon.pomodoro` | Runs four 25-minute focus cycles with 5-minute breaks and a final 15-minute break; pressing during a session resets it. | Uses `hs.timer`. Durations and cycle count are constants in the file. |
+| [`url-launcher.lua`](url-launcher.lua) | `com.brettinternet.hammerspoon.url-launcher` | Opens a configured URL when pressed and displays the configured label. | Uses `hs.urlevent`. Set a label and URL with a supported URL scheme in the action settings. |
+| [`window-center.lua`](window-center.lua) | `com.brettinternet.hammerspoon.window-center` | Moves the focused window to the center of its current screen without changing its size. | Uses `hs.window`. Hammerspoon needs macOS Accessibility permission. |
+| [`window-maximize.lua`](window-maximize.lua) | `com.brettinternet.hammerspoon.window-maximize` | Toggles the focused window's Hammerspoon zoom state and tracks that state independently per key. | Uses `hs.window`. Hammerspoon needs macOS Accessibility permission. |
+| [`window-snap.lua`](window-snap.lua) | `com.brettinternet.hammerspoon.window-snap` | Cycles the focused window through left half, right half, and full-screen layouts. | Uses `hs.window`. Hammerspoon needs macOS Accessibility permission. |

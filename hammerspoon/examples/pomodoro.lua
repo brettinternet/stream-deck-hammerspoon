@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: a per-key Pomodoro work session.
+-- Hammerspoon configuration example: a per-key Pomodoro session with timed work and breaks.
+-- Press to run four 25-minute focus cycles with 5-minute breaks and a final 15-minute break; press to reset.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

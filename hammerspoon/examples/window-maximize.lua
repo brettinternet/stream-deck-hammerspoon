@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: toggle the focused window's size.
+-- Hammerspoon configuration example: a Stream Deck key that toggles the focused window's zoom.
+-- Pressing the key uses Hammerspoon's toggleZoom API and tracks the zoom state independently per key.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

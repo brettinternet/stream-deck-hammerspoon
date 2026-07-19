@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: a per-key 25-minute focus timer.
+-- Hammerspoon configuration example: a Stream Deck key for a per-key 25-minute focus timer.
+-- Press once to start the timer, press again to cancel it, or let it finish to return the key to Ready.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

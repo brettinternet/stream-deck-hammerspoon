@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: stash and restore clipboard text per key.
+-- Hammerspoon configuration example: a Stream Deck key that stashes and restores clipboard text.
+-- The first press stores text for that key instance; the next press restores it and clears the stash.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

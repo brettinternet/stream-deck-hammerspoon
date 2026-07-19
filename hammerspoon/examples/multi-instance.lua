@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key with independent per-instance state.
+-- Hammerspoon configuration example: a Stream Deck key with independent state per key instance.
+-- Each physical key toggles its own value and label, demonstrating helpers.perInstanceState.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

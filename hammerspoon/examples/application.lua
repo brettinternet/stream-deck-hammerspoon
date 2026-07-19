@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: a generic Stream Deck application hide/show key.
+-- Hammerspoon configuration example: a Stream Deck key that hides or shows an application.
+-- Set an application bundle ID in the action settings, or omit it to track the frontmost application.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

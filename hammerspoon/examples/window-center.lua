@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: center the focused window on its screen.
+-- Hammerspoon configuration example: a Stream Deck key that centers the focused window on its screen.
+-- Press the key to keep the window's size while moving it to the center of the screen it occupies.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

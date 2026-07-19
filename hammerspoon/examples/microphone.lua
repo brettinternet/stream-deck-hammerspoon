@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: a generic Stream Deck microphone mute key.
+-- Hammerspoon configuration example: a Stream Deck key that toggles the default microphone mute state.
+-- The key shows Muted or Live and reports No mic when Hammerspoon has no default input device.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

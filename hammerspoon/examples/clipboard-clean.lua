@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: trim whitespace from the clipboard.
+-- Hammerspoon configuration example: a Stream Deck key that trims text in the clipboard.
+-- Press the key to remove leading and trailing whitespace from the current clipboard text.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: cycle the focused window through useful layouts.
+-- Hammerspoon configuration example: a Stream Deck key that cycles focused-window layouts.
+-- Press repeatedly for left half, right half, and full screen; layout state is independent per key.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

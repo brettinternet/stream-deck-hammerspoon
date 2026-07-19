@@ -1,4 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that keeps the display awake.
+-- Hammerspoon configuration example: a Stream Deck key that toggles display sleep prevention.
+-- The key reports Awake/Allow sleep with matching colors, badges, and inline SVG icons.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

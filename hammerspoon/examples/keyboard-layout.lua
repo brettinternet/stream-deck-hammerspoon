@@ -1,4 +1,5 @@
 -- Hammerspoon configuration example: a Stream Deck key that switches keyboard layouts.
+-- It toggles between U.S. and Dvorak by default; set both layout names in the action settings.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")

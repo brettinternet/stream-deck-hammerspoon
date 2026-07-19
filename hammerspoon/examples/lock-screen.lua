@@ -1,4 +1,5 @@
 -- Hammerspoon configuration example: a Stream Deck key that locks the screen.
+-- Pressing the key calls Hammerspoon's screen-lock API; it has no persistent active state.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")
