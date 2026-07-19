@@ -569,6 +569,9 @@ describe("HammerspoonAction", () => {
       '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">',
     );
     expect(decodeURIComponent(canvas as string)).toContain(
+      '<image href="imgs/toggle-on.svg" x="16" y="40" width="48" height="48"/>',
+    );
+    expect(decodeURIComponent(canvas as string)).toContain(
       '<rect x="16" y="88" width="84" height="4" fill="#FFFFFF"/>',
     );
 
@@ -882,6 +885,18 @@ describe("HammerspoonAction", () => {
     });
     await flush();
     expect(action.calls.images.at(-1)).toBe("imgs/toggle-off.svg");
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "icons",
+      actionId: "action.id",
+      title: "Bundled active",
+      state: 1,
+      appearanceVersion: 1,
+      icon: { kind: "bundled", name: "hammerspoon" },
+    });
+    await flush();
+    expect(action.calls.images.at(-1)).toBe("imgs/toggle-on.svg");
     const custom = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"></svg>').toString("base64");
     bridge.emit("appearance", {
       type: "appearance",
