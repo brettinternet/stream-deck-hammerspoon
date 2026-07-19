@@ -4,7 +4,7 @@ import streamDeck, {
   type KeyAction,
   type SendToPluginEvent,
 } from "@elgato/streamdeck";
-import type { BridgeAppearance, BridgeClient, BridgeFeedback } from "../bridge.js";
+import type { BridgeAppearance, BridgeClient, BridgeDiagnosticCode, BridgeFeedback } from "../bridge.js";
 import { isSafeAppearanceIcon, safeAppearanceIconImage, sanitizeDeviceMetadata, type DeviceMetadata, type JsonSettings } from "../protocol.js";
 type JsonObject = { [key: string]: JsonValue };
 type JsonPrimitive = boolean | number | string | null | undefined;
@@ -240,6 +240,45 @@ export type HammerspoonActionSettings = JsonObject & {
   actionId?: string;
 };
 
+function disconnectedTitle(status: BridgeClient["status"], code: BridgeDiagnosticCode | undefined): string {
+  if (status === "connected") {
+    return "Hammerspoon\nSynchronizing...";
+  }
+  if (status === "connecting") {
+    return "Hammerspoon\nConnecting...";
+  }
+  if (status === "authenticating") {
+    return "Hammerspoon\nAuthenticating...";
+  }
+  switch (code) {
+    case "TOKEN_UNAVAILABLE":
+      return "Hammerspoon\nToken unavailable\nCheck token file";
+    case "AUTH_REQUIRED":
+      return "Hammerspoon\nAuthentication required\nCheck token";
+    case "AUTH_FAILED":
+      return "Hammerspoon\nAuthentication failed\nCheck token";
+    case "VERSION_MISMATCH":
+      return "Hammerspoon\nVersion mismatch\nUpdate bridge/plugin";
+    case "UNKNOWN_ACTION":
+    case "STALE_INSTANCE":
+      return "Hammerspoon\nAction unavailable\nCheck action ID";
+    case "CALLBACK_FAILED":
+      return "Hammerspoon\nAction failed\nCheck Hammerspoon";
+    case "MALFORMED_MESSAGE":
+    case "UNKNOWN_TYPE":
+    case "INVALID_FIELD":
+      return "Hammerspoon\nProtocol error\nUpdate bridge/plugin";
+    case "INVALID_STATE":
+    case "INTERNAL":
+      return "Hammerspoon\nBridge error\nReload Hammerspoon";
+    case "SOCKET_FAILED":
+    case "DISCONNECTED":
+    case "RECONNECTING":
+    default:
+      return "Hammerspoon\nNot running?\nStart Hammerspoon";
+  }
+}
+
 type TrackedAction =
   | KeyAction<HammerspoonActionSettings>
   | DialAction<HammerspoonActionSettings>;
@@ -311,6 +350,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       }
       this.renderStatus();
       void this.sendBridgeState();
+    });
+    this.bridge.on("diagnostics", () => {
+      this.renderStatus();
     });
     this.bridge.on("actions", () => {
       void this.sendBridgeState();
@@ -554,7 +596,11 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       if (instance.action.isKey() && !(await this.clearImage(instance))) {
         return;
       }
-      await this.setActionTitle(instance.action, "Hammerspoon\nOffline", instance.renderingProfile);
+      await this.setActionTitle(
+        instance.action,
+        disconnectedTitle(this.bridge.status, this.bridge.diagnostics.latest?.code),
+        instance.renderingProfile,
+      );
       if (instance.action.isKey()) {
         await this.setState(instance.action, 0);
       }
