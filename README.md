@@ -27,18 +27,17 @@ lefthook install
 bun install
 bun run check
 bun run test
-bun run build
 ```
 
-Make the Lua module available to Hammerspoon, then start/reload the bridge:
+Run the checkout installer with the official Stream Deck application installed and running:
 
 ```sh
-mkdir -p ~/.hammerspoon
-ln -sfn "$PWD/hammerspoon/streamdeck" ~/.hammerspoon/streamdeck
-lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
+bun run install:dev
 ```
 
-Create/use `~/.hammerspoon/streamdeck-token` through the Lua bridge; it contains two UUIDs and must remain mode `0600`. Never commit or log it. Follow [the development guide](docs/development.md) for the official CLI validate/pack/install/restart flow and the manual vertical slice.
+The installer builds, validates, links, and restarts the plugin, symlinks the Lua module into `~/.hammerspoon/streamdeck`, and runs the Lua load check through mise. It does not edit `~/.hammerspoon/init.lua` or reload Hammerspoon. Add `require("streamdeck")`, your registrations, and `streamdeck.start()` to that configuration, then reload Hammerspoon.
+
+The bridge creates `~/.hammerspoon/streamdeck-token` on its first successful start; it contains two UUIDs and must remain mode `0600`. Never commit or log it. Follow [the development guide](docs/development.md) for the release installation flow and manual vertical slice.
 
 For the smallest working example, start with the registration and context example in [the Lua API guide](docs/lua-api.md), then add the generic action in the official Stream Deck application and select its registered action ID in the property inspector. The development guide describes the expected key press, appearance, and reconnect observations.
 

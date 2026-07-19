@@ -61,10 +61,31 @@ bun run check       # repository checks, including type and static checks
 Run the Lua load check after changing `hammerspoon/streamdeck/`:
 
 ```sh
-lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
+mise exec lua -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
 ```
 
 This is a syntax/load check only; it does not start Hammerspoon or exercise the bridge. The normal development loop is: edit, run the smallest relevant check, then run `bun run build` before packaging.
+
+## Development installer
+
+After `mise install` and `bun install`, run the idempotent checkout installer with the official Stream Deck application installed and running:
+
+```sh
+bun run install:dev
+```
+
+It builds and validates the plugin, links it with the pinned local Stream Deck CLI, symlinks `hammerspoon/streamdeck/` into `~/.hammerspoon/streamdeck`, runs the Lua load check through mise, and restarts the linked plugin. It refuses to replace an existing Hammerspoon module path or a symlink pointing somewhere else. It does not edit `~/.hammerspoon/init.lua`, reload Hammerspoon, create the bridge token, or configure a Stream Deck key.
+
+The manual Hammerspoon step remains:
+
+```lua
+local streamdeck = require("streamdeck")
+
+-- streamdeck.register(...)
+streamdeck.start()
+```
+
+Add that configuration to `~/.hammerspoon/init.lua`, register your actions, and reload Hammerspoon. Then add the Hammerspoon Action in Stream Deck and select a registered action ID in its inspector.
 
 ## Official CLI flow
 
