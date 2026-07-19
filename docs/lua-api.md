@@ -49,6 +49,19 @@ if not ok then
 end
 ```
 
+### Built-in Hammerspoon utility actions
+
+Requiring `streamdeck` automatically registers these stable utility actions before user-defined actions:
+
+| Action ID | Name | Behavior |
+| --- | --- | --- |
+| `com.brettinternet.hammerspoon.reload` | Reload Hammerspoon | Reloads the Hammerspoon configuration. |
+| `com.brettinternet.hammerspoon.console` | Open Hammerspoon Console | Opens and focuses the Hammerspoon Console window. |
+
+They appear in the existing Hammerspoon Button and Hammerspoon Toggle action selector; no separate Stream Deck action or manual registration is required. The reload action schedules `hs.reload()` on the next timer tick so the bridge can finish handling the button event before Hammerspoon resets its Lua environment. The plugin reconnects and restores visible instances after the reload.
+
+These actions call only the fixed Hammerspoon APIs documented above. They do not evaluate Lua or shell commands from Stream Deck settings.
+
 ### `streamdeck.start(options)`
 
 Starts the authenticated loopback WebSocket server and publishes the registered action list to the plugin after a valid hello establishes a fresh session. With no options it uses the protocol defaults: loopback binding, Bonjour disabled, port `17321`, and token path `~/.hammerspoon/streamdeck-token`.
