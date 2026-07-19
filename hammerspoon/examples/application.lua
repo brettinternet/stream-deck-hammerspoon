@@ -1,5 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that opens, hides, shows, or closes an application.
--- Set an application bundle ID in the action settings, or omit it to track the frontmost application. Tap to open/hide/show; hold to close.
+-- Hammerspoon configuration example: a Stream Deck key that toggles an application's hidden state and uses its system icon.
+-- Set an application bundle ID in the action settings, or omit it to track the frontmost application. Active means hidden; hold to close.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")
@@ -56,20 +56,67 @@ local function frontmost_application()
   return application
 end
 
-local function application_is_frontmost_bundle(bundle_id)
-  local application = frontmost_application()
-  if not application then
-    return false
-  end
-  if type(application.bundleID) ~= "function" then
-    error("application bundle ID unavailable")
+local MAX_ICON_BYTES = 32768
+
+local function application_bundle_id(application)
+  if not application or type(application.bundleID) ~= "function" then
+    return nil
   end
 
-  local ok, frontmost_bundle_id = pcall(application.bundleID, application)
-  if not ok then
-    error("failed to inspect frontmost application bundle ID: " .. tostring(frontmost_bundle_id))
+  local ok, bundle_id = pcall(application.bundleID, application)
+  if not ok or type(bundle_id) ~= "string" or bundle_id == "" then
+    return nil
   end
-  return frontmost_bundle_id == bundle_id
+  return bundle_id
+end
+
+local function application_icon(application, configured_bundle_id)
+  local bundle_id = configured_bundle_id or application_bundle_id(application)
+  if not bundle_id
+    or type(hs) ~= "table"
+    or type(hs.image) ~= "table"
+    or type(hs.image.imageFromAppBundle) ~= "function" then
+    return nil
+  end
+
+  local ok, image = pcall(hs.image.imageFromAppBundle, bundle_id)
+  if not ok or not image or type(image.bitmapRepresentation) ~= "function" then
+    return nil
+  end
+
+  local bitmap_ok, bitmap = pcall(image.bitmapRepresentation, image, { w = 72, h = 72 })
+  if not bitmap_ok or not bitmap or type(bitmap.encodeAsURLString) ~= "function" then
+    return nil
+  end
+
+  local encoded_ok, data_url = pcall(bitmap.encodeAsURLString, bitmap, true, "PNG")
+  if not encoded_ok or type(data_url) ~= "string" then
+    return nil
+  end
+
+  local data_base64 = data_url:match("^data:image/png;base64,(.+)")
+  if not data_base64 then
+    return nil
+  end
+  data_base64 = data_base64:gsub("%s+", "")
+  local base64_payload = data_base64:match("^[A-Za-z0-9+/]+=?=?")
+  if #data_base64 == 0
+    or #data_base64 % 4 ~= 0
+    or base64_payload ~= data_base64 then
+    return nil
+  end
+
+  local padding = data_base64:sub(-2) == "==" and 2 or data_base64:sub(-1) == "=" and 1 or 0
+  local byte_count = (#data_base64 / 4) * 3 - padding
+  if byte_count <= 0 or byte_count > MAX_ICON_BYTES then
+    return nil
+  end
+
+  return {
+    kind = "custom",
+    mediaType = "image/png",
+    dataBase64 = data_base64,
+  }
 end
 
 local function configured_application(bundle_id)
@@ -164,7 +211,7 @@ streamdeck.register({
   },
 
   appearance = function(context)
-    local application = application_for(context)
+    local application, bundle_id = application_for(context)
     if not application then
       return {
         title = "No app",
@@ -172,33 +219,33 @@ streamdeck.register({
       }
     end
 
-    return {
+    local appearance = {
       title = application_name(application),
       state = application_is_hidden(application) and "active" or "inactive",
     }
+    local icon = application_icon(application, bundle_id)
+    if icon then
+      appearance.appearanceVersion = 1
+      appearance.icon = icon
+    end
+    return appearance
   end,
 
   press = function(context)
     local application, bundle_id = application_for(context)
-    if bundle_id ~= nil then
-      if not application
-        or application_is_hidden(application)
-        or not application_is_frontmost_bundle(bundle_id) then
+    if not application then
+      if bundle_id ~= nil then
         launch_or_focus_application(bundle_id)
       else
-        toggle_application(application)
+        error("no frontmost application")
       end
-      context:refresh()
-      return
+    else
+      local was_hidden = toggle_application(application)
+      if bundle_id == nil then
+        local key = target_key(context)
+        target_by_instance[key] = was_hidden and nil or application
+      end
     end
-
-    if not application then
-      error("no frontmost application")
-    end
-
-    local was_hidden = toggle_application(application)
-    local key = target_key(context)
-    target_by_instance[key] = was_hidden and nil or application
     context:refresh()
   end,
   longPress = function(context)

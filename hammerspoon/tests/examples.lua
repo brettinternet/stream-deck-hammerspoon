@@ -226,6 +226,8 @@ test("application example toggles focused and configured applications", function
   local get_calls = 0
   local launch_calls = 0
   local launch_result = true
+  local icon_requests = {}
+  local icon_available = true
   local get_error
   local watcher_callback
   local watcher_started = false
@@ -279,6 +281,19 @@ test("application example toggles focused and configured applications", function
     return app
   end
 
+  local icon_image = {
+    bitmapRepresentation = function(self, size)
+      assertEqual(size.w, 72, "application icons must be resized to 72 pixels")
+      assertEqual(size.h, 72, "application icons must be resized to 72 pixels")
+      return self
+    end,
+    encodeAsURLString = function(self, scale, image_type)
+      assertTrue(scale, "application icons must be encoded in pixels")
+      assertEqual(image_type, "PNG")
+      return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAPgxRSAABHLYB8AAAAABJRU5ErkJggg==\n"
+    end,
+  }
+
   local fake_hs = {
     application = {
       frontmostApplication = function()
@@ -317,6 +332,12 @@ test("application example toggles focused and configured applications", function
         end,
       },
     },
+    image = {
+      imageFromAppBundle = function(bundle_id)
+        icon_requests[#icon_requests + 1] = bundle_id
+        return icon_available and icon_image or nil
+      end,
+    },
   }
 
   local streamdeck = load_fixture("hammerspoon/examples/application.lua", fake_hs)
@@ -347,6 +368,17 @@ test("application example toggles focused and configured applications", function
   appearance = action.appearance(press_context)
   assertEqual(appearance.title, "Editor")
   assertEqual(appearance.state, "inactive")
+  assertEqual(appearance.appearanceVersion, 1, "application appearance must include the system icon")
+  assertEqual(appearance.icon.kind, "custom")
+  assertEqual(appearance.icon.mediaType, "image/png")
+  assertEqual(appearance.icon.dataBase64, "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAPgxRSAABHLYB8AAAAABJRU5ErkJggg==",
+    "icon data must be canonical base64")
+  assertEqual(icon_requests[1], "com.example.Editor")
+  icon_available = false
+  local fallback_appearance = action.appearance(press_context)
+  assertEqual(fallback_appearance.icon, nil, "missing system icons must fall back cleanly")
+  assertEqual(fallback_appearance.appearanceVersion, nil)
+  icon_available = true
   action.press(press_context)
   assertEqual(app.hide_calls, 1)
   assertTrue(app.hidden, "focused application must be hidden")
@@ -389,6 +421,8 @@ test("application example toggles focused and configured applications", function
   appearance = action.appearance(configured_context)
   assertEqual(appearance.title, "Editor")
   assertEqual(appearance.state, "inactive")
+  assertEqual(appearance.icon.dataBase64, "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAPgxRSAABHLYB8AAAAABJRU5ErkJggg==",
+    "configured applications must use their system icon")
   assertEqual(get_calls, 1, "appearance must resolve configured applications")
   action.press(configured_context)
   assertTrue(app.hidden, "configured frontmost application must be hidden")
@@ -396,15 +430,15 @@ test("application example toggles focused and configured applications", function
   assertEqual(configured_context.refreshes, 1)
   frontmost = other_app
   action.press(configured_context)
-  assertFalse(app.hidden, "configured non-frontmost application must be opened")
-  assertEqual(launch_calls, 1, "non-frontmost configured applications must be focused")
-  assertEqual(app.unhide_calls, 1, "opening must not call unhide directly")
+  assertFalse(app.hidden, "configured application must unhide on the next click")
+  assertEqual(launch_calls, 0, "a configured target must toggle even when it is not frontmost")
+  assertEqual(app.unhide_calls, 2)
   assertEqual(configured_context.refreshes, 2)
 
   configured = nil
   assertEqual(action.appearance(configured_context).title, "No app")
   action.press(configured_context)
-  assertEqual(launch_calls, 2, "missing configured applications must be opened")
+  assertEqual(launch_calls, 1, "missing configured applications must be opened")
   assertEqual(configured_context.refreshes, 3, "opening a configured application must refresh")
   launch_result = false
   assertError(function()
