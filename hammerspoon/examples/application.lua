@@ -1,5 +1,5 @@
 -- Hammerspoon configuration example: a Stream Deck key that toggles an application's hidden state and uses its system icon.
--- Set an application bundle ID in the action settings, or omit it to track the frontmost application. Active means hidden; hold to close.
+-- Set an application bundle ID in the action settings, or omit it to track the frontmost application. Active means hidden; hold to close. Enable focusing when showing if the app should also come to the front.
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")
@@ -23,15 +23,20 @@ local function settings_for(context)
     settings = context.settings
   end
 
+  local focus_on_show = false
+  if type(settings) == "table" and type(settings.focusOnShow) == "boolean" then
+    focus_on_show = settings.focusOnShow
+  end
+
   if type(settings) ~= "table" then
-    return nil
+    return nil, focus_on_show
   end
 
   local bundle_id = settings.bundleID
   if type(bundle_id) ~= "string" or bundle_id == "" or #bundle_id > 128 then
-    return nil
+    return nil, focus_on_show
   end
-  return bundle_id
+  return bundle_id, focus_on_show
 end
 
 local function target_key(context)
@@ -142,12 +147,12 @@ local function launch_or_focus_application(bundle_id)
 end
 
 local function application_for(context)
-  local bundle_id = settings_for(context)
+  local bundle_id, focus_on_show = settings_for(context)
   if bundle_id ~= nil then
-    return configured_application(bundle_id), bundle_id
+    return configured_application(bundle_id), bundle_id, focus_on_show
   end
 
-  return target_by_instance[target_key(context)] or frontmost_application(), nil
+  return target_by_instance[target_key(context)] or frontmost_application(), nil, focus_on_show
 end
 
 local function application_is_hidden(application)
@@ -167,6 +172,40 @@ local function application_name(application)
     return "Unknown app"
   end
   return name
+end
+
+local function application_has_main_window(application)
+  if type(application.mainWindow) ~= "function" then
+    error("application cannot inspect its main window")
+  end
+
+  local ok, window = pcall(application.mainWindow, application)
+  if not ok then
+    error("failed to inspect application window: " .. tostring(window))
+  end
+  return window ~= nil
+end
+
+local function focus_application(application)
+  if type(application.activate) ~= "function" then
+    error("application cannot focus")
+  end
+
+  local ok, result = pcall(application.activate, application, true)
+  if not ok then
+    error("failed to focus application: " .. tostring(result))
+  end
+  if result ~= true then
+    error("failed to focus application")
+  end
+end
+
+local function reopen_application(application, configured_bundle_id)
+  local bundle_id = configured_bundle_id or application_bundle_id(application)
+  if not bundle_id then
+    error("application cannot reopen without a bundle ID")
+  end
+  launch_or_focus_application(bundle_id)
 end
 
 local function toggle_application(application)
@@ -208,6 +247,7 @@ streamdeck.register({
   settingsSchemaVersion = 1,
   settingsSchema = {
     { type = "text", key = "bundleID", label = "Application bundle ID", maxLength = 128 },
+    { type = "boolean", key = "focusOnShow", label = "Focus app when showing", default = false },
   },
 
   appearance = function(context)
@@ -234,15 +274,20 @@ streamdeck.register({
   end,
 
   press = function(context)
-    local application, bundle_id = application_for(context)
+    local application, bundle_id, focus_on_show = application_for(context)
     if not application then
       if bundle_id ~= nil then
         launch_or_focus_application(bundle_id)
       else
         error("no frontmost application")
       end
+    elseif not application_has_main_window(application) then
+      reopen_application(application, bundle_id)
     else
       local was_hidden = toggle_application(application)
+      if was_hidden and focus_on_show then
+        focus_application(application)
+      end
       if bundle_id == nil then
         local key = target_key(context)
         target_by_instance[key] = was_hidden and nil or application

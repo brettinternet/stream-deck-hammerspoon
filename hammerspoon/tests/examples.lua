@@ -229,6 +229,7 @@ test("application example toggles focused and configured applications", function
   local icon_requests = {}
   local icon_available = true
   local get_error
+  local activate_error = false
   local watcher_callback
   local watcher_started = false
   local events = {
@@ -244,17 +245,32 @@ test("application example toggles focused and configured applications", function
     local app = {
       app_name = name,
       hidden = false,
+      main_window = {},
       hide_calls = 0,
       unhide_calls = 0,
+      activate_calls = 0,
+      activate_all_windows = nil,
       kill_calls = 0,
       hide_result = true,
       unhide_result = true,
+      activate_result = true,
       kill_result = true,
       name = function(self)
         return self.app_name
       end,
       bundleID = function(self)
         return "com.example." .. self.app_name
+      end,
+      mainWindow = function(self)
+        return self.main_window
+      end,
+      activate = function(self, all_windows)
+        self.activate_calls = self.activate_calls + 1
+        self.activate_all_windows = all_windows
+        if activate_error then
+          error("activation unavailable")
+        end
+        return self.activate_result
       end,
       isHidden = function(self)
         return self.hidden
@@ -312,6 +328,7 @@ test("application example toggles focused and configured applications", function
         assertEqual(bundle_id, "com.example.Editor", "launch must use the bundle ID")
         if launch_result and configured then
           configured.hidden = false
+          configured.main_window = configured.main_window or {}
         end
         return launch_result
       end,
@@ -346,10 +363,13 @@ test("application example toggles focused and configured applications", function
   assertEqual(action.id, "com.brettinternet.hammerspoon.application-toggle")
   assertEqual(action.name, "Hide/show application")
   assertEqual(action.settingsSchemaVersion, 1)
-  assertEqual(#action.settingsSchema, 1)
+  assertEqual(#action.settingsSchema, 2)
   assertEqual(action.settingsSchema[1].type, "text")
   assertEqual(action.settingsSchema[1].key, "bundleID")
   assertEqual(action.settingsSchema[1].maxLength, 128)
+  assertEqual(action.settingsSchema[2].type, "boolean")
+  assertEqual(action.settingsSchema[2].key, "focusOnShow")
+  assertFalse(action.settingsSchema[2].default)
   assertEqual(streamdeck.starts, 1, "application must start the bridge")
   assertTrue(watcher_started, "application watcher must start")
 
@@ -434,6 +454,43 @@ test("application example toggles focused and configured applications", function
   assertEqual(launch_calls, 0, "a configured target must toggle even when it is not frontmost")
   assertEqual(app.unhide_calls, 2)
   assertEqual(configured_context.refreshes, 2)
+  assertEqual(app.activate_calls, 0, "focus is opt-in")
+
+  local focus_context = context("focus", {
+    bundleID = "com.example.Editor",
+    focusOnShow = true,
+  })
+  app.hidden = true
+  action.press(focus_context)
+  assertFalse(app.hidden)
+  assertEqual(app.activate_calls, 1)
+  assertTrue(app.activate_all_windows, "show focus must bring all application windows forward")
+  assertEqual(focus_context.refreshes, 1)
+  app.hidden = true
+  app.activate_result = false
+  assertError(function()
+    action.press(focus_context)
+  end, "failed to focus application")
+  assertEqual(focus_context.refreshes, 1, "failed focus must not refresh")
+  app.activate_result = true
+  app.hidden = true
+  activate_error = true
+  assertError(function()
+    action.press(focus_context)
+  end, "failed to focus application")
+  assertEqual(focus_context.refreshes, 1, "thrown focus API must not refresh")
+  activate_error = false
+
+  local frontmost_focus_context = context("frontmost-focus", {
+    focusOnShow = true,
+  })
+  app.hidden = false
+  frontmost = app
+  action.press(frontmost_focus_context)
+  frontmost = other_app
+  action.press(frontmost_focus_context)
+  assertEqual(app.activate_calls, 4, "frontmost tracking must preserve focus setting")
+  assertTrue(app.activate_all_windows)
 
   configured = nil
   local missing_appearance = action.appearance(configured_context)
@@ -449,6 +506,15 @@ test("application example toggles focused and configured applications", function
   end, "failed to open application")
   assertEqual(configured_context.refreshes, 3, "failed open must not refresh")
   launch_result = true
+  configured = app
+  app.hidden = false
+  app.main_window = nil
+  local configured_refreshes = configured_context.refreshes
+  action.press(configured_context)
+  assertEqual(launch_calls, 3, "running applications without a main window must be reopened")
+  assertEqual(app.hide_calls, 4, "reopening a windowless application must not hide it")
+  assertEqual(configured_context.refreshes, configured_refreshes + 1)
+  app.main_window = {}
 
   get_error = "lookup unavailable"
   assertError(function()
