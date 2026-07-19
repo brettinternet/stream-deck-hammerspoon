@@ -38,7 +38,7 @@ chmod +x stream-deck-hammerspoon-install.sh
 
 The installer verifies the archive checksum and version, stages the extraction before changing Hammerspoon's module path, refuses to replace a symlink, file, or unversioned directory, and never edits `~/.hammerspoon/init.lua` or `~/.hammerspoon/streamdeck-token`. Upgrades preserve the previous managed module under `~/.hammerspoon/.streamdeck-backups/`. Roll back to the newest backup with:
 
-The installer is failure-recoverable rather than filesystem-atomic: do not reload Hammerspoon while an install or rollback is running. It keeps the managed module directory in place and restores the previous contents if activation fails.
+The installer is failure-recoverable rather than filesystem-atomic: do not reload Hammerspoon while an install or rollback is running. It keeps the managed module directory in place and attempts to restore the previous contents if activation fails.
 
 ```sh
 ./stream-deck-hammerspoon-install.sh --rollback

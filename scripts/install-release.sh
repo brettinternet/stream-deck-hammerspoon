@@ -64,14 +64,16 @@ rollback() {
   fi
   if ! rm -rf "$target"/* "$target"/.[!.]* "$target"/..?*; then
     rm -rf "$target"/* "$target"/.[!.]* "$target"/..?* || true
-    cp -Rp "$current_backup/streamdeck/." "$target/" || true
-    rmdir "$current_backup" || true
-    fail "could not prepare the current module for rollback"
+    if ! cp -Rp "$current_backup/streamdeck/." "$target/"; then
+      fail "could not prepare the current module for rollback; the existing module could not be restored"
+    fi
+    fail "could not prepare the current module for rollback; the existing module was restored"
   fi
   if ! cp -Rp "$latest/streamdeck/." "$target/"; then
     rm -rf "$target"/* "$target"/.[!.]* "$target"/..?* || true
-    cp -Rp "$current_backup/streamdeck/." "$target/" || true
-    rmdir "$current_backup" || true
+    if ! cp -Rp "$current_backup/streamdeck/." "$target/"; then
+      fail "could not activate the previous module; the current module could not be restored"
+    fi
     fail "could not activate the previous module; the current module was restored"
   fi
 
@@ -139,12 +141,16 @@ install_archive() {
     fi
     if ! rm -rf "$target"/* "$target"/.[!.]* "$target"/..?*; then
       rm -rf "$target"/* "$target"/.[!.]* "$target"/..?* || true
-      cp -Rp "$backup_dir/streamdeck/." "$target/" || true
-      fail "could not prepare the existing module for replacement"
+      if ! cp -Rp "$backup_dir/streamdeck/." "$target/"; then
+        fail "could not prepare the existing module for replacement; the existing module could not be restored"
+      fi
+      fail "could not prepare the existing module for replacement; the existing module was restored"
     fi
     if ! cp -Rp "$stage/." "$target/"; then
       rm -rf "$target"/* "$target"/.[!.]* "$target"/..?* || true
-      cp -Rp "$backup_dir/streamdeck/." "$target/" || true
+      if ! cp -Rp "$backup_dir/streamdeck/." "$target/"; then
+        fail "could not activate the new module; the existing module could not be restored"
+      fi
       fail "could not activate the new module; the existing module was restored"
     fi
     printf 'Installed Hammerspoon module %s; previous version backed up at %s\n' "$version" "$backup_dir"
