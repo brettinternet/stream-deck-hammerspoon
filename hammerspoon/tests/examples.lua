@@ -436,7 +436,10 @@ test("application example toggles focused and configured applications", function
   assertEqual(configured_context.refreshes, 2)
 
   configured = nil
-  assertEqual(action.appearance(configured_context).title, "No app")
+  local missing_appearance = action.appearance(configured_context)
+  assertEqual(missing_appearance.title, "No app")
+  assertEqual(missing_appearance.icon.dataBase64, "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAPgxRSAABHLYB8AAAAABJRU5ErkJggg==",
+    "configured applications can show their system icon before launch")
   action.press(configured_context)
   assertEqual(launch_calls, 1, "missing configured applications must be opened")
   assertEqual(configured_context.refreshes, 3, "opening a configured application must refresh")

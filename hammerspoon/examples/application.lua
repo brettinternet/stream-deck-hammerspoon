@@ -212,17 +212,19 @@ streamdeck.register({
 
   appearance = function(context)
     local application, bundle_id = application_for(context)
-    if not application then
-      return {
+    local appearance
+    if application then
+      appearance = {
+        title = application_name(application),
+        state = application_is_hidden(application) and "active" or "inactive",
+      }
+    else
+      appearance = {
         title = "No app",
         state = "inactive",
       }
     end
 
-    local appearance = {
-      title = application_name(application),
-      state = application_is_hidden(application) and "active" or "inactive",
-    }
     local icon = application_icon(application, bundle_id)
     if icon then
       appearance.appearanceVersion = 1
