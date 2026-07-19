@@ -230,6 +230,7 @@ test("application example toggles focused and configured applications", function
   local icon_available = true
   local get_error
   local activate_error = false
+  local fallback_after_hide
   local watcher_callback
   local watcher_started = false
   local events = {
@@ -279,6 +280,9 @@ test("application example toggles focused and configured applications", function
         self.hide_calls = self.hide_calls + 1
         if self.hide_result then
           self.hidden = true
+          if fallback_after_hide then
+            frontmost = fallback_after_hide
+          end
         end
         return self.hide_result
       end,
@@ -444,10 +448,14 @@ test("application example toggles focused and configured applications", function
   assertEqual(appearance.icon.dataBase64, "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAPgxRSAABHLYB8AAAAABJRU5ErkJggg==",
     "configured applications must use their system icon")
   assertEqual(get_calls, 1, "appearance must resolve configured applications")
+  fallback_after_hide = other_app
   action.press(configured_context)
   assertTrue(app.hidden, "configured frontmost application must be hidden")
   assertEqual(app.hide_calls, 3)
   assertEqual(configured_context.refreshes, 1)
+  assertEqual(other_app.activate_calls, 1, "hiding the target must refocus the fallback application")
+  assertTrue(other_app.activate_all_windows)
+  fallback_after_hide = nil
   frontmost = other_app
   action.press(configured_context)
   assertFalse(app.hidden, "configured application must unhide on the next click")
@@ -461,24 +469,33 @@ test("application example toggles focused and configured applications", function
     focusOnShow = true,
   })
   app.hidden = true
+  frontmost = other_app
   action.press(focus_context)
   assertFalse(app.hidden)
   assertEqual(app.activate_calls, 1)
   assertTrue(app.activate_all_windows, "show focus must bring all application windows forward")
+  assertEqual(other_app.activate_calls, 1, "show must not refocus the fallback before hiding")
   assertEqual(focus_context.refreshes, 1)
+  frontmost = app
+  action.press(focus_context)
+  assertTrue(app.hidden)
+  assertEqual(other_app.activate_calls, 2, "hiding the shown app must refocus the previous app")
+  assertTrue(other_app.activate_all_windows)
+  assertEqual(focus_context.refreshes, 2)
   app.hidden = true
+  frontmost = other_app
   app.activate_result = false
   assertError(function()
     action.press(focus_context)
   end, "failed to focus application")
-  assertEqual(focus_context.refreshes, 1, "failed focus must not refresh")
+  assertEqual(focus_context.refreshes, 2, "failed focus must not refresh")
   app.activate_result = true
   app.hidden = true
   activate_error = true
   assertError(function()
     action.press(focus_context)
   end, "failed to focus application")
-  assertEqual(focus_context.refreshes, 1, "thrown focus API must not refresh")
+  assertEqual(focus_context.refreshes, 2, "thrown focus API must not refresh")
   activate_error = false
 
   local frontmost_focus_context = context("frontmost-focus", {
@@ -512,7 +529,7 @@ test("application example toggles focused and configured applications", function
   local configured_refreshes = configured_context.refreshes
   action.press(configured_context)
   assertEqual(launch_calls, 3, "running applications without a main window must be reopened")
-  assertEqual(app.hide_calls, 4, "reopening a windowless application must not hide it")
+  assertEqual(app.hide_calls, 5, "reopening a windowless application must not hide it")
   assertEqual(configured_context.refreshes, configured_refreshes + 1)
   app.main_window = {}
 

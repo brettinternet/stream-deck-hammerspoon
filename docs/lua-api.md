@@ -206,7 +206,7 @@ When the plugin is not connected, refresh requests cannot be delivered. The plug
 The repository includes complete configuration snippets in `hammerspoon/examples/`:
 
 - `microphone.lua` toggles the default input device's input mute state and refreshes the pressed key.
-- `application.lua` toggles the focused application's hidden state, retaining the hidden target for the next click, or toggles a configured running application by bundle ID. A running process with no main window is reopened, and the optional `focusOnShow` setting activates the app and brings all its windows forward after showing; it refreshes from `hs.application.watcher` events.
+- `application.lua` toggles the focused application's hidden state, retaining the hidden target for the next click, or toggles a configured running application by bundle ID. A running process with no main window is reopened; when the action focuses a target, hiding it restores the application that was frontmost beforehand; `focusOnShow` controls whether showing activates the target and brings all its windows forward. It refreshes from `hs.application.watcher` events.
 - `multi-instance.lua` keeps independent toggle state for each visible key and reads an optional per-instance `label` setting.
 - `focus-timer.lua` (`com.brettinternet.hammerspoon.focus-timer`) starts and stops a per-key 25-minute focus timer, showing `Focus` while it runs and returning to `Ready` when it expires; its per-instance lifecycle owns the timer and refreshes the key on start, stop, and expiry.
 - `pomodoro.lua` (`com.brettinternet.hammerspoon.pomodoro`) runs four per-key 25-minute focus cycles with short breaks and a final long break, showing each phase and refreshing immediately after presses and timer transitions.
