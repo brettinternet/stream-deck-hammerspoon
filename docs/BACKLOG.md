@@ -59,7 +59,7 @@ B1 and B6 follow B7 by priority order, not technical dependency; they are indepe
 
 ### B1 — Define and implement additional appearance fields
 
-**Status:** Scheduled; ready after B7 by priority order.
+**Status:** In progress 2026-07-21 — B1-T1 decided an additive v1 encoder-level extension; implementation remains.
 
 **Product assessment:** Appearance richness is the fun axis of this plugin, and the versioned extension point (ADR-003) was designed for exactly this. v1 already ships title, binary state, foreground/background hex colors, progress 0–1, a ≤4-character badge, and bundled or bounded custom PNG/SVG icons end to end. Candidate fields, grounded in shipped capability and existing examples: encoder `value`/`indicator` fields mapping to the SDK `$B1` layout so a dial shows a live level bar on the LCD (volume, brightness, timer progress); a brief pulse/flash state-change cue rendered by the plugin; icon tinting for state-colored variants of bundled icons; title styling (size, alignment, multi-line). B1-T1 selects from these — it does not have to invent fields from nothing anymore.
 
@@ -75,7 +75,8 @@ B1 and B6 follow B7 by priority order, not technical dependency; they are indepe
 
 #### Implementation tasks
 
-- [ ] B1-T1 — Decide the concrete fields, bounds, fallback behavior, and rendering owner.
+- [x] B1-T1 — Decide the concrete fields, bounds, fallback behavior, and rendering owner.
+  - Decision (2026-07-21): keep `appearanceVersion: 1` for additive compatibility and add a paired encoder `value`/`indicator` payload. `value` is a non-empty, control-free display string of at most 16 Unicode scalar values; `indicator` is a finite number from 0 through 100. Lua validates and declares both fields; the plugin alone maps a valid pair on a recognized encoder to the official `$B1` layout, using only the already-validated title and safe bundled/custom icon data. The pair is rejected unless both fields are present and it is not combined with `foregroundColor`, `backgroundColor`, `progress`, or `badge`; keypads, unsupported encoder profiles, and SDK failures keep the existing title/state or `$A1` fallback. Keeping the version at 1 lets older v1 receivers ignore the optional fields safely rather than rejecting a new enum value.
 - [ ] B1-T2 — Define the versioned schema extension and update TypeScript/Lua validators together.
 - [ ] B1-T3 — Implement official-SDK rendering and safe fallback behavior.
 - [ ] B1-T4 — Add positive, malformed, boundary, and compatibility fixtures/tests.
