@@ -93,7 +93,7 @@ B1 and B6 follow B7 by priority order, not technical dependency; they are indepe
 
 ### B6 — Add generic presentation types to the Stream Deck manifest
 
-**Status:** In progress 2026-07-21 — B6-T1 selected the multi-state presentation action; B6-T2/T3 remain.
+**Status:** Blocked pending manual device verification 2026-07-21 — `ddb70bf175c5c09b8053a3f2ecd7943d7db3b55f` and `42ac4deeac136b11cca5f0f76070c79ce77e7d90` complete and independently review the implementation; B6-T2/T3 and B6-AC1 through B6-AC3 are verified. B6-DOD1 remains: install the built plugin in the official Stream Deck application on a supported keypad, verify states 0–3 and omitted binary fallback, then confirm Button/Toggle remain unchanged.
 
 **Product assessment:** Encoder and touchscreen support is not a gap — both shipped actions declare `Controllers: ["Keypad", "Encoder"]`, dial pushes/rotations and touch taps flow through `dialDown`/`dialRotate`/`dialUp`/`touchTap`, and encoder LCD rendering uses the `$A1`/`$A0` layouts. A new manifest type must therefore earn its UUID with behavior Button and Toggle cannot express. Two grounded candidates: a more-than-two-state multi-state action (the pomodoro example currently squeezes its focus/break phases into title text where distinct per-phase images would be clearer and more fun), and a dial-first action whose identity and settings are tuned for continuous values rather than presses. B6-T1 selects the type.
 
@@ -112,14 +112,14 @@ B1 and B6 follow B7 by priority order, not technical dependency; they are indepe
 
 - [x] B6-T1 — Define the presentation type's user-visible behavior and Lua appearance contract.
   - Decision (2026-07-21): add the keypad-only **Hammerspoon Multi-State** action with stable UUID `com.brettinternet.hammerspoon.multistate` and four manifest states. It uses the existing action selection and property-inspector settings unchanged; lifecycle, callbacks, and hardware access stay in the official plugin. Lua keeps the required binary `state` field for Button/Toggle compatibility and may add `presentationState` only when `appearanceVersion = 1`: an integer 0–3 selects the Multi-State action's static state image, while an omitted field deterministically falls back to the existing binary state. The value is display-only, has no callback semantics, is ignored by Button/Toggle, and is rejected outside its bounded range.
-- [ ] B6-T2 — Add the manifest action, assets, inspector routing, and compiled artifact.
-- [ ] B6-T3 — Add device/controller coverage and release-package validation.
+- [x] B6-T2 — Add the manifest action, assets, inspector routing, and compiled artifact.
+- [x] B6-T3 — Add device/controller coverage and release-package validation.
 
 #### Acceptance criteria
 
-- [ ] B6-AC1 — The new action has a stable UUID and does not change existing Button/Toggle settings identity.
-- [ ] B6-AC2 — The official Stream Deck application owns lifecycle, rendering, and hardware access as before.
-- [ ] B6-AC3 — Source and compiled manifest trees remain synchronized and package validation passes.
+- [x] B6-AC1 — The new action has a stable UUID and does not change existing Button/Toggle settings identity.
+- [x] B6-AC2 — The official Stream Deck application owns lifecycle, rendering, and hardware access as before.
+- [x] B6-AC3 — Source and compiled manifest trees remain synchronized and package validation passes.
 
 #### Definition of Done
 
