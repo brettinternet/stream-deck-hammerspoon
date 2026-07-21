@@ -20,17 +20,17 @@ The plugin's direction: any registered Hammerspoon behavior becomes a productive
 
 ### B7 — Reconcile dynamic property-inspector documentation with the implementation
 
-**Status:** Ready; documentation correction for an already-implemented, tested feature.
+**Status:** Complete 2026-07-21 — `911fd396e35d1dc22009fb81a83747934df429b8` and `6c9b83b6569fdcedcb5045743f370322291bf8e4` reconcile the documentation; independent verification passed B7-AC1 through B7-DOD1, and `bun test tests/property-inspector.test.ts tests/protocol.test.ts` passed (41 tests).
 
-**Product assessment:** Necessary. The bounded settings-descriptor model is this plugin's "pluggable" story — Lua authors declare `text`, `number`, `boolean`, and `select` fields and get a working property-inspector form — yet the README and the Lua API exclusion list still deny it exists. The contradiction is internal: `docs/lua-api.md:170-171,184` documents the feature that `docs/lua-api.md:404` excludes, and `docs/protocol.md:131-133` already specifies it normatively.
+**Product assessment:** Necessary. The bounded settings-descriptor model is this plugin's "pluggable" story — Lua authors declare `text`, `number`, `boolean`, and `select` fields and get a working property-inspector form. Before this correction, the README and Lua API exclusion list denied that support despite `docs/lua-api.md` and `docs/protocol.md` documenting it.
 
-**Description:** README and the Lua API exclusion list currently describe dynamic property-inspector forms as a v1 non-goal or excluded API. The implementation supports version-1 bounded settings descriptors (`text`, `number`, `boolean`, and `select`) and persists validated values, and two documents already describe that model. Update the remaining docs to distinguish the supported bounded descriptor model from still-excluded arbitrary forms or unbounded configuration messages.
+**Description:** Reconcile the README, architecture guide, and Lua API with the already-implemented version-1 bounded settings descriptors (`text`, `number`, `boolean`, and `select`) that persist validated values. The completed documentation distinguishes that supported model from still-excluded arbitrary forms and unbounded configuration messages.
 
 **References:**
 
-- `README.md:19` — currently calls dynamic property-inspector forms a v1 non-goal.
-- `docs/architecture.md:158` — currently lists dynamic forms among later possibilities.
-- `docs/lua-api.md:394-407` — exclusion list contradicting the same document's lines 170-171 and 184.
+- `README.md` — previously called dynamic property-inspector forms a v1 non-goal.
+- `docs/architecture.md` — previously listed dynamic forms among later possibilities.
+- `docs/lua-api.md` — the prior exclusion list contradicted the same document's settings-schema documentation.
 - `docs/lua-api.md:170-171,184` — already documents `settingsSchema`, `settingsSchemaVersion`, and the four bounded field types.
 - `docs/protocol.md:131-133` — normative bounded field specification with bounds and rejection behavior.
 - `plugin/src/property-inspector.ts:106-145,341,419-443,503-632` — settings-field type model, descriptor parsing, per-action schema resolution, and validation/rendering/saving.
@@ -39,19 +39,19 @@ The plugin's direction: any registered Hammerspoon behavior becomes a productive
 
 #### Implementation tasks
 
-- [ ] B7-T1 — Update `README.md:19`, `docs/architecture.md:158`, and the `docs/lua-api.md` exclusion list so exclusions name only still-excluded behavior, resolving the Lua API document's internal contradiction.
-- [ ] B7-T2 — Preserve explicit exclusions for arbitrary or unbounded inspector/configuration behavior.
-- [ ] B7-T3 — Add or update documentation examples, point to `docs/protocol.md` as the normative field specification, and reference the existing tests.
+- [x] B7-T1 — Update `README.md:19`, `docs/architecture.md:158`, and the `docs/lua-api.md` exclusion list so exclusions name only still-excluded behavior, resolving the Lua API document's internal contradiction.
+- [x] B7-T2 — Preserve explicit exclusions for arbitrary or unbounded inspector/configuration behavior.
+- [x] B7-T3 — Add or update documentation examples, point to `docs/protocol.md` as the normative field specification, and reference the existing tests.
 
 #### Acceptance criteria
 
-- [ ] B7-AC1 — No maintained document claims that all dynamic property-inspector forms are unimplemented.
-- [ ] B7-AC2 — Documentation names the supported schema version and four supported field types.
-- [ ] B7-AC3 — Documentation still rejects arbitrary plugin-to-Lua configuration messages and unbounded forms.
+- [x] B7-AC1 — No maintained document claims that all dynamic property-inspector forms are unimplemented.
+- [x] B7-AC2 — Documentation names the supported schema version and four supported field types.
+- [x] B7-AC3 — Documentation still rejects arbitrary plugin-to-Lua configuration messages and unbounded forms.
 
 #### Definition of Done
 
-- [ ] B7-DOD1 — Documentation references match the implementation and targeted inspector/protocol tests remain green.
+- [x] B7-DOD1 — Documentation references match the implementation and targeted inspector/protocol tests remain green.
 
 ## Scheduled after B7
 
