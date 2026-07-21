@@ -93,7 +93,7 @@ B1 and B6 follow B7 by priority order, not technical dependency; they are indepe
 
 ### B6 — Add generic presentation types to the Stream Deck manifest
 
-**Status:** Scheduled; ready after B7 by priority order.
+**Status:** In progress 2026-07-21 — B6-T1 selected the multi-state presentation action; B6-T2/T3 remain.
 
 **Product assessment:** Encoder and touchscreen support is not a gap — both shipped actions declare `Controllers: ["Keypad", "Encoder"]`, dial pushes/rotations and touch taps flow through `dialDown`/`dialRotate`/`dialUp`/`touchTap`, and encoder LCD rendering uses the `$A1`/`$A0` layouts. A new manifest type must therefore earn its UUID with behavior Button and Toggle cannot express. Two grounded candidates: a more-than-two-state multi-state action (the pomodoro example currently squeezes its focus/break phases into title text where distinct per-phase images would be clearer and more fun), and a dial-first action whose identity and settings are tuned for continuous values rather than presses. B6-T1 selects the type.
 
@@ -110,7 +110,8 @@ B1 and B6 follow B7 by priority order, not technical dependency; they are indepe
 
 #### Implementation tasks
 
-- [ ] B6-T1 — Define the presentation type's user-visible behavior and Lua appearance contract.
+- [x] B6-T1 — Define the presentation type's user-visible behavior and Lua appearance contract.
+  - Decision (2026-07-21): add the keypad-only **Hammerspoon Multi-State** action with stable UUID `com.brettinternet.hammerspoon.multistate` and four manifest states. It uses the existing action selection and property-inspector settings unchanged; lifecycle, callbacks, and hardware access stay in the official plugin. Lua keeps the required binary `state` field for Button/Toggle compatibility and may add `presentationState` only when `appearanceVersion = 1`: an integer 0–3 selects the Multi-State action's static state image, while an omitted field deterministically falls back to the existing binary state. The value is display-only, has no callback semantics, is ignored by Button/Toggle, and is rejected outside its bounded range.
 - [ ] B6-T2 — Add the manifest action, assets, inspector routing, and compiled artifact.
 - [ ] B6-T3 — Add device/controller coverage and release-package validation.
 
