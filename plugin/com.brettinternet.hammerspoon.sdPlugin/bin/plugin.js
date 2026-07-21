@@ -19135,11 +19135,13 @@ function portFromUrl(value) {
         return 17321;
     }
 }
+const LEGACY_LOOPBACK_URL = /^ws:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:[/?#]|$)/i;
 function isLegacyLoopbackUrl(value) {
+    if (!LEGACY_LOOPBACK_URL.test(value))
+        return false;
     try {
-        const parsed = new URL(value);
-        return parsed.protocol === "ws:"
-            && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]");
+        new URL(value);
+        return true;
     }
     catch {
         return false;

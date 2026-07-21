@@ -210,20 +210,42 @@ describe("BridgeClient authentication and transport", () => {
     expect(statuses).toContain("connected");
   });
 
-  test("rejects non-loopback legacy bridge URLs before token authentication", () => {
+  test("rejects non-literal loopback legacy bridge URLs before token authentication", () => {
+    let tokenReads = 0;
+    let socketsCreated = 0;
     const options = {
       pluginVersion: "1.0.0",
-      createSocket: () => new FakeSocket(),
-      readToken: async () => "shared-token",
+      createSocket: () => {
+        socketsCreated += 1;
+        return new FakeSocket();
+      },
+      readToken: async () => {
+        tokenReads += 1;
+        return "shared-token";
+      },
     };
 
-    for (const url of ["ws://localhost:17321/streamdeck", "ws://127.0.0.1:17321/streamdeck", "ws://[::1]:17321/streamdeck"]) {
+    for (const url of [
+      "ws://localhost:17321/streamdeck",
+      "ws://127.0.0.1:17321/streamdeck",
+      "ws://[::1]:17321/streamdeck",
+    ]) {
       expect(() => new BridgeClient({ ...options, url })).not.toThrow();
     }
 
-    for (const url of ["ws://192.168.1.10:17321/streamdeck", "wss://bridge.example.test/streamdeck", "ws://localhost.evil.test/streamdeck"]) {
+    for (const url of [
+      "ws://192.168.1.10:17321/streamdeck",
+      "wss://bridge.example.test/streamdeck",
+      "ws://localhost.evil.test/streamdeck",
+      "ws://127.1:17321/streamdeck",
+      "ws://2130706433:17321/streamdeck",
+      "ws://[0:0:0:0:0:0:0:1]:17321/streamdeck",
+    ]) {
       expect(() => new BridgeClient({ ...options, url })).toThrow("Legacy bridge URL must target loopback.");
     }
+
+    expect(tokenReads).toBe(0);
+    expect(socketsCreated).toBe(0);
   });
   test("falls back to the registered action ID and snapshots settings across reconnects", async () => {
     const sockets: FakeSocket[] = [];
