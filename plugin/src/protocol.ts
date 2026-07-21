@@ -115,8 +115,36 @@ export interface AppearanceFields {
   progress?: number;
   badge?: string;
   icon?: AppearanceIcon;
+  value?: string;
+  indicator?: number;
 }
 
+
+export function isSafeAppearanceValue(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0) {
+    return false;
+  }
+  try {
+    encodeURIComponent(value);
+  } catch {
+    return false;
+  }
+  let scalarValues = 0;
+  for (const character of value) {
+    scalarValues += 1;
+    if (scalarValues > 16) {
+      return false;
+    }
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined
+      && (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f))
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 export type State = WireState;
 
 export interface WireMessage {
@@ -941,6 +969,34 @@ export function parseServerMessage(data: string): ServerMessage {
   }
   if (!validateProtocolMessage(parsed)) {
     throw schemaError("server");
+  }
+  if (parsed.type === "appearance") {
+    const hasValue = parsed.value !== undefined;
+    const hasIndicator = parsed.indicator !== undefined;
+    if (hasValue !== hasIndicator) {
+      throw new Error("Invalid server message: appearance value and indicator must be provided together.");
+    }
+    if (hasValue) {
+      if (!isSafeAppearanceValue(parsed.value)) {
+        throw new Error("Invalid server message: appearance value is empty, unsafe, invalid Unicode, or too long.");
+      }
+      if (
+        typeof parsed.indicator !== "number"
+        || !Number.isFinite(parsed.indicator)
+        || parsed.indicator < 0
+        || parsed.indicator > 100
+      ) {
+        throw new Error("Invalid server message: appearance indicator must be finite and between 0 and 100.");
+      }
+      if (
+        parsed.foregroundColor !== undefined
+        || parsed.backgroundColor !== undefined
+        || parsed.progress !== undefined
+        || parsed.badge !== undefined
+      ) {
+        throw new Error("Invalid server message: appearance value/indicator cannot use v1 decorations.");
+      }
+    }
   }
   if (parsed.type === "appearance" && parsed.badge !== undefined) {
     for (const character of parsed.badge as string) {

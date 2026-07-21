@@ -51,6 +51,21 @@
   },
   {
     "protocolVersion": 1,
+    "type": "appearance",
+    "instanceId": "deck-instance-01",
+    "actionId": "com.example.volumeUp",
+    "title": "Volume",
+    "state": 1,
+    "appearanceVersion": 1,
+    "value": "72%",
+    "indicator": 72,
+    "icon": {
+      "kind": "bundled",
+      "name": "hammerspoon"
+    }
+  },
+  {
+    "protocolVersion": 1,
     "type": "keyDown",
     "instanceId": "deck-instance-01",
     "sessionId": "opaque-session-01",

@@ -147,6 +147,8 @@ function server.new(registry, protocol, contextFactory)
     if appearance and appearance.progress ~= nil then message.progress = appearance.progress end
     if appearance and appearance.badge ~= nil then message.badge = appearance.badge end
     if appearance and appearance.icon ~= nil then message.icon = appearance.icon end
+    if appearance and appearance.value ~= nil then message.value = appearance.value end
+    if appearance and appearance.indicator ~= nil then message.indicator = appearance.indicator end
     return self:_queue(message)
   end
 

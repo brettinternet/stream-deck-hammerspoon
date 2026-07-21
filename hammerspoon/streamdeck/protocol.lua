@@ -245,6 +245,23 @@ local function isAppearanceBadge(value)
   return length ~= nil and length <= 4
 end
 
+local function isAppearanceValue(value)
+  if type(value) ~= "string" or value == "" then
+    return false
+  end
+  local ok, length = pcall(utf8.len, value)
+  if not ok or length == nil or length > 16 then
+    return false
+  end
+  return pcall(function()
+    for _, codePoint in utf8.codes(value) do
+      if codePoint <= 0x1f or (codePoint >= 0x7f and codePoint <= 0x9f) then
+        error("control character")
+      end
+    end
+  end)
+end
+
 local MAX_ICON_BYTES = 32768
 local MAX_ICON_BASE64_LENGTH = 43692
 local function decodeBase64(value)
@@ -856,11 +873,25 @@ function protocol.validate(message)
       local progress = rawget(message, "progress")
       local badge = rawget(message, "badge")
       local icon = rawget(message, "icon")
-      local hasExtendedFields = foregroundColor ~= nil or backgroundColor ~= nil or progress ~= nil or badge ~= nil or icon ~= nil
+      local value = rawget(message, "value")
+      local indicator = rawget(message, "indicator")
+      local hasExtendedFields = foregroundColor ~= nil or backgroundColor ~= nil or progress ~= nil
+        or badge ~= nil or icon ~= nil or value ~= nil or indicator ~= nil
       ok = appearanceVersion == nil or (isInteger(appearanceVersion) and appearanceVersion == 1)
       if ok and hasExtendedFields then ok = appearanceVersion == 1 end
       if ok and foregroundColor ~= nil then ok = isAppearanceColor(foregroundColor) end
       if ok and backgroundColor ~= nil then ok = isAppearanceColor(backgroundColor) end
+      if ok and ((value ~= nil) ~= (indicator ~= nil)) then ok = false end
+      if ok and value ~= nil then
+        ok = isAppearanceValue(value)
+          and isFiniteNumber(indicator)
+          and indicator >= 0
+          and indicator <= 100
+          and foregroundColor == nil
+          and backgroundColor == nil
+          and progress == nil
+          and badge == nil
+      end
       if ok and progress ~= nil then ok = isFiniteNumber(progress) and progress >= 0 and progress <= 1 end
       if ok and badge ~= nil then ok = isAppearanceBadge(badge) end
       if ok and icon ~= nil then ok = isAppearanceIcon(icon) end

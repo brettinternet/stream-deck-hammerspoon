@@ -81,6 +81,14 @@ const extendedAppearance: ServerMessage = {
   badge: "OK",
 };
 
+const encoderAppearance: ServerMessage = {
+  ...appearance,
+  appearanceVersion: 1,
+  value: "72%",
+  indicator: 72,
+  icon: { kind: "bundled", name: "hammerspoon" },
+};
+
 
 const feedback: ServerMessage = {
   protocolVersion: 1,
@@ -180,6 +188,7 @@ describe("protocol examples", () => {
     }
     expect(parseServerMessage(JSON.stringify(appearance))).toEqual(appearance);
     expect(parseServerMessage(JSON.stringify(extendedAppearance))).toEqual(extendedAppearance);
+    expect(parseServerMessage(JSON.stringify(encoderAppearance))).toEqual(encoderAppearance);
     expect(parseServerMessage(JSON.stringify(feedback))).toEqual(feedback);
   });
 });
@@ -236,7 +245,6 @@ describe("protocol direction and validation", () => {
       expect(() => parseServerMessage(frame)).toThrow();
     }
   });
-
   test("rejects malformed appearance payloads", () => {
     const malformedAppearances = [
       { ...appearance, title: 42 },
@@ -253,11 +261,42 @@ describe("protocol direction and validation", () => {
       { ...extendedAppearance, badge: "\ud800" },
       { ...extendedAppearance, badge: "\u0000" },
       { ...appearance, progress: 0.5 },
+      { ...encoderAppearance, value: undefined },
+      { ...encoderAppearance, indicator: undefined },
+      { ...encoderAppearance, value: "" },
+      { ...encoderAppearance, value: "\u0000" },
+      { ...encoderAppearance, value: "😀".repeat(17) },
+      { ...encoderAppearance, value: "\ud800" },
+      { ...encoderAppearance, indicator: -0.01 },
+      { ...encoderAppearance, indicator: 100.01 },
+      { ...encoderAppearance, indicator: Number.NaN },
+      { ...encoderAppearance, indicator: Number.POSITIVE_INFINITY },
+      { ...encoderAppearance, foregroundColor: "#FFFFFF" },
+      { ...encoderAppearance, backgroundColor: "#000000" },
+      { ...encoderAppearance, progress: 0.5 },
+      { ...encoderAppearance, badge: "OK" },
     ];
 
     for (const message of malformedAppearances) {
       expect(() => parseServerMessage(JSON.stringify(message))).toThrow();
     }
+  });
+
+  test("accepts appearance value boundaries and Unicode scalars", () => {
+    expect(parseServerMessage(JSON.stringify({ ...encoderAppearance, value: "x", indicator: 0 }))).toEqual({
+      ...encoderAppearance,
+      value: "x",
+      indicator: 0,
+    });
+    expect(parseServerMessage(JSON.stringify({
+      ...encoderAppearance,
+      value: "😀".repeat(16),
+      indicator: 100,
+    }))).toEqual({
+      ...encoderAppearance,
+      value: "😀".repeat(16),
+      indicator: 100,
+    });
   });
 
   test("validates bundled fallback and custom image safety bounds", () => {

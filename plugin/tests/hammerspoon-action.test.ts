@@ -29,6 +29,8 @@ class FakeAction {
   rejectState = false;
   rejectImage = false;
   rejectImageClear = false;
+  rejectFeedback = false;
+  rejectLayout = false;
   imageDelay?: Promise<void>;
   okCount = 0;
   rejectAlert = false;
@@ -76,10 +78,16 @@ class FakeAction {
 
   async setFeedback(feedback: Record<string, unknown>): Promise<void> {
     this.feedbacks.push(feedback);
+    if (this.rejectFeedback) {
+      throw new Error("setFeedback failed");
+    }
   }
 
   async setFeedbackLayout(layout: string): Promise<void> {
     this.layouts.push(layout);
+    if (this.rejectLayout) {
+      throw new Error("setFeedbackLayout failed");
+    }
   }
 
   async showAlert(): Promise<void> {
@@ -532,6 +540,87 @@ describe("HammerspoonAction", () => {
     await flush();
     expect(supported.feedbacks).toContainEqual({ title: "Supported LCD" });
     expect(unknown.feedbacks).toContainEqual({ title: "Fallback LCD" });
+  });
+  test("renders valid encoder value indicators with official B1 and falls back safely", async () => {
+    const bridge = new FakeBridge();
+    bridge.status = "connected";
+    const adapter = makeAction(bridge);
+    adapter.subscribe();
+    const dial = new FakeAction("value-encoder", false, {
+      controllerType: "Encoder",
+      device: { type: 7, size: { columns: 4, rows: 2 } },
+    });
+
+    await adapter.onWillAppear(appear(dial, { actionId: "action.value" }));
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "value-encoder",
+      actionId: "action.value",
+      title: "Volume",
+      state: 1,
+      appearanceVersion: 1,
+      value: "72%",
+      indicator: 72,
+      icon: { kind: "bundled", name: "hammerspoon" },
+    });
+    await flush();
+    expect(dial.layouts).toEqual(["$A1", "$B1"]);
+    expect(dial.feedbacks.at(-1)).toEqual({
+      title: "Volume",
+      value: "72%",
+      indicator: 72,
+      icon: "imgs/toggle-on.svg",
+    });
+
+    const unsupported = new FakeAction("unsupported-value", false);
+    await adapter.onWillAppear(appear(unsupported, { actionId: "action.value" }));
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "unsupported-value",
+      actionId: "action.value",
+      title: "Volume",
+      state: 1,
+      appearanceVersion: 1,
+      value: "72%",
+      indicator: 72,
+    });
+    await flush();
+    expect(unsupported.layouts).toEqual(["$A1"]);
+    expect(unsupported.feedbacks.at(-1)).toEqual({ title: "Volume" });
+
+    const callsBeforeMalformed = structuredClone({ layouts: dial.layouts, feedbacks: dial.feedbacks });
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "value-encoder",
+      actionId: "action.value",
+      title: "Unsafe",
+      state: 0,
+      appearanceVersion: 1,
+      value: "\u0000",
+      indicator: 50,
+    });
+    await flush();
+    expect(dial.layouts).toEqual(callsBeforeMalformed.layouts);
+    expect(dial.feedbacks).toEqual(callsBeforeMalformed.feedbacks);
+
+    dial.rejectFeedback = true;
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: "value-encoder",
+      actionId: "action.value",
+      title: "Fallback",
+      state: 0,
+      appearanceVersion: 1,
+      value: "0%",
+      indicator: 0,
+    });
+    await flush();
+    expect(dial.layouts).toEqual(["$A1", "$B1", "$A1"]);
+    expect(dial.feedbacks.at(-1)).toEqual({ title: "Fallback" });
   });
   test("renders decorated supported encoder appearances on the 200x100 LCD canvas", async () => {
     const bridge = new FakeBridge();

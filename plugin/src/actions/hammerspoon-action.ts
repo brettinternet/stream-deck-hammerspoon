@@ -1,11 +1,12 @@
 import streamDeck, {
   SingletonAction,
   type DialAction,
+  type FeedbackPayload,
   type KeyAction,
   type SendToPluginEvent,
 } from "@elgato/streamdeck";
 import type { BridgeAppearance, BridgeClient, BridgeDiagnosticArea, BridgeDiagnosticCode, BridgeFeedback } from "../bridge.js";
-import { isSafeAppearanceIcon, safeAppearanceIconImage, sanitizeDeviceMetadata, type DeviceMetadata, type JsonSettings } from "../protocol.js";
+import { isSafeAppearanceIcon, isSafeAppearanceValue, safeAppearanceIconImage, sanitizeDeviceMetadata, type DeviceMetadata, type JsonSettings } from "../protocol.js";
 type JsonObject = { [key: string]: JsonValue };
 type JsonPrimitive = boolean | number | string | null | undefined;
 type JsonValue = JsonObject | JsonPrimitive | JsonValue[];
@@ -38,6 +39,7 @@ type RenderingProfile = {
   keyImageSize: 72;
   encoderLayout?: "$A1";
   encoderDecoratedLayout?: "$A0";
+  encoderValueLayout?: "$B1";
 };
 
 const DEFAULT_RENDERING_PROFILE: RenderingProfile = { keyImageSize: 72, encoderLayout: "$A1" };
@@ -71,7 +73,7 @@ function selectRenderingProfile(metadata: DeviceMetadata | undefined): Rendering
     return undefined;
   }
   return controllerType === "encoder"
-    ? { keyImageSize: 72, encoderLayout: "$A1", encoderDecoratedLayout: "$A0" }
+    ? { keyImageSize: 72, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" }
     : { keyImageSize: 72 };
 }
 
@@ -129,6 +131,28 @@ function escapeXml(value: string): string {
 const BUNDLED_BUTTON_ICON_PATH = "imgs/button.svg";
 const BUNDLED_TOGGLE_INACTIVE_ICON_PATH = "imgs/toggle-off.svg";
 const BUNDLED_TOGGLE_ACTIVE_ICON_PATH = "imgs/toggle-on.svg";
+
+function hasValidAppearanceExtension(appearance: BridgeAppearance): boolean {
+  const hasValue = appearance.value !== undefined;
+  const hasIndicator = appearance.indicator !== undefined;
+  if (hasValue !== hasIndicator) {
+    return false;
+  }
+  if (!hasValue) {
+    return true;
+  }
+  return appearance.appearanceVersion === 1
+    && isSafeAppearanceValue(appearance.value)
+    && typeof appearance.indicator === "number"
+    && Number.isFinite(appearance.indicator)
+    && appearance.indicator >= 0
+    && appearance.indicator <= 100
+    && appearance.foregroundColor === undefined
+    && appearance.backgroundColor === undefined
+    && appearance.progress === undefined
+    && appearance.badge === undefined
+    && (appearance.icon === undefined || isSafeAppearanceIcon(appearance.icon));
+}
 
 
 function appearanceImage(
@@ -344,7 +368,7 @@ type TrackedInstance = {
   feedbackTimer?: unknown;
   metadata?: DeviceMetadata;
   renderingProfile?: RenderingProfile;
-  encoderLayout?: "$A0" | "$A1";
+  encoderLayout?: "$A0" | "$A1" | "$B1";
   settings: HammerspoonActionSettings;
   imageAppliedStates: Set<0 | 1>;
 };
@@ -695,6 +719,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     if (!instance || instance.actionId !== appearance.actionId) {
       return;
     }
+    if (!hasValidAppearanceExtension(appearance)) {
+      return;
+    }
     if (this.bridge.status !== "connected") {
       await this.renderInstance(appearance.instanceId);
       return;
@@ -836,7 +863,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   private async setDialLayout(
     action: DialAction<HammerspoonActionSettings>,
     renderingProfile?: RenderingProfile,
-    layout: "$A0" | "$A1" = renderingProfile?.encoderLayout ?? "$A1",
+    layout: "$A0" | "$A1" | "$B1" = renderingProfile?.encoderLayout ?? "$A1",
   ): Promise<boolean> {
     const instance = this.instances.get(action.id);
     if (instance?.action === action && instance.encoderLayout === layout) {
@@ -872,6 +899,40 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     const layout = hasDecoration && renderingProfile?.encoderDecoratedLayout !== undefined
       ? renderingProfile.encoderDecoratedLayout
       : renderingProfile?.encoderLayout ?? "$A1";
+    const hasValueIndicator = appearance !== undefined
+      && appearance.value !== undefined
+      && appearance.indicator !== undefined;
+    if (hasValueIndicator && renderingProfile?.encoderValueLayout === "$B1") {
+      const icon = appearance.icon === undefined
+        ? undefined
+        : appearance.icon.kind === "bundled"
+          ? bundledIcon
+          : safeAppearanceIconImage(appearance.icon);
+      if (appearance.icon !== undefined && icon === undefined) {
+        await this.alert(action);
+        return false;
+      }
+      const feedback: FeedbackPayload = {
+        title,
+        value: appearance.value!,
+        indicator: appearance.indicator!,
+      };
+      if (icon !== undefined) {
+        feedback.icon = icon;
+      }
+      if (!(await this.setDialLayout(action, renderingProfile, "$B1"))) {
+        await this.setDialTitle(action, title, { keyImageSize: 72, encoderLayout: "$A1" });
+        return false;
+      }
+      try {
+        await action.setFeedback(feedback);
+        return true;
+      } catch {
+        await this.alert(action);
+        await this.setDialTitle(action, title, { keyImageSize: 72, encoderLayout: "$A1" });
+        return false;
+      }
+    }
 
     try {
       if (hasDecoration && layout === "$A0") {

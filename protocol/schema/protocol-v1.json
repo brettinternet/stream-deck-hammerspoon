@@ -444,6 +444,17 @@
       "type": "string",
       "maxLength": 4
     },
+    "appearanceValue": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16,
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]*$"
+    },
+    "appearanceIndicator": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
     "appearanceIcon": {
       "oneOf": [
         {
@@ -488,7 +499,9 @@
             "backgroundColor": { "$ref": "#/$defs/appearanceColor" },
             "progress": { "type": "number", "minimum": 0, "maximum": 1 },
             "badge": { "$ref": "#/$defs/appearanceBadge" },
-            "icon": { "$ref": "#/$defs/appearanceIcon" }
+            "icon": { "$ref": "#/$defs/appearanceIcon" },
+            "value": { "$ref": "#/$defs/appearanceValue" },
+            "indicator": { "$ref": "#/$defs/appearanceIndicator" }
           },
           "required": ["instanceId", "actionId", "title", "state"],
           "additionalProperties": true
@@ -505,6 +518,27 @@
             ]
           },
           "then": { "type": "object", "required": ["appearanceVersion"] }
+        },
+        {
+          "if": {
+            "type": "object",
+            "anyOf": [
+              { "required": ["value"] },
+              { "required": ["indicator"] }
+            ]
+          },
+          "then": {
+            "type": "object",
+            "required": ["appearanceVersion", "value", "indicator"],
+            "not": {
+              "anyOf": [
+                { "required": ["foregroundColor"] },
+                { "required": ["backgroundColor"] },
+                { "required": ["progress"] },
+                { "required": ["badge"] }
+              ]
+            }
+          }
         }
       ]
     },

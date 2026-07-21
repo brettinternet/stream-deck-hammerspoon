@@ -23,6 +23,23 @@ local function isAppearanceBadge(value)
   return length ~= nil and length <= 4
 end
 
+local function isAppearanceValue(value)
+  if type(value) ~= "string" or value == "" then
+    return false
+  end
+  local ok, length = pcall(utf8.len, value)
+  if not ok or length == nil or length > 16 then
+    return false
+  end
+  return pcall(function()
+    for _, codePoint in utf8.codes(value) do
+      if codePoint <= 0x1f or (codePoint >= 0x7f and codePoint <= 0x9f) then
+        error("control character")
+      end
+    end
+  end)
+end
+
 local function isAppearanceIcon(value)
   return require("streamdeck.protocol").validateAppearanceIcon(value)
 end
@@ -81,6 +98,8 @@ local function isAppearance(value)
     or value.progress ~= nil
     or value.badge ~= nil
     or value.icon ~= nil
+    or value.value ~= nil
+    or value.indicator ~= nil
   if value.appearanceVersion ~= nil and value.appearanceVersion ~= 1 then
     return false
   end
@@ -104,10 +123,29 @@ local function isAppearance(value)
   if value.icon ~= nil and not isAppearanceIcon(value.icon) then
     return false
   end
+  if (value.value ~= nil) ~= (value.indicator ~= nil) then
+    return false
+  end
+  if value.value ~= nil and (
+      not isAppearanceValue(value.value)
+      or type(value.indicator) ~= "number"
+      or value.indicator ~= value.indicator
+      or value.indicator == math.huge
+      or value.indicator == -math.huge
+      or value.indicator < 0
+      or value.indicator > 100
+      or value.foregroundColor ~= nil
+      or value.backgroundColor ~= nil
+      or value.progress ~= nil
+      or value.badge ~= nil
+    ) then
+    return false
+  end
   for key in pairs(value) do
     if key ~= "title" and key ~= "state" and key ~= "appearanceVersion"
         and key ~= "foregroundColor" and key ~= "backgroundColor"
-        and key ~= "progress" and key ~= "badge" and key ~= "icon" then
+        and key ~= "progress" and key ~= "badge" and key ~= "icon"
+        and key ~= "value" and key ~= "indicator" then
       return false
     end
   end

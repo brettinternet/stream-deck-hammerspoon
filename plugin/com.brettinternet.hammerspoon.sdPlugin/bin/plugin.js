@@ -17975,6 +17975,17 @@ var $defs = {
 		type: "string",
 		maxLength: 4
 	},
+	appearanceValue: {
+		type: "string",
+		minLength: 1,
+		maxLength: 16,
+		pattern: "^[^\\u0000-\\u001F\\u007F-\\u009F]*$"
+	},
+	appearanceIndicator: {
+		type: "number",
+		minimum: 0,
+		maximum: 100
+	},
 	appearanceIcon: {
 		oneOf: [
 			{
@@ -18069,6 +18080,12 @@ var $defs = {
 					},
 					icon: {
 						$ref: "#/$defs/appearanceIcon"
+					},
+					value: {
+						$ref: "#/$defs/appearanceValue"
+					},
+					indicator: {
+						$ref: "#/$defs/appearanceIndicator"
 					}
 				},
 				required: [
@@ -18115,6 +18132,55 @@ var $defs = {
 					required: [
 						"appearanceVersion"
 					]
+				}
+			},
+			{
+				"if": {
+					type: "object",
+					anyOf: [
+						{
+							required: [
+								"value"
+							]
+						},
+						{
+							required: [
+								"indicator"
+							]
+						}
+					]
+				},
+				then: {
+					type: "object",
+					required: [
+						"appearanceVersion",
+						"value",
+						"indicator"
+					],
+					not: {
+						anyOf: [
+							{
+								required: [
+									"foregroundColor"
+								]
+							},
+							{
+								required: [
+									"backgroundColor"
+								]
+							},
+							{
+								required: [
+									"progress"
+								]
+							},
+							{
+								required: [
+									"badge"
+								]
+							}
+						]
+					}
 				}
 			}
 		]
@@ -18285,6 +18351,30 @@ function sanitizeDeviceMetadata(value) {
             size: { columns: device.size.columns, rows: device.size.rows },
         },
     };
+}
+function isSafeAppearanceValue(value) {
+    if (typeof value !== "string" || value.length === 0) {
+        return false;
+    }
+    try {
+        encodeURIComponent(value);
+    }
+    catch {
+        return false;
+    }
+    let scalarValues = 0;
+    for (const character of value) {
+        scalarValues += 1;
+        if (scalarValues > 16) {
+            return false;
+        }
+        const codePoint = character.codePointAt(0);
+        if (codePoint !== undefined
+            && (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f))) {
+            return false;
+        }
+    }
+    return true;
 }
 const CLIENT_MESSAGE_TYPES = {
     hello: true,
@@ -18846,6 +18936,30 @@ function parseServerMessage(data) {
     }
     if (!validateProtocolMessage(parsed)) {
         throw schemaError("server");
+    }
+    if (parsed.type === "appearance") {
+        const hasValue = parsed.value !== undefined;
+        const hasIndicator = parsed.indicator !== undefined;
+        if (hasValue !== hasIndicator) {
+            throw new Error("Invalid server message: appearance value and indicator must be provided together.");
+        }
+        if (hasValue) {
+            if (!isSafeAppearanceValue(parsed.value)) {
+                throw new Error("Invalid server message: appearance value is empty, unsafe, invalid Unicode, or too long.");
+            }
+            if (typeof parsed.indicator !== "number"
+                || !Number.isFinite(parsed.indicator)
+                || parsed.indicator < 0
+                || parsed.indicator > 100) {
+                throw new Error("Invalid server message: appearance indicator must be finite and between 0 and 100.");
+            }
+            if (parsed.foregroundColor !== undefined
+                || parsed.backgroundColor !== undefined
+                || parsed.progress !== undefined
+                || parsed.badge !== undefined) {
+                throw new Error("Invalid server message: appearance value/indicator cannot use v1 decorations.");
+            }
+        }
     }
     if (parsed.type === "appearance" && parsed.badge !== undefined) {
         for (const character of parsed.badge) {
@@ -19710,7 +19824,7 @@ function selectRenderingProfile(metadata) {
         return undefined;
     }
     return controllerType === "encoder"
-        ? { keyImageSize: 72, encoderLayout: "$A1", encoderDecoratedLayout: "$A0" }
+        ? { keyImageSize: 72, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" }
         : { keyImageSize: 72 };
 }
 function extractDeviceMetadata(action) {
@@ -19764,6 +19878,27 @@ function escapeXml(value) {
 const BUNDLED_BUTTON_ICON_PATH = "imgs/button.svg";
 const BUNDLED_TOGGLE_INACTIVE_ICON_PATH = "imgs/toggle-off.svg";
 const BUNDLED_TOGGLE_ACTIVE_ICON_PATH = "imgs/toggle-on.svg";
+function hasValidAppearanceExtension(appearance) {
+    const hasValue = appearance.value !== undefined;
+    const hasIndicator = appearance.indicator !== undefined;
+    if (hasValue !== hasIndicator) {
+        return false;
+    }
+    if (!hasValue) {
+        return true;
+    }
+    return appearance.appearanceVersion === 1
+        && isSafeAppearanceValue(appearance.value)
+        && typeof appearance.indicator === "number"
+        && Number.isFinite(appearance.indicator)
+        && appearance.indicator >= 0
+        && appearance.indicator <= 100
+        && appearance.foregroundColor === undefined
+        && appearance.backgroundColor === undefined
+        && appearance.progress === undefined
+        && appearance.badge === undefined
+        && (appearance.icon === undefined || isSafeAppearanceIcon(appearance.icon));
+}
 function appearanceImage(appearance, keyImageSize = 72, bundledIcon = BUNDLED_BUTTON_ICON_PATH) {
     const icon = appearance.icon;
     const hasDecoration = appearance.foregroundColor !== undefined
@@ -20233,6 +20368,9 @@ class HammerspoonAction extends SingletonAction {
         if (!instance || instance.actionId !== appearance.actionId) {
             return;
         }
+        if (!hasValidAppearanceExtension(appearance)) {
+            return;
+        }
         if (this.bridge.status !== "connected") {
             await this.renderInstance(appearance.instanceId);
             return;
@@ -20385,6 +20523,41 @@ class HammerspoonAction extends SingletonAction {
         const layout = hasDecoration && renderingProfile?.encoderDecoratedLayout !== undefined
             ? renderingProfile.encoderDecoratedLayout
             : renderingProfile?.encoderLayout ?? "$A1";
+        const hasValueIndicator = appearance !== undefined
+            && appearance.value !== undefined
+            && appearance.indicator !== undefined;
+        if (hasValueIndicator && renderingProfile?.encoderValueLayout === "$B1") {
+            const icon = appearance.icon === undefined
+                ? undefined
+                : appearance.icon.kind === "bundled"
+                    ? bundledIcon
+                    : safeAppearanceIconImage(appearance.icon);
+            if (appearance.icon !== undefined && icon === undefined) {
+                await this.alert(action);
+                return false;
+            }
+            const feedback = {
+                title,
+                value: appearance.value,
+                indicator: appearance.indicator,
+            };
+            if (icon !== undefined) {
+                feedback.icon = icon;
+            }
+            if (!(await this.setDialLayout(action, renderingProfile, "$B1"))) {
+                await this.setDialTitle(action, title, { keyImageSize: 72, encoderLayout: "$A1" });
+                return false;
+            }
+            try {
+                await action.setFeedback(feedback);
+                return true;
+            }
+            catch {
+                await this.alert(action);
+                await this.setDialTitle(action, title, { keyImageSize: 72, encoderLayout: "$A1" });
+                return false;
+            }
+        }
         try {
             if (hasDecoration && layout === "$A0") {
                 const image = dialAppearanceImage(appearance, bundledIcon);

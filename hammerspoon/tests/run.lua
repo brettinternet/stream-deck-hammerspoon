@@ -982,6 +982,26 @@ test("versioned appearance fields validate and render safely", function()
   }))
   assertTrue(customIconValid, customIconCode or "valid custom SVG icons must pass Lua validation")
 
+  local encoderAppearance = {
+    title = "Volume",
+    state = "active",
+    appearanceVersion = 1,
+    value = "72%",
+    indicator = 72,
+    icon = { kind = "bundled", name = "hammerspoon" },
+  }
+  local encoderValid, encoderCode = Protocol.validate(message("appearance", {
+    instanceId = "instance",
+    actionId = "action",
+    title = encoderAppearance.title,
+    state = 1,
+    appearanceVersion = encoderAppearance.appearanceVersion,
+    value = encoderAppearance.value,
+    indicator = encoderAppearance.indicator,
+    icon = encoderAppearance.icon,
+  }))
+  assertTrue(encoderValid, encoderCode or "valid paired encoder fields must pass")
+
   local invalidFields = {
     { appearanceVersion = 2 },
     { appearanceVersion = 1, foregroundColor = "#FFF" },
@@ -1000,6 +1020,15 @@ test("versioned appearance fields validate and render safely", function()
     { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/svg+xml", dataBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA3MiA3MiIgc3R5bGU9ImZpbGw6I2ZmZiI+PC9zdmc+" } },
     { appearanceVersion = 1, icon = { kind = "custom", mediaType = "image/svg+xml", dataBase64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOmZvcmVpZ249InVybjp4IiB2aWV3Qm94PSIwIDAgNzIgNzIiPjwvc3ZnPg==" } },
     { progress = 0.5 },
+    { appearanceVersion = 1, value = "72%" },
+    { appearanceVersion = 1, indicator = 72 },
+    { appearanceVersion = 1, value = "", indicator = 0 },
+    { appearanceVersion = 1, value = string.char(0), indicator = 0 },
+    { appearanceVersion = 1, value = string.rep("x", 17), indicator = 0 },
+    { appearanceVersion = 1, value = "72%", indicator = -0.01 },
+    { appearanceVersion = 1, value = "72%", indicator = 100.01 },
+    { appearanceVersion = 1, value = "72%", indicator = 0 / 0 },
+    { appearanceVersion = 1, value = "72%", indicator = 72, progress = 0.5 },
   }
   for _, fields in ipairs(invalidFields) do
     local invalid = {
@@ -1047,7 +1076,16 @@ test("versioned appearance fields validate and render safely", function()
     assertEqual(responses[1].progress, 0.5)
     assertEqual(responses[1].badge, "<&")
 
-    appearance.progress = 2
+    appearance = encoderAppearance
+    local encoderResponses = exchange(server, message("requestAppearance", {
+      instanceId = "presentation",
+      actionId = "com.test.presentation",
+    }))
+    assertEqual(encoderResponses[1].value, "72%")
+    assertEqual(encoderResponses[1].indicator, 72)
+    assertEqual(encoderResponses[1].icon.name, "hammerspoon")
+
+    appearance.indicator = 101
     assertError("CALLBACK_FAILED", exchange(server, message("requestAppearance", {
       instanceId = "presentation",
       actionId = "com.test.presentation",
