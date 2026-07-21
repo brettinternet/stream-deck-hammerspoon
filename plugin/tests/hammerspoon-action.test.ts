@@ -1143,6 +1143,11 @@ describe("HammerspoonAction", () => {
     expect(action.calls.states).toEqual([0]);
     expect(action.calls.images.at(-1)).toBe("imgs/button.svg");
     expect(action.calls.titles).toEqual(["Offline", "Available"]);
+    bridge.status = "disconnected";
+    bridge.emit("status", "disconnected");
+    await flush();
+    expect(action.calls.images).toEqual(["imgs/button.svg", undefined]);
+    expect(action.imageStates).toEqual([undefined, undefined]);
   });
 
   test("retains the previous appearance when decoration cannot be cleared", async () => {

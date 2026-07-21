@@ -765,8 +765,8 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       await this.alert(instance.action);
       return;
     }
-    const targetState = this.targetState(appearance);
-    const previousState = instance.lastAppearance === undefined ? 0 : this.targetState(instance.lastAppearance);
+    const targetState = this.mode === "button" ? 0 : this.targetState(appearance);
+    const previousState = instance.lastAppearance === undefined ? 0 : this.mode === "button" ? 0 : this.targetState(instance.lastAppearance);
     if (this.mode !== "button" && !(await this.setState(instance.action, targetState))) {
       return;
     }
