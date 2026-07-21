@@ -19135,6 +19135,16 @@ function portFromUrl(value) {
         return 17321;
     }
 }
+function isLegacyLoopbackUrl(value) {
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === "ws:"
+            && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]");
+    }
+    catch {
+        return false;
+    }
+}
 function safeError(error) {
     let candidateCode;
     if (error !== null && typeof error === "object" && "code" in error) {
@@ -19176,6 +19186,9 @@ class BridgeClient extends EventEmitter$1 {
     constructor(options) {
         super();
         this.url = options.url ?? DEFAULT_URL;
+        if (!isLegacyLoopbackUrl(this.url)) {
+            throw new Error("Legacy bridge URL must target loopback.");
+        }
         this.tokenPath = options.tokenPath ?? DEFAULT_TOKEN_PATH;
         this.pluginVersion = options.pluginVersion;
         this.safePluginVersion = sanitizePluginVersion(options.pluginVersion);

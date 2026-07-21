@@ -10,7 +10,7 @@ This bridge is a local, authenticated control channel between the official Strea
 | Plugin process and its runtime settings | The plugin reads the token at runtime. The token is not stored in Stream Deck per-instance settings or sent through the property inspector. |
 | Hammerspoon process and `hammerspoon/streamdeck/` Lua module | The Lua module owns the server, token file, connection authentication, action registry, and callback dispatch. Registered callbacks are trusted code running in the user's Hammerspoon process. |
 | Token file (`~/.hammerspoon/streamdeck-token`) | This is the bearer credential shared by the plugin and Lua bridge. Its confidentiality depends on the local operating system and file permissions. |
-| Loopback WebSocket at the default URL `ws://localhost:17321/streamdeck` | The transport is reachable only through localhost/loopback. It is not a remote service and does not provide encryption. |
+| Loopback WebSocket at the default URL `ws://localhost:17321/streamdeck` | The legacy token transport accepts only literal `localhost`, `127.0.0.1`, or `[::1]` `ws://` endpoints. It is not a remote service and does not provide encryption. |
 | Protocol schema and validators | The JSON Schema is the protocol source of truth. TypeScript uses Ajv; Lua mirrors the required and type checks. |
 
 The trust boundary is crossed only after a valid `hello` message authenticates the WebSocket. Before that point, the peer is untrusted input. The Stream Deck app, property inspector, plugin UI, local filesystem, and any other process on the host are not automatically trusted merely because they are local. Hammerspoon callbacks and the explicitly registered action definitions are trusted application code; message data is not code.
@@ -26,6 +26,7 @@ The token is a bearer credential. Anyone who obtains it can authenticate until i
 ## Binding and connection authentication
 
 Hammerspoon starts `hs.httpserver` at the default URL `ws://localhost:17321/streamdeck`, on localhost/loopback only, with Bonjour disabled. Binding failure is a startup failure; the bridge does not retry by opening a non-loopback listener and does not fall back to an unauthenticated server.
+The plugin rejects any other legacy endpoint before opening a socket or reading the token, so its v1 `hello` can never disclose the token to a remote host. A later remote profile must use the explicit mutual-TLS companion contract; it must not repurpose this token transport.
 
 `hs.httpserver:websocket` exposes message callbacks, but **websocket upgrade headers are unavailable to the Lua callback**. Consequently, the token cannot be placed in or checked from an HTTP upgrade header in v1. Authentication is a protocol-level first message followed by an in-memory session binding:
 

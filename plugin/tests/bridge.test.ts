@@ -209,6 +209,22 @@ describe("BridgeClient authentication and transport", () => {
     expect(statuses).toContain("authenticating");
     expect(statuses).toContain("connected");
   });
+
+  test("rejects non-loopback legacy bridge URLs before token authentication", () => {
+    const options = {
+      pluginVersion: "1.0.0",
+      createSocket: () => new FakeSocket(),
+      readToken: async () => "shared-token",
+    };
+
+    for (const url of ["ws://localhost:17321/streamdeck", "ws://127.0.0.1:17321/streamdeck", "ws://[::1]:17321/streamdeck"]) {
+      expect(() => new BridgeClient({ ...options, url })).not.toThrow();
+    }
+
+    for (const url of ["ws://192.168.1.10:17321/streamdeck", "wss://bridge.example.test/streamdeck", "ws://localhost.evil.test/streamdeck"]) {
+      expect(() => new BridgeClient({ ...options, url })).toThrow("Legacy bridge URL must target loopback.");
+    }
+  });
   test("falls back to the registered action ID and snapshots settings across reconnects", async () => {
     const sockets: FakeSocket[] = [];
     const timers = new ManualTimers();
