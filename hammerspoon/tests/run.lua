@@ -927,6 +927,7 @@ test("versioned appearance fields validate and render safely", function()
     title = "Ready",
     state = "active",
     appearanceVersion = 1,
+    presentationState = 3,
     foregroundColor = "#FFFFFF",
     backgroundColor = "#202020",
     progress = 0.5,
@@ -939,6 +940,7 @@ test("versioned appearance fields validate and render safely", function()
     title = appearance.title,
     state = 1,
     appearanceVersion = appearance.appearanceVersion,
+    presentationState = appearance.presentationState,
     foregroundColor = appearance.foregroundColor,
     backgroundColor = appearance.backgroundColor,
     progress = appearance.progress,
@@ -946,6 +948,17 @@ test("versioned appearance fields validate and render safely", function()
     icon = appearance.icon,
   }))
   assertTrue(valid, code or "valid appearance fields must pass")
+  for _, presentationState in ipairs({ 0, 1, 2, 3 }) do
+    local boundaryValid, boundaryCode = Protocol.validate(message("appearance", {
+      instanceId = "instance",
+      actionId = "action",
+      title = "State",
+      state = 0,
+      appearanceVersion = 1,
+      presentationState = presentationState,
+    }))
+    assertTrue(boundaryValid, boundaryCode or "presentation state boundary must pass")
+  end
   local futureIconValid, futureIconCode = Protocol.validate(message("appearance", {
     instanceId = "instance",
     actionId = "action",
@@ -1004,8 +1017,12 @@ test("versioned appearance fields validate and render safely", function()
 
   local invalidFields = {
     { appearanceVersion = 2 },
+    { presentationState = 0 },
+    { appearanceVersion = 1, presentationState = -1 },
+    { appearanceVersion = 1, presentationState = 4 },
+    { appearanceVersion = 1, presentationState = 1.5 },
+    { appearanceVersion = 1, presentationState = "1" },
     { appearanceVersion = 1, foregroundColor = "#FFF" },
-    { appearanceVersion = 1, backgroundColor = "red" },
     { appearanceVersion = 1, progress = -0.01 },
     { appearanceVersion = 1, progress = 1.01 },
     { appearanceVersion = 1, badge = string.rep("x", 5) },
@@ -1070,6 +1087,7 @@ test("versioned appearance fields validate and render safely", function()
     }))
     assertEqual(responses[1].type, "appearance")
     assertEqual(responses[1].appearanceVersion, 1)
+    assertEqual(responses[1].presentationState, 3)
     assertEqual(responses[1].icon.kind, "bundled")
     assertEqual(responses[1].icon.name, "future-icon")
     assertEqual(responses[1].backgroundColor, "#202020")

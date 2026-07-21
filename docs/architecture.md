@@ -92,7 +92,7 @@ Every protocol message has `protocolVersion: 1` and a `type`. After `helloAck`, 
 ## Identity and state ownership
 
 - **Plugin identity:** `com.brettinternet.hammerspoon` identifies the official plugin.
-- **Action identity:** `com.brettinternet.hammerspoon.button` is the generic one-state action UUID and `com.brettinternet.hammerspoon.action` is the generic two-state toggle UUID. Neither is one UUID per Lua action.
+- **Action identity:** `com.brettinternet.hammerspoon.button` is the generic one-state action UUID, `com.brettinternet.hammerspoon.action` is the generic two-state toggle UUID, and `com.brettinternet.hammerspoon.multistate` is the keypad-only four-state UUID. None is one UUID per Lua action.
 - **Lua action identity:** each registered Lua definition has an explicit, stable `actionId`. Duplicate IDs are rejected. Titles, key positions, and array order are never identifiers.
 - **Instance identity:** each configured Stream Deck key is represented by its Stream Deck-provided `instanceId`. The plugin retains visible instance metadata; the Lua registry keeps independent contexts keyed by instance identity. Multiple instances may select the same or different stable Lua `actionId`s.
 - **Settings:** the property inspector stores the selected `actionId` in Stream Deck per-instance settings. For initial action events, the plugin reads real Stream Deck settings from `actionInfo.payload.settings`; it uses that setting when sending lifecycle and key events. A repeated `instanceAppeared` updates the existing context's settings instead of creating a second appearance lifecycle.
@@ -109,11 +109,11 @@ The first slice is one complete path, not a collection of disconnected scaffolds
 3. Start the official plugin, authenticate with `hello`/`helloAck`, and obtain the action registry through correlated `listActions`/`actions`.
 4. Configure one generic Stream Deck keypad instance through the plain TypeScript/HTML property inspector; persist its selected `actionId` in Stream Deck settings.
 5. Send that instance's `instanceAppeared` event and receive its computed `appearance`.
-6. Render the returned title and state (`0` or `1`), plus any bounded versioned presentation decoration, through the official plugin SDK.
+6. Render the returned title and binary `state` (`0` or `1`), or the keypad-only Multi-State `presentationState` (`0` through `3`), plus any bounded versioned presentation decoration, through the official plugin SDK.
 7. Press and release the key, routing `keyDown` and `keyUp` to the selected Lua action, and apply any resulting appearance/feedback.
 8. Stop or reload Hammerspoon, observe the plugin's disconnected title, reconnect, authenticate again, and synchronize all visible instances and their appearances.
 
-The v1 appearance contract requires `title` and `state` and optionally accepts `appearanceVersion: 1` colors, progress, badge, a closed icon representation, or the paired encoder-only `value` and `indicator` fields. `value` is a non-empty control-free string of at most 16 Unicode scalar values; `indicator` is a finite number from 0 through 100. The pair cannot mix with colors, progress, or badges. Semantic bundled slugs resolve to the shipped 72×72 plugin asset, with unknown slugs using that same safe fallback; custom PNG/SVG data is canonical padded base64 and strictly bounded/validated before SDK rendering. Invalid input falls back to title/state and the shipped or manifest image.
+The v1 appearance contract requires `title` and binary `state`, and optionally accepts `appearanceVersion: 1` `presentationState` values from `0` through `3` for the keypad-only Multi-State action, colors, progress, badge, a closed icon representation, or the paired encoder-only `value` and `indicator` fields. `presentationState` is display-only, falls back deterministically to binary `state` when omitted, and is ignored by Button and Toggle. `value` is a non-empty control-free string of at most 16 Unicode scalar values; `indicator` is a finite number from 0 through 100. The pair cannot mix with colors, progress, or badges. Semantic bundled slugs resolve to the shipped 72×72 plugin asset, with unknown slugs using that same safe fallback; custom PNG/SVG data is canonical padded base64 and strictly bounded/validated before SDK rendering. Invalid input falls back to title/state and the shipped or manifest image.
 The plugin uses the SDK's 72×72 key profile for keypad actions. For a recognized encoder metadata profile, title-only LCD feedback uses built-in `$A1`; a valid `value`/`indicator` pair uses official `$B1` with the safe icon; other decorations use `$A0` with a deterministic 200×100 per-encoder full-canvas image. Missing, malformed, unknown, or controller-mismatched metadata keeps the safe key or `$A1` title-only fallback.
 
 ## Lifecycle and reconnect
@@ -185,13 +185,13 @@ Each record is intentionally short but complete. Reversibility describes what ca
 - **Tradeoffs / consequences:** The boundary remains small, testable, and preserves official plugin ownership. Optional decoration is bounded and safely escaped, while malformed appearances are rejected. Rendering and action behavior remain separate, so appearance can be refreshed without pressing a key.
 - **Reversibility:** New appearance fields can be added as a later versioned schema extension. Changing existing field meaning or moving rendering responsibility to Lua requires a protocol and ownership decision.
 
-### ADR-004: Generic button and toggle UUIDs
+### ADR-004: Generic presentation action UUIDs
 
-- **Problem:** Lua users can register many actions without rebuilding or publishing a new Stream Deck action for each one, but Stream Deck must know whether to offer one configurable image or separate inactive and active images.
-- **Choice:** Ship one generic button UUID, `com.brettinternet.hammerspoon.button`, and retain `com.brettinternet.hammerspoon.action` as the generic toggle UUID. Both store the selected stable Lua `actionId` in per-instance settings.
-- **Alternatives:** One Stream Deck UUID per Lua action; a generated action manifest; one two-state action for every behavior; hard-coded action names inferred from titles.
-- **Tradeoffs / consequences:** The Lua registry remains extensible and existing toggle profiles keep their UUID. Users choose the presentation type when adding a key, and the shared property inspector must target the UUID of the inspected action.
-- **Reversibility:** Additional generic presentation types can coexist in a later manifest, but changing either existing UUID or settings identity requires migration.
+- **Problem:** Lua users can register many actions without rebuilding or publishing a new Stream Deck action for each one, but Stream Deck must offer one configurable image, separate inactive and active images, or four bounded static presentation images.
+- **Choice:** Ship the existing generic button UUID, `com.brettinternet.hammerspoon.button`, and toggle UUID, `com.brettinternet.hammerspoon.action`, unchanged, and add keypad-only `com.brettinternet.hammerspoon.multistate` with four manifest states. All three store the selected stable Lua `actionId` through the same property inspector settings identity.
+- **Alternatives:** One Stream Deck UUID per Lua action; a generated action manifest; one two-state action for every behavior; hard-coded action names inferred from titles; direct hardware access from Lua.
+- **Tradeoffs / consequences:** The Lua registry remains extensible, existing profiles keep their UUIDs, and `presentationState` stays display-only and bounded. The official plugin retains lifecycle, rendering, and hardware access; omitted Multi-State values fall back to binary `state`.
+- **Reversibility:** Additional generic presentation types can coexist in a later manifest, but changing any shipped UUID or settings identity requires migration.
 
 ### ADR-005: Bun monorepo with separated source and artifact trees
 

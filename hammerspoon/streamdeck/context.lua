@@ -39,6 +39,16 @@ local function isAppearanceValue(value)
     end
   end)
 end
+local function isPresentationState(value)
+  return type(value) == "number"
+    and value == value
+    and value ~= math.huge
+    and value ~= -math.huge
+    and value == math.floor(value)
+    and value >= 0
+    and value <= 3
+end
+
 
 local function isAppearanceIcon(value)
   return require("streamdeck.protocol").validateAppearanceIcon(value)
@@ -93,7 +103,9 @@ local function isAppearance(value)
   if value.state ~= "active" and value.state ~= "inactive" then
     return false
   end
-  local hasExtendedFields = value.foregroundColor ~= nil
+  local hasExtendedFields = value.appearanceVersion ~= nil
+    or value.presentationState ~= nil
+    or value.foregroundColor ~= nil
     or value.backgroundColor ~= nil
     or value.progress ~= nil
     or value.badge ~= nil
@@ -104,6 +116,9 @@ local function isAppearance(value)
     return false
   end
   if hasExtendedFields and value.appearanceVersion ~= 1 then
+    return false
+  end
+  if value.presentationState ~= nil and not isPresentationState(value.presentationState) then
     return false
   end
   if value.foregroundColor ~= nil and not isAppearanceColor(value.foregroundColor) then
@@ -143,7 +158,7 @@ local function isAppearance(value)
   end
   for key in pairs(value) do
     if key ~= "title" and key ~= "state" and key ~= "appearanceVersion"
-        and key ~= "foregroundColor" and key ~= "backgroundColor"
+        and key ~= "presentationState" and key ~= "foregroundColor" and key ~= "backgroundColor"
         and key ~= "progress" and key ~= "badge" and key ~= "icon"
         and key ~= "value" and key ~= "indicator" then
       return false

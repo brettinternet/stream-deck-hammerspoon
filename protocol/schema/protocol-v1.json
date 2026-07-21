@@ -495,6 +495,7 @@
             "title": { "type": "string" },
             "state": { "type": "integer", "enum": [0, 1] },
             "appearanceVersion": { "const": 1 },
+            "presentationState": { "type": "integer", "minimum": 0, "maximum": 3 },
             "foregroundColor": { "$ref": "#/$defs/appearanceColor" },
             "backgroundColor": { "$ref": "#/$defs/appearanceColor" },
             "progress": { "type": "number", "minimum": 0, "maximum": 1 },
@@ -514,7 +515,8 @@
               { "required": ["backgroundColor"] },
               { "required": ["progress"] },
               { "required": ["badge"] },
-              { "required": ["icon"] }
+              { "required": ["icon"] },
+              { "required": ["presentationState"] }
             ]
           },
           "then": { "type": "object", "required": ["appearanceVersion"] }

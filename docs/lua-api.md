@@ -58,7 +58,7 @@ Requiring `streamdeck` automatically registers these stable utility actions befo
 | `com.brettinternet.hammerspoon.reload`  | Reload Hammerspoon         | Reloads the Hammerspoon configuration.                                                                        |
 | `com.brettinternet.hammerspoon.console` | Toggle Hammerspoon Console | Toggles the Hammerspoon Console window, reports whether it is visible, and uses the bundled Hammerspoon icon. |
 
-They appear in the existing Hammerspoon Button and Hammerspoon Toggle action selector; no separate Stream Deck action or manual registration is required. The reload action schedules `hs.reload()` on the next timer tick so the bridge can finish handling the button event before Hammerspoon resets its Lua environment. The plugin reconnects and restores visible instances after the reload.
+They appear in the existing Hammerspoon Button and Hammerspoon Toggle action selectors, and in the keypad-only Hammerspoon Multi-State action; no separate Stream Deck action or manual registration is required. The reload action schedules `hs.reload()` on the next timer tick so the bridge can finish handling the button event before Hammerspoon resets its Lua environment. The plugin reconnects and restores visible instances after the reload.
 
 These actions call only the fixed Hammerspoon APIs documented above. They do not evaluate Lua or shell commands from Stream Deck settings.
 
@@ -210,6 +210,7 @@ The callbacks receive the current context. `press` and other callback return val
   title = "Muted",
   state = "active",
   appearanceVersion = 1,
+  presentationState = 2,
   foregroundColor = "#FFFFFF",
   backgroundColor = "#202020",
   progress = 0.5,
@@ -221,7 +222,7 @@ The callbacks receive the current context. `press` and other callback return val
 }
 ```
 
-`title` must be a string and `state` must be either `"active"` or `"inactive"`. The optional presentation fields require `appearanceVersion = 1`: colors must be six-digit `#RRGGBB` strings, `progress` must be between `0` and `1`, and `badge` must be valid UTF-8 of at most four characters. An icon is either a semantic bundled slug, which falls back to the shipped `hammerspoon` asset when unknown, or a custom `image/png`/`image/svg+xml` value with canonical padded base64. Custom data is bounded to 32,768 decoded bytes; the plugin derives and validates 72×72 or 144×144 dimensions and applies the constrained SVG profile before SDK rendering. For a recognized encoder, an appearance may instead supply paired `value` and `indicator` fields: `value` is non-empty, control-free UTF-8 with at most 16 Unicode scalar values, and `indicator` is a finite number from `0` through `100`. They must appear together, may retain an icon, and cannot combine with colors, `progress`, or `badge`; the plugin renders them through the official `$B1` layout. Unknown fields, missing required fields, invalid values, and unsupported appearance versions are rejected and do not update the key. Appearance is independent from press: a press callback does not implicitly change presentation.
+`title` must be a string and `state` must be either `"active"` or `"inactive"`. The optional presentation fields require `appearanceVersion = 1`: `presentationState` is an integer from `0` through `3` for the keypad-only Multi-State action and falls back to binary `state` when omitted; it has no callback semantics. Colors must be six-digit `#RRGGBB` strings, `progress` must be between `0` and `1`, and `badge` must be valid UTF-8 of at most four characters. An icon is either a semantic bundled slug, which falls back to the shipped `hammerspoon` asset when unknown, or a custom `image/png`/`image/svg+xml` value with canonical padded base64. Custom data is bounded to 32,768 decoded bytes; the plugin derives and validates 72×72 or 144×144 dimensions and applies the constrained SVG profile before SDK rendering. For a recognized encoder, an appearance may instead supply paired `value` and `indicator` fields: `value` is non-empty, control-free UTF-8 with at most 16 Unicode scalar values, and `indicator` is a finite number from `0` through `100`. They must appear together, may retain an icon, and cannot combine with colors, `progress`, or `badge`; the plugin renders them through the official `$B1` layout. Unknown fields, missing required fields, invalid values, and unsupported appearance versions are rejected and do not update the key. Appearance is independent from press: a press callback does not implicitly change presentation.
 
 ## Sound feedback (Lua-only)
 

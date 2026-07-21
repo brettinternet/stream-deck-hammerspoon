@@ -662,6 +662,7 @@ export class BridgeClient extends EventEmitter {
       title: message.title,
       state: message.state,
       ...(message.appearanceVersion === undefined ? {} : { appearanceVersion: message.appearanceVersion }),
+      ...(message.presentationState === undefined ? {} : { presentationState: message.presentationState }),
       ...(message.foregroundColor === undefined ? {} : { foregroundColor: message.foregroundColor }),
       ...(message.backgroundColor === undefined ? {} : { backgroundColor: message.backgroundColor }),
       ...(message.progress === undefined ? {} : { progress: message.progress }),

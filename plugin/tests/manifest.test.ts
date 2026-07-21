@@ -6,6 +6,10 @@ type Manifest = {
   Icon: string;
   CategoryIcon: string;
   Actions: Array<{
+    Name: string;
+    UUID: string;
+    Controllers: string[];
+    PropertyInspectorPath: string;
     Icon: string;
     States: Array<{ Image: string }>;
   }>;
@@ -30,5 +34,28 @@ describe("plugin icon assets", () => {
         expectImagePair(state.Image, "svg");
       }
     }
+  });
+});
+
+describe("plugin action manifest", () => {
+  test("preserves generic identities and registers keypad multi-state", () => {
+    expect(manifest.Actions.map((action) => action.UUID)).toEqual([
+      "com.brettinternet.hammerspoon.button",
+      "com.brettinternet.hammerspoon.action",
+      "com.brettinternet.hammerspoon.multistate",
+    ]);
+    expect(manifest.Actions[0]?.PropertyInspectorPath).toBe("ui/property-inspector.html");
+    expect(manifest.Actions[1]?.PropertyInspectorPath).toBe("ui/property-inspector.html");
+
+    const multiState = manifest.Actions[2];
+    expect(multiState?.Name).toBe("Hammerspoon Multi-State");
+    expect(multiState?.Controllers).toEqual(["Keypad"]);
+    expect(multiState?.PropertyInspectorPath).toBe("ui/property-inspector.html");
+    expect(multiState?.States.map((state) => state.Image)).toEqual([
+      "imgs/multistate-0",
+      "imgs/multistate-1",
+      "imgs/multistate-2",
+      "imgs/multistate-3",
+    ]);
   });
 });

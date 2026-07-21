@@ -873,12 +873,16 @@ function protocol.validate(message)
       local progress = rawget(message, "progress")
       local badge = rawget(message, "badge")
       local icon = rawget(message, "icon")
+      local presentationState = rawget(message, "presentationState")
       local value = rawget(message, "value")
       local indicator = rawget(message, "indicator")
       local hasExtendedFields = foregroundColor ~= nil or backgroundColor ~= nil or progress ~= nil
-        or badge ~= nil or icon ~= nil or value ~= nil or indicator ~= nil
+        or badge ~= nil or icon ~= nil or presentationState ~= nil or value ~= nil or indicator ~= nil
       ok = appearanceVersion == nil or (isInteger(appearanceVersion) and appearanceVersion == 1)
       if ok and hasExtendedFields then ok = appearanceVersion == 1 end
+      if ok and presentationState ~= nil then
+        ok = isInteger(presentationState) and presentationState >= 0 and presentationState <= 3
+      end
       if ok and foregroundColor ~= nil then ok = isAppearanceColor(foregroundColor) end
       if ok and backgroundColor ~= nil then ok = isAppearanceColor(backgroundColor) end
       if ok and ((value ~= nil) ~= (indicator ~= nil)) then ok = false end

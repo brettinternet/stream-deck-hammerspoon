@@ -68,6 +68,51 @@
         }
       ],
       "UUID": "com.brettinternet.hammerspoon.action"
+    },
+    {
+      "Name": "Hammerspoon Multi-State",
+      "Tooltip": "Run a Hammerspoon action with four presentation states",
+      "Controllers": [
+        "Keypad"
+      ],
+      "DisableAutomaticStates": true,
+      "Icon": "imgs/action",
+      "PropertyInspectorPath": "ui/property-inspector.html",
+      "States": [
+        {
+          "FontSize": 12,
+          "Image": "imgs/multistate-0",
+          "Name": "State 0",
+          "ShowTitle": true,
+          "Title": "State 0",
+          "TitleAlignment": "middle"
+        },
+        {
+          "FontSize": 12,
+          "Image": "imgs/multistate-1",
+          "Name": "State 1",
+          "ShowTitle": true,
+          "Title": "State 1",
+          "TitleAlignment": "middle"
+        },
+        {
+          "FontSize": 12,
+          "Image": "imgs/multistate-2",
+          "Name": "State 2",
+          "ShowTitle": true,
+          "Title": "State 2",
+          "TitleAlignment": "middle"
+        },
+        {
+          "FontSize": 12,
+          "Image": "imgs/multistate-3",
+          "Name": "State 3",
+          "ShowTitle": true,
+          "Title": "State 3",
+          "TitleAlignment": "middle"
+        }
+      ],
+      "UUID": "com.brettinternet.hammerspoon.multistate"
     }
   ],
   "Author": "Brett",

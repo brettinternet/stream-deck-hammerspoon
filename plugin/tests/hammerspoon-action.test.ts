@@ -9,6 +9,7 @@ import type {
 import {
   HAMMERSPOON_ACTION_UUID,
   HAMMERSPOON_BUTTON_UUID,
+  HAMMERSPOON_MULTI_STATE_UUID,
   type HammerspoonActionSettings,
 } from "../src/actions/hammerspoon-action";
 
@@ -16,7 +17,7 @@ type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string
 
 type ActionCalls = {
   titles: string[];
-  states: Array<0 | 1>;
+  states: number[];
   images: Array<string | undefined>;
   alerts: number;
 };
@@ -24,7 +25,7 @@ class FakeAction {
   readonly calls: ActionCalls = { titles: [], states: [], images: [], alerts: 0 };
   rejectTitle = false;
   readonly feedbacks: Array<Record<string, unknown>> = [];
-  readonly imageStates: Array<0 | 1 | undefined> = [];
+  readonly imageStates: Array<number | undefined> = [];
   readonly layouts: string[] = [];
   rejectState = false;
   rejectImage = false;
@@ -58,14 +59,14 @@ class FakeAction {
     }
   }
 
-  async setState(state: 0 | 1): Promise<void> {
+  async setState(state: number): Promise<void> {
     this.calls.states.push(state);
     if (this.rejectState) {
       throw new Error("setState failed");
     }
   }
 
-  async setImage(image?: string, options?: { state?: 0 | 1 }): Promise<void> {
+  async setImage(image?: string, options?: { state?: number }): Promise<void> {
     this.calls.images.push(image);
     this.imageStates.push(options?.state);
     if (this.imageDelay) {
@@ -289,6 +290,7 @@ describe("HammerspoonAction", () => {
     expect(action.manifestId).toBe(HAMMERSPOON_ACTION_UUID);
   });
   test("subscribe is idempotent and listens for status and actions", async () => {
+
     propertyInspectorMessages.length = 0;
     const bridge = new FakeBridge();
     const adapter = makeAction(bridge);
@@ -305,6 +307,104 @@ describe("HammerspoonAction", () => {
       { type: "bridgeState", status: "connected", actions: [] },
       { type: "bridgeState", status: "connected", actions: [] },
     ]);
+  });
+
+  test("selects bounded multi-state presentation images with binary fallback", async () => {
+    const bridge = new FakeBridge();
+    bridge.status = "connected";
+    const adapter = new HammerspoonAction(bridge as unknown as BridgeClient, {
+      manifestId: HAMMERSPOON_MULTI_STATE_UUID,
+      mode: "multi-state",
+    });
+    const action = new FakeAction("multi-state");
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: action.id,
+      actionId: "action.id",
+      title: "State 3",
+      state: 0,
+      appearanceVersion: 1,
+      presentationState: 3,
+    });
+    await flush();
+    expect(action.calls.states.at(-1)).toBe(3);
+    expect(action.calls.titles.at(-1)).toBe("State 3");
+
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: action.id,
+      actionId: "action.id",
+      title: "Binary active",
+      state: 1,
+    });
+    await flush();
+    expect(action.calls.states.at(-1)).toBe(1);
+
+    const callsBeforeMalformed = structuredClone(action.calls);
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: action.id,
+      actionId: "action.id",
+      title: "Malformed",
+      state: 0,
+      appearanceVersion: 1,
+      presentationState: 4,
+    } as never);
+    await flush();
+    expect(action.calls).toEqual(callsBeforeMalformed);
+  });
+
+  test("ignores valid presentationState for the existing button action", async () => {
+    const bridge = new FakeBridge();
+    bridge.status = "connected";
+    const adapter = new HammerspoonAction(bridge as unknown as BridgeClient, {
+      manifestId: HAMMERSPOON_BUTTON_UUID,
+      mode: "button",
+    });
+    const action = new FakeAction("button-presentation");
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: action.id,
+      actionId: "action.id",
+      title: "Button",
+      state: 1,
+      appearanceVersion: 1,
+      presentationState: 3,
+    });
+    await flush();
+    expect(action.calls.states).toEqual([0]);
+    expect(action.calls.titles.at(-1)).toBe("Button");
+  });
+
+  test("ignores valid presentationState for the existing toggle action", async () => {
+    const bridge = new FakeBridge();
+    bridge.status = "connected";
+    const adapter = makeAction(bridge);
+    const action = new FakeAction("toggle-presentation");
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: action.id,
+      actionId: "action.id",
+      title: "Toggle",
+      state: 0,
+      appearanceVersion: 1,
+      presentationState: 2,
+    });
+    await flush();
+    expect(action.calls.states.at(-1)).toBe(0);
+    expect(action.calls.titles.at(-1)).toBe("Toggle");
   });
 
   test("renders missing settings, offline, unsynchronized, and synchronized appearances", async () => {

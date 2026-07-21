@@ -103,6 +103,7 @@ export type Settings = JsonSettings;
 export type WireState = 0 | 1;
 export const APPEARANCE_VERSION = 1 as const;
 export type AppearanceVersion = typeof APPEARANCE_VERSION;
+export type PresentationState = 0 | 1 | 2 | 3;
 
 export type AppearanceIcon =
   | { kind: "bundled"; name: string }
@@ -110,6 +111,7 @@ export type AppearanceIcon =
 
 export interface AppearanceFields {
   appearanceVersion?: AppearanceVersion;
+  presentationState?: PresentationState;
   foregroundColor?: string;
   backgroundColor?: string;
   progress?: number;

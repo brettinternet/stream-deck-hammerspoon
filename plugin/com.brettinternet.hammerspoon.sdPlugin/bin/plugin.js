@@ -18064,6 +18064,11 @@ var $defs = {
 					appearanceVersion: {
 						"const": 1
 					},
+					presentationState: {
+						type: "integer",
+						minimum: 0,
+						maximum: 3
+					},
 					foregroundColor: {
 						$ref: "#/$defs/appearanceColor"
 					},
@@ -18123,6 +18128,11 @@ var $defs = {
 						{
 							required: [
 								"icon"
+							]
+						},
+						{
+							required: [
+								"presentationState"
 							]
 						}
 					]
@@ -19539,6 +19549,7 @@ class BridgeClient extends EventEmitter$1 {
             title: message.title,
             state: message.state,
             ...(message.appearanceVersion === undefined ? {} : { appearanceVersion: message.appearanceVersion }),
+            ...(message.presentationState === undefined ? {} : { presentationState: message.presentationState }),
             ...(message.foregroundColor === undefined ? {} : { foregroundColor: message.foregroundColor }),
             ...(message.backgroundColor === undefined ? {} : { backgroundColor: message.backgroundColor }),
             ...(message.progress === undefined ? {} : { progress: message.progress }),
@@ -19868,6 +19879,7 @@ function cloneJsonValue(value) {
 }
 const HAMMERSPOON_ACTION_UUID = "com.brettinternet.hammerspoon.action";
 const HAMMERSPOON_BUTTON_UUID = "com.brettinternet.hammerspoon.button";
+const HAMMERSPOON_MULTI_STATE_UUID = "com.brettinternet.hammerspoon.multistate";
 function escapeXml(value) {
     return value.replace(/[&<>"']/g, (character) => ({
         "&": "&amp;",
@@ -19884,6 +19896,13 @@ function hasValidAppearanceExtension(appearance) {
     const hasValue = appearance.value !== undefined;
     const hasIndicator = appearance.indicator !== undefined;
     if (hasValue !== hasIndicator) {
+        return false;
+    }
+    if (appearance.presentationState !== undefined
+        && (appearance.appearanceVersion !== 1
+            || !Number.isInteger(appearance.presentationState)
+            || appearance.presentationState < 0
+            || appearance.presentationState > 3)) {
         return false;
     }
     if (!hasValue) {
@@ -20308,6 +20327,12 @@ class HammerspoonAction extends SingletonAction {
             await this.sendBridgeState();
         }
     }
+    targetState(appearance) {
+        if (this.mode !== "multi-state") {
+            return appearance.state;
+        }
+        return appearance.presentationState ?? appearance.state;
+    }
     settingsFrom(value) {
         const settings = cloneJsonValue(value);
         if (typeof settings.actionId !== "string" || settings.actionId.length === 0) {
@@ -20377,9 +20402,9 @@ class HammerspoonAction extends SingletonAction {
             await this.renderInstance(appearance.instanceId);
             return;
         }
-        const bundledIcon = this.mode === "button"
-            ? BUNDLED_BUTTON_ICON_PATH
-            : appearance.state === 1 ? BUNDLED_TOGGLE_ACTIVE_ICON_PATH : BUNDLED_TOGGLE_INACTIVE_ICON_PATH;
+        const bundledIcon = this.mode === "toggle"
+            ? appearance.state === 1 ? BUNDLED_TOGGLE_ACTIVE_ICON_PATH : BUNDLED_TOGGLE_INACTIVE_ICON_PATH
+            : BUNDLED_BUTTON_ICON_PATH;
         if (isDialAction(instance.action)) {
             if (!(await this.setDialTitle(instance.action, appearance.title, instance.renderingProfile, appearance, bundledIcon))) {
                 return;
@@ -20393,13 +20418,13 @@ class HammerspoonAction extends SingletonAction {
             await this.alert(instance.action);
             return;
         }
-        const targetState = this.mode === "toggle" ? appearance.state : 0;
-        const previousState = instance.lastAppearance?.state ?? 0;
-        if (this.mode === "toggle" && !(await this.setState(instance.action, targetState))) {
+        const targetState = this.targetState(appearance);
+        const previousState = instance.lastAppearance === undefined ? 0 : this.targetState(instance.lastAppearance);
+        if (this.mode !== "button" && !(await this.setState(instance.action, targetState))) {
             return;
         }
         if (!(await this.applyImage(instance, image, targetState))) {
-            if (this.mode === "toggle") {
+            if (this.mode !== "button") {
                 await this.setState(instance.action, previousState);
             }
             return;
@@ -20468,7 +20493,7 @@ class HammerspoonAction extends SingletonAction {
         if (!instance.action.isKey() || !instance.imageAppliedStates.has(state)) {
             return true;
         }
-        if (await this.setImage(instance.action, undefined, this.mode === "toggle" ? state : undefined)) {
+        if (await this.setImage(instance.action, undefined, this.mode === "button" ? undefined : state)) {
             instance.imageAppliedStates.delete(state);
             return true;
         }
@@ -20481,11 +20506,11 @@ class HammerspoonAction extends SingletonAction {
         if (image === undefined) {
             return this.clearImage(instance, state);
         }
-        if (await this.setImage(instance.action, image, this.mode === "toggle" ? state : undefined)) {
+        if (await this.setImage(instance.action, image, this.mode === "button" ? undefined : state)) {
             instance.imageAppliedStates.add(state);
             return true;
         }
-        if (await this.setImage(instance.action, undefined, this.mode === "toggle" ? state : undefined)) {
+        if (await this.setImage(instance.action, undefined, this.mode === "button" ? undefined : state)) {
             instance.imageAppliedStates.delete(state);
             return true;
         }
@@ -20669,10 +20694,16 @@ const hammerspoonButton = new HammerspoonAction(bridge, {
     manifestId: HAMMERSPOON_BUTTON_UUID,
     mode: "button",
 });
+const hammerspoonMultiState = new HammerspoonAction(bridge, {
+    manifestId: HAMMERSPOON_MULTI_STATE_UUID,
+    mode: "multi-state",
+});
 hammerspoonToggle.subscribe();
 hammerspoonButton.subscribe();
+hammerspoonMultiState.subscribe();
 streamDeck.actions.registerAction(hammerspoonToggle);
 streamDeck.actions.registerAction(hammerspoonButton);
+streamDeck.actions.registerAction(hammerspoonMultiState);
 bridge.start();
 streamDeck.connect();
 

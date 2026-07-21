@@ -6,7 +6,7 @@ import streamDeck, {
   type SendToPluginEvent,
 } from "@elgato/streamdeck";
 import type { BridgeAppearance, BridgeClient, BridgeDiagnosticArea, BridgeDiagnosticCode, BridgeFeedback } from "../bridge.js";
-import { isSafeAppearanceIcon, isSafeAppearanceValue, safeAppearanceIconImage, sanitizeDeviceMetadata, type DeviceMetadata, type JsonSettings } from "../protocol.js";
+import { isSafeAppearanceIcon, isSafeAppearanceValue, safeAppearanceIconImage, sanitizeDeviceMetadata, type DeviceMetadata, type JsonSettings, type PresentationState } from "../protocol.js";
 type JsonObject = { [key: string]: JsonValue };
 type JsonPrimitive = boolean | number | string | null | undefined;
 type JsonValue = JsonObject | JsonPrimitive | JsonValue[];
@@ -116,6 +116,7 @@ function cloneJsonValue(value: JsonValue): JsonValue {
 
 export const HAMMERSPOON_ACTION_UUID = "com.brettinternet.hammerspoon.action";
 export const HAMMERSPOON_BUTTON_UUID = "com.brettinternet.hammerspoon.button";
+export const HAMMERSPOON_MULTI_STATE_UUID = "com.brettinternet.hammerspoon.multistate";
 
 function escapeXml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -136,6 +137,17 @@ function hasValidAppearanceExtension(appearance: BridgeAppearance): boolean {
   const hasValue = appearance.value !== undefined;
   const hasIndicator = appearance.indicator !== undefined;
   if (hasValue !== hasIndicator) {
+    return false;
+  }
+  if (
+    appearance.presentationState !== undefined
+    && (
+      appearance.appearanceVersion !== 1
+      || !Number.isInteger(appearance.presentationState)
+      || appearance.presentationState < 0
+      || appearance.presentationState > 3
+    )
+  ) {
     return false;
   }
   if (!hasValue) {
@@ -370,7 +382,7 @@ type TrackedInstance = {
   renderingProfile?: RenderingProfile;
   encoderLayout?: "$A0" | "$A1" | "$B1";
   settings: HammerspoonActionSettings;
-  imageAppliedStates: Set<0 | 1>;
+  imageAppliedStates: Set<number>;
 };
 type RequestStateMessage = {
   type: "requestState";
@@ -384,7 +396,7 @@ function isRequestStateMessage(value: JsonValue): value is RequestStateMessage {
 type HammerspoonActionOptions = {
   clearTimeout?: (handle: unknown) => void;
   manifestId?: string;
-  mode?: "button" | "toggle";
+  mode?: "button" | "toggle" | "multi-state";
   setTimeout?: (callback: () => void, delay: number) => unknown;
 };
 
@@ -396,7 +408,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   private readonly renderQueues = new Map<string, Promise<void>>();
   private readonly scheduleTimeout: (callback: () => void, delay: number) => unknown;
   private readonly cancelTimeout: (handle: unknown) => void;
-  private readonly mode: "button" | "toggle";
+  private readonly mode: "button" | "toggle" | "multi-state";
   private subscribed = false;
 
   public constructor(
@@ -642,6 +654,13 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       await this.sendBridgeState();
     }
   }
+  private targetState(appearance: BridgeAppearance): PresentationState {
+    if (this.mode !== "multi-state") {
+      return appearance.state;
+    }
+    return appearance.presentationState ?? appearance.state;
+  }
+
 
   private settingsFrom(value: HammerspoonActionSettings): HammerspoonActionSettings {
     const settings = cloneJsonValue(value) as HammerspoonActionSettings;
@@ -726,9 +745,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       await this.renderInstance(appearance.instanceId);
       return;
     }
-    const bundledIcon = this.mode === "button"
-      ? BUNDLED_BUTTON_ICON_PATH
-      : appearance.state === 1 ? BUNDLED_TOGGLE_ACTIVE_ICON_PATH : BUNDLED_TOGGLE_INACTIVE_ICON_PATH;
+    const bundledIcon = this.mode === "toggle"
+      ? appearance.state === 1 ? BUNDLED_TOGGLE_ACTIVE_ICON_PATH : BUNDLED_TOGGLE_INACTIVE_ICON_PATH
+      : BUNDLED_BUTTON_ICON_PATH;
     if (isDialAction(instance.action)) {
       if (!(await this.setDialTitle(instance.action, appearance.title, instance.renderingProfile, appearance, bundledIcon))) {
         return;
@@ -746,13 +765,13 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       await this.alert(instance.action);
       return;
     }
-    const targetState = this.mode === "toggle" ? appearance.state : 0;
-    const previousState = instance.lastAppearance?.state ?? 0;
-    if (this.mode === "toggle" && !(await this.setState(instance.action, targetState))) {
+    const targetState = this.targetState(appearance);
+    const previousState = instance.lastAppearance === undefined ? 0 : this.targetState(instance.lastAppearance);
+    if (this.mode !== "button" && !(await this.setState(instance.action, targetState))) {
       return;
     }
     if (!(await this.applyImage(instance, image, targetState))) {
-      if (this.mode === "toggle") {
+      if (this.mode !== "button") {
         await this.setState(instance.action, previousState);
       }
       return;
@@ -816,11 +835,11 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     instance.feedbackTimer = undefined;
   }
 
-  private async clearImage(instance: TrackedInstance, state: 0 | 1): Promise<boolean> {
+  private async clearImage(instance: TrackedInstance, state: number): Promise<boolean> {
     if (!instance.action.isKey() || !instance.imageAppliedStates.has(state)) {
       return true;
     }
-    if (await this.setImage(instance.action, undefined, this.mode === "toggle" ? state : undefined)) {
+    if (await this.setImage(instance.action, undefined, this.mode === "button" ? undefined : state)) {
       instance.imageAppliedStates.delete(state);
       return true;
     }
@@ -830,7 +849,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   private async applyImage(
     instance: TrackedInstance,
     image: string | undefined,
-    state: 0 | 1,
+    state: number,
   ): Promise<boolean> {
     if (!instance.action.isKey()) {
       return true;
@@ -838,11 +857,11 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     if (image === undefined) {
       return this.clearImage(instance, state);
     }
-    if (await this.setImage(instance.action, image, this.mode === "toggle" ? state : undefined)) {
+    if (await this.setImage(instance.action, image, this.mode === "button" ? undefined : state)) {
       instance.imageAppliedStates.add(state);
       return true;
     }
-    if (await this.setImage(instance.action, undefined, this.mode === "toggle" ? state : undefined)) {
+    if (await this.setImage(instance.action, undefined, this.mode === "button" ? undefined : state)) {
       instance.imageAppliedStates.delete(state);
       return true;
     }
@@ -974,7 +993,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   private async setImage(
     action: KeyAction<HammerspoonActionSettings>,
     image: string | undefined,
-    state?: 0 | 1,
+    state?: number,
   ): Promise<boolean> {
     try {
       await action.setImage(image, state === undefined ? undefined : { state });
@@ -993,7 +1012,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
   }
 
-  private async setState(action: KeyAction<HammerspoonActionSettings>, state: 0 | 1): Promise<boolean> {
+  private async setState(action: KeyAction<HammerspoonActionSettings>, state: number): Promise<boolean> {
     try {
       await action.setState(state);
       return true;

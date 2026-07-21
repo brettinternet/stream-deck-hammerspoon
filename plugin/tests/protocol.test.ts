@@ -81,6 +81,12 @@ const extendedAppearance: ServerMessage = {
   badge: "OK",
 };
 
+
+const multiStateAppearance: ServerMessage = {
+  ...appearance,
+  appearanceVersion: 1,
+  presentationState: 3,
+};
 const encoderAppearance: ServerMessage = {
   ...appearance,
   appearanceVersion: 1,
@@ -188,6 +194,7 @@ describe("protocol examples", () => {
     }
     expect(parseServerMessage(JSON.stringify(appearance))).toEqual(appearance);
     expect(parseServerMessage(JSON.stringify(extendedAppearance))).toEqual(extendedAppearance);
+    expect(parseServerMessage(JSON.stringify(multiStateAppearance))).toEqual(multiStateAppearance);
     expect(parseServerMessage(JSON.stringify(encoderAppearance))).toEqual(encoderAppearance);
     expect(parseServerMessage(JSON.stringify(feedback))).toEqual(feedback);
   });
@@ -253,8 +260,12 @@ describe("protocol direction and validation", () => {
       { ...appearance, instanceId: "" },
       { ...appearance, actionId: undefined },
       { ...extendedAppearance, appearanceVersion: 2 },
+      { ...appearance, presentationState: 0 },
+      { ...multiStateAppearance, presentationState: -1 },
+      { ...multiStateAppearance, presentationState: 4 },
+      { ...multiStateAppearance, presentationState: 1.5 },
+      { ...multiStateAppearance, presentationState: "1" },
       { ...extendedAppearance, foregroundColor: "#fff" },
-      { ...extendedAppearance, backgroundColor: "red" },
       { ...extendedAppearance, progress: -0.01 },
       { ...extendedAppearance, progress: 1.01 },
       { ...extendedAppearance, badge: "12345" },
@@ -297,6 +308,20 @@ describe("protocol direction and validation", () => {
       value: "😀".repeat(16),
       indicator: 100,
     });
+  });
+
+  test("accepts bounded multi-state presentation boundaries", () => {
+    for (const presentationState of [0, 1, 2, 3] as const) {
+      expect(parseServerMessage(JSON.stringify({
+        ...appearance,
+        appearanceVersion: 1,
+        presentationState,
+      }))).toEqual({
+        ...appearance,
+        appearanceVersion: 1,
+        presentationState,
+      });
+    }
   });
 
   test("validates bundled fallback and custom image safety bounds", () => {

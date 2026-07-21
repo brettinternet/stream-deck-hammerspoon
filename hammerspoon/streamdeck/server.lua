@@ -142,6 +142,7 @@ function server.new(registry, protocol, contextFactory)
       state = state,
     }
     if appearance and appearance.appearanceVersion ~= nil then message.appearanceVersion = appearance.appearanceVersion end
+    if appearance and appearance.presentationState ~= nil then message.presentationState = appearance.presentationState end
     if appearance and appearance.foregroundColor ~= nil then message.foregroundColor = appearance.foregroundColor end
     if appearance and appearance.backgroundColor ~= nil then message.backgroundColor = appearance.backgroundColor end
     if appearance and appearance.progress ~= nil then message.progress = appearance.progress end

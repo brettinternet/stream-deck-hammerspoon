@@ -614,9 +614,9 @@ describe("BridgeClient instance lifecycle", () => {
     const appearances: unknown[] = [];
     client.on("appearance", (value) => appearances.push(value));
     sockets[0].receive(JSON.stringify({ protocolVersion: 1, type: "appearance", instanceId: "instance-1", actionId: "com.example.action", title: "stale", state: 1 }));
-    sockets[0].receive(JSON.stringify({ protocolVersion: 1, type: "appearance", instanceId: "instance-2", actionId: "com.example.action", title: "live", state: 1, appearanceVersion: 1, value: "72%", indicator: 72 }));
+    sockets[0].receive(JSON.stringify({ protocolVersion: 1, type: "appearance", instanceId: "instance-2", actionId: "com.example.action", title: "live", state: 1, appearanceVersion: 1, presentationState: 2, value: "72%", indicator: 72 }));
     expect(appearances).toEqual([
-      expect.objectContaining({ instanceId: "instance-2", title: "live", value: "72%", indicator: 72 }),
+      expect.objectContaining({ instanceId: "instance-2", title: "live", value: "72%", indicator: 72, presentationState: 2 }),
     ]);
   });
 

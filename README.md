@@ -9,7 +9,7 @@ The official Stream Deck application remains the owner of plugin lifecycle, prop
 
 ## What this is and is not
 
-- Two generic actions point a Stream Deck instance at any registered Hammerspoon action: **Hammerspoon Button** has one configurable image, while **Hammerspoon Toggle** has inactive and active images.
+- Three generic actions point a Stream Deck instance at any registered Hammerspoon action: **Hammerspoon Button** has one configurable image, **Hammerspoon Toggle** has inactive and active images, and the keypad-only **Hammerspoon Multi-State** action has four static presentation images selected by a bounded Lua `presentationState`.
 - Requiring `streamdeck` also provides **Reload Hammerspoon** and **Toggle Hammerspoon Console** in the same action selector; see the [Lua API guide](docs/lua-api.md).
 - `hammerspoon/streamdeck/` is the reusable Lua API (`register`, `start`, `stop`, `refresh`, and context helpers).
 - `protocol/schema/` is the canonical protocol-v1 JSON Schema.
@@ -40,7 +40,7 @@ The installer builds, validates, links, and restarts the plugin, symlinks the Lu
 
 The bridge creates `~/.hammerspoon/streamdeck-token` on its first successful start; it contains two UUIDs and must remain mode `0600`. Never commit or log it. Follow [the development guide](docs/development.md) for the release installation flow and manual vertical slice.
 
-For the smallest working example, start with the registration and context example in [the Lua API guide](docs/lua-api.md), then add a Hammerspoon Button or Hammerspoon Toggle in the official Stream Deck application and select its registered action ID in the property inspector. Use Toggle when the Lua appearance's `state` should select separate inactive and active images.
+For the smallest working example, start with the registration and context example in [the Lua API guide](docs/lua-api.md), then add a Hammerspoon Button, Hammerspoon Toggle, or keypad-only Hammerspoon Multi-State action in the official Stream Deck application and select its registered action ID in the property inspector. Use Toggle when the Lua appearance's `state` should select separate inactive and active images; use Multi-State when bounded `presentationState` values should select one of four static images.
 
 ## Architecture and protocol
 
