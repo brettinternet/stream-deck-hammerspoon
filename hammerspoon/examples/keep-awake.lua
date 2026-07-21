@@ -3,6 +3,7 @@
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")
+local sound = require("streamdeck.sound")
 
 local action_id = "com.brettinternet.hammerspoon.keep-awake"
 local idle_type = "displayIdle"
@@ -32,6 +33,7 @@ end
 streamdeck.register({
   id = action_id,
   name = "Keep awake",
+  sound = sound.toggle(),
 
   appearance = function(_context)
     local enabled = display_idle_state()
@@ -59,6 +61,8 @@ streamdeck.register({
     end
 
     streamdeck.refresh(action_id)
+    -- Report the boolean produced by hs.caffeinate.toggle; sound never infers it from appearance.
+    return enabled and sound.ON or sound.OFF
   end,
 })
 

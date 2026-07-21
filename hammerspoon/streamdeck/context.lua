@@ -1,3 +1,4 @@
+local Sound = require("streamdeck.sound")
 local context = {}
 
 local function callbackTraceback(message)
@@ -121,7 +122,9 @@ function context.new(options)
       or type(options.instanceId) ~= "string"
       or type(options.actionId) ~= "string"
       or type(options.emitAppearance) ~= "function"
-      or type(options.emitError) ~= "function" then
+      or type(options.emitError) ~= "function"
+      or (options.sound ~= nil and type(options.sound) ~= "table")
+      or (options.sound ~= nil and type(options.sound.play) ~= "function") then
     error("Invalid Stream Deck context options", 2)
   end
 
@@ -134,7 +137,9 @@ function context.new(options)
     emitAppearance = options.emitAppearance,
     emitError = options.emitError,
     emitFeedback = options.emitFeedback,
+    sound = options.sound or Sound,
   }
+
   local function reportCallbackFailure()
     pcall(object.emitError, "CALLBACK_FAILED", object.instanceId)
   end
@@ -177,21 +182,32 @@ function context.new(options)
   function object:error(message, durationMs)
     return emitFeedback("error", message, durationMs)
   end
+  function object:playSound(spec)
+    local ok, result = pcall(self.sound.play, spec, self)
+    return ok and result == true
+  end
+
+  function object:playSoundPolicy(policy, callbackReturn)
+    if type(self.sound.playPolicy) ~= "function" then return true end
+    local ok = pcall(self.sound.playPolicy, policy, callbackReturn, self)
+    return ok
+  end
+
 
   function object:invoke(name, ...)
     local callback = self.definition[name]
     if callback == nil then
       return true
     end
-    local args = { ... }
-    local ok = xpcall(function()
-      callback(self, table.unpack(args))
+    local args = table.pack(...)
+    local ok, callbackReturns = xpcall(function()
+      return table.pack(callback(self, table.unpack(args, 1, args.n)))
     end, callbackTraceback)
     if not ok then
       reportCallbackFailure()
       return false
     end
-    return true
+    return true, table.unpack(callbackReturns, 1, callbackReturns.n)
   end
 
   function object:refresh()

@@ -3,6 +3,7 @@
 -- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
 local streamdeck = require("streamdeck")
+local sound = require("streamdeck.sound")
 
 local action_id = "com.brettinternet.hammerspoon.lock-screen"
 
@@ -18,6 +19,8 @@ end
 streamdeck.register({
   id = action_id,
   name = "Lock screen",
+  sound = sound.press(),
+  -- The shared policy plays the default press cue only after this callback succeeds.
 
   -- hs.caffeinate.lockScreen has no documented return value, so a successful
   -- call (nil) and an explicit true are accepted; false and other values fail.

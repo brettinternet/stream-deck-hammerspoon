@@ -101,6 +101,43 @@ local function nextPendingDelay()
   return nil
 end
 
+local fakeSoundConstructors = { name = 0, file = 0 }
+local fakeSoundObjects = {}
+local fakeSoundPlays = {}
+local fakeSoundStops = {}
+local fakeSoundReloadStops = {}
+local fakeSoundPlayFailures = {}
+local fakeSoundVolumes = {}
+local function fakeSound(kind, value)
+  local key = kind .. ":" .. value
+  local object = fakeSoundObjects[key]
+  if object ~= nil then return object end
+  object = { kind = kind, value = value, looping = false }
+  function object:loopSound(value)
+    self.looping = value
+    return true
+  end
+  function object:volume(value)
+    fakeSoundVolumes[#fakeSoundVolumes + 1] = { kind = kind, value = self.value, volume = value }
+    return true
+  end
+  function object:stop()
+    fakeSoundStops[#fakeSoundStops + 1] = key
+    return true
+  end
+  function object:stopOnReload(value)
+    fakeSoundReloadStops[#fakeSoundReloadStops + 1] = { key = key, value = value }
+    return true
+  end
+  function object:play()
+    fakeSoundPlays[#fakeSoundPlays + 1] = key
+    if fakeSoundPlayFailures[key] then return false end
+    return true
+  end
+  fakeSoundObjects[key] = object
+  return object
+end
+
 local fakeTimer = {
   doAfter = fakeDoAfter,
 }
@@ -127,6 +164,16 @@ _G.hs = {
   toggleConsole = fakeToggleConsole,
   console = fakeConsole,
   timer = fakeTimer,
+  sound = {
+    getByName = function(name)
+      fakeSoundConstructors.name = fakeSoundConstructors.name + 1
+      return fakeSound("name", name)
+    end,
+    getByFile = function(path)
+      fakeSoundConstructors.file = fakeSoundConstructors.file + 1
+      return fakeSound("file", path)
+    end,
+  },
   audiodevice = {},
   httpserver = {
     new = function()
@@ -182,6 +229,7 @@ _G.hs = {
 }
 
 local Registry = require("streamdeck.registry")
+local Sound = require("streamdeck.sound")
 local Builtins = require("streamdeck.builtins")
 local StreamDeck = require("streamdeck")
 local Protocol = require("streamdeck.protocol")
@@ -328,6 +376,176 @@ test("registry rejects malformed definitions and duplicate IDs", function()
   registry:register(definition)
   assertFalse(pcall(registry.register, registry, definition), "duplicate IDs must be rejected")
   assertEqual(#registry:list(), 1, "duplicate registration must not append")
+end)
+
+test("sound specs cache default playback and restart repeat cues", function()
+  Sound._resetForTests()
+  local nameCount = fakeSoundConstructors.name
+  local fileCount = fakeSoundConstructors.file
+  local playCount = #fakeSoundPlays
+  local stopCount = #fakeSoundStops
+  local systemSpec = Sound.system("Test", { volume = 0.4, loop = true, stopOnReload = true })
+  local fileSpec = Sound.file("/tmp/test.wav")
+  assertTrue(Sound.play(systemSpec))
+  assertTrue(Sound.play(systemSpec))
+  assertTrue(Sound.play(fileSpec))
+  assertEqual(fakeSoundConstructors.name, nameCount + 1)
+  assertEqual(fakeSoundConstructors.file, fileCount + 1)
+  assertEqual(#fakeSoundPlays, playCount + 3)
+  assertEqual(#fakeSoundStops, stopCount + 2)
+  assertEqual(#fakeSoundReloadStops, 3)
+  assertTrue(Sound.play(Sound.system("Test", { loop = false })))
+  assertFalse(fakeSoundObjects["name:Test"].looping)
+  fakeSoundPlayFailures["name:Failed"] = true
+  assertFalse(Sound.play(Sound.system("Failed")))
+  fakeSoundPlayFailures["name:Failed"] = nil
+  local savedSound = _G.hs.sound
+  _G.hs.sound = nil
+  assertFalse(Sound.play(Sound.system("Missing")))
+  _G.hs.sound = savedSound
+end)
+
+test("sound configuration validates and custom providers are authoritative", function()
+  Sound._resetForTests()
+  local onSentinel = Sound.ON
+  local offSentinel = Sound.OFF
+  assertTrue(onSentinel ~= offSentinel)
+  assertFalse(pcall(function() Sound.ON = Sound.OFF end))
+  assertFalse(pcall(function() Sound.OFF = Sound.ON end))
+  assertEqual(Sound.ON, onSentinel)
+  assertEqual(Sound.OFF, offSentinel)
+  local spec = Sound.system("Provider")
+  local calls = 0
+  Sound.configure({
+    provider = function(received, context)
+      calls = calls + 1
+      assertEqual(received, spec)
+      assertEqual(context, "context")
+      return true
+    end,
+  })
+  assertTrue(Sound.play(spec, "context"))
+  assertEqual(calls, 1)
+  Sound.configure({ provider = function() return nil end })
+  assertFalse(Sound.play(spec))
+  assertFalse(pcall(Sound.system, "bad", { volume = 2 }))
+  assertFalse(pcall(Sound.file, "", {}))
+  assertFalse(pcall(Sound.press, { kind = "invalid" }))
+  assertFalse(pcall(Sound.toggle, { on = spec, invalid = spec }))
+  assertFalse(pcall(Sound.configure, { provider = "not a function" }))
+  Sound._resetForTests()
+end)
+
+test("context preserves callback returns and isolates sound playback", function()
+  Sound._resetForTests()
+  local played
+  local context = Context.new({
+    definition = {
+      invoke = function() return "first", nil, "third" end,
+    },
+    instanceId = "sound-context",
+    actionId = "com.test.sound-context",
+    emitAppearance = function() end,
+    emitError = function() end,
+    sound = {
+      play = function(spec)
+        played = spec
+        return true
+      end,
+    },
+  })
+  local ok, first, second, third = context:invoke("invoke")
+  assertTrue(ok)
+  assertEqual(first, "first")
+  assertEqual(second, nil)
+  assertEqual(third, "third")
+  assertTrue(context:playSound(Sound.system("Escape")))
+  assertTrue(played ~= nil)
+  local failed = Context.new({
+    definition = { invoke = function() error("callback") end },
+    instanceId = "sound-failure",
+    actionId = "com.test.sound-failure",
+    emitAppearance = function() end,
+    emitError = function() end,
+    sound = { play = function() error("sound") end },
+  })
+  local failure = failed:invoke("invoke")
+  assertFalse(failure)
+  assertFalse(failed:playSound(Sound.system("Failed")))
+  Sound._resetForTests()
+end)
+
+test("server dispatches press and toggle sounds only for successful press callbacks", function()
+  Sound._resetForTests()
+  local sounds = {}
+  Sound.configure({
+    provider = function(spec)
+      sounds[#sounds + 1] = spec
+      return true
+    end,
+  })
+  local toggleState = false
+  local longPresses = 0
+  local pushes = 0
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.sound-toggle",
+    name = "Sound toggle",
+    appearance = function() return { title = "Toggle", state = "inactive" } end,
+    sound = Sound.toggle({
+      on = Sound.system("On"),
+      off = Sound.system("Off"),
+    }),
+    press = function()
+      toggleState = not toggleState
+      return toggleState and Sound.ON or Sound.OFF
+    end,
+    release = function() end,
+  })
+  registry:register({
+    id = "com.test.sound-long",
+    name = "Sound long",
+    appearance = function() return { title = "Long", state = "inactive" } end,
+    sound = Sound.press(Sound.system("Long")),
+    press = function() end,
+    longPress = function() longPresses = longPresses + 1 end,
+    release = function() end,
+  })
+  registry:register({
+    id = "com.test.sound-encoder",
+    name = "Sound encoder",
+    appearance = function() return { title = "Encoder", state = "inactive" } end,
+    sound = Sound.press(Sound.system("Push")),
+    press = function() error("encoder press must not run") end,
+    push = function() pushes = pushes + 1 end,
+  })
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    authenticate(server, path)
+    exchange(server, message("instanceAppeared", { instanceId = "sound-toggle", actionId = "com.test.sound-toggle", settings = {} }))
+    exchange(server, message("keyDown", { instanceId = "sound-toggle", actionId = "com.test.sound-toggle" }))
+    exchange(server, message("keyUp", { instanceId = "sound-toggle", actionId = "com.test.sound-toggle" }))
+    exchange(server, message("keyDown", { instanceId = "sound-toggle", actionId = "com.test.sound-toggle" }))
+    assertEqual(#sounds, 2)
+    assertEqual(sounds[1].value, "On")
+    assertEqual(sounds[2].value, "Off")
+
+    clearPendingTimers()
+    exchange(server, message("instanceAppeared", { instanceId = "sound-long", actionId = "com.test.sound-long", settings = {} }))
+    exchange(server, message("keyDown", { instanceId = "sound-long", actionId = "com.test.sound-long" }))
+    runPendingTimer()
+    exchange(server, message("keyUp", { instanceId = "sound-long", actionId = "com.test.sound-long" }))
+    assertEqual(longPresses, 1)
+    assertEqual(#sounds, 2, "long press must not play press audio")
+
+    exchange(server, message("instanceAppeared", { instanceId = "sound-encoder", actionId = "com.test.sound-encoder", settings = {} }))
+    exchange(server, message("dialDown", { instanceId = "sound-encoder", actionId = "com.test.sound-encoder" }))
+    assertEqual(pushes, 1)
+    assertEqual(#sounds, 2, "encoder push must not play press audio")
+    server:stop()
+  end)
+  clearPendingTimers()
+  Sound._resetForTests()
 end)
 
 test("built-in Hammerspoon utility actions register idempotently", function()

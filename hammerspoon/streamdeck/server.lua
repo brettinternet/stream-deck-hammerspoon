@@ -184,6 +184,14 @@ function server.new(registry, protocol, contextFactory)
       end,
     })
   end
+  function object:_invokePress(instance)
+    local ok, callbackReturn = instance:invoke("press")
+    if ok and instance.definition.sound ~= nil then
+      instance:playSoundPolicy(instance.definition.sound, callbackReturn)
+    end
+    return ok, callbackReturn
+  end
+
 
   local function cancelLongPress(instance)
     instance.longPressGeneration = (instance.longPressGeneration or 0) + 1
@@ -204,7 +212,7 @@ function server.new(registry, protocol, contextFactory)
 
     cancelLongPress(instance)
     if instance.definition.longPress == nil then
-      instance:invoke("press")
+      self:_invokePress(instance)
       return
     end
 
@@ -213,7 +221,7 @@ function server.new(registry, protocol, contextFactory)
     local timerApi = hsapi and hsapi.timer
     if not timerApi or type(timerApi.doAfter) ~= "function" then
       instance.pressed = false
-      instance:invoke("press")
+      self:_invokePress(instance)
       return
     end
 
@@ -233,7 +241,7 @@ function server.new(registry, protocol, contextFactory)
     local ok, timer = pcall(timerApi.doAfter, thresholdMs / 1000, callback)
     if not ok or timer == nil then
       instance.pressed = false
-      instance:invoke("press")
+      self:_invokePress(instance)
       return
     end
     instance.longPressTimer = timer
@@ -250,7 +258,7 @@ function server.new(registry, protocol, contextFactory)
     local longPressTriggered = instance.longPressTriggered == true
     cancelLongPress(instance)
     if not longPressTriggered then
-      instance:invoke("press")
+      self:_invokePress(instance)
     end
     instance:invoke("release")
   end
@@ -402,7 +410,11 @@ function server.new(registry, protocol, contextFactory)
       elseif message.type == "keyUp" then
         self:_endPress(instance)
       elseif message.type == "dialDown" then
-        instance:invoke(instance.definition.push == nil and "press" or "push")
+        if instance.definition.push == nil then
+          self:_invokePress(instance)
+        else
+          instance:invoke("push")
+        end
       elseif message.type == "dialRotate" then
         instance:invoke("rotate", message.ticks, message.pressed)
       elseif message.type == "dialUp" then

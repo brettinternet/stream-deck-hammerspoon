@@ -53,9 +53,9 @@ end
 
 Requiring `streamdeck` automatically registers these stable utility actions before user-defined actions:
 
-| Action ID | Name | Behavior |
-| --- | --- | --- |
-| `com.brettinternet.hammerspoon.reload` | Reload Hammerspoon | Reloads the Hammerspoon configuration. |
+| Action ID                               | Name                       | Behavior                                                                                                      |
+| --------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `com.brettinternet.hammerspoon.reload`  | Reload Hammerspoon         | Reloads the Hammerspoon configuration.                                                                        |
 | `com.brettinternet.hammerspoon.console` | Toggle Hammerspoon Console | Toggles the Hammerspoon Console window, reports whether it is visible, and uses the bundled Hammerspoon icon. |
 
 They appear in the existing Hammerspoon Button and Hammerspoon Toggle action selector; no separate Stream Deck action or manual registration is required. The reload action schedules `hs.reload()` on the next timer tick so the bridge can finish handling the button event before Hammerspoon resets its Lua environment. The plugin reconnects and restores visible instances after the reload.
@@ -68,10 +68,10 @@ Starts the authenticated loopback WebSocket server and publishes the registered 
 
 The supported options are:
 
-| Option | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `port` | integer | `17321` | Local TCP port for the bridge. |
-| `tokenPath` | string | `~/.hammerspoon/streamdeck-token` | Shared-token file path. |
+| Option      | Type    | Default                           | Meaning                        |
+| ----------- | ------- | --------------------------------- | ------------------------------ |
+| `port`      | integer | `17321`                           | Local TCP port for the bridge. |
+| `tokenPath` | string  | `~/.hammerspoon/streamdeck-token` | Shared-token file path.        |
 
 The server is never exposed on a non-loopback interface. `start` validates its options and raises a Lua error for an invalid value or a server/token startup failure. Use one `start` call per Hammerspoon load.
 
@@ -98,6 +98,7 @@ Requests fresh appearance data for the current key instance only. It is normally
 ### `context:getSettings()`
 
 Returns the settings stored by Stream Deck for the current key instance. Settings are ordinary decoded Lua values. The returned settings belong to this context; changing a local Lua table does not write settings back to Stream Deck. This v1 API has no settings-write method.
+
 ### `context:getDevice()`
 
 Returns a defensive copy of optional per-instance controller/device metadata, or `nil` when unavailable. The closed DTO contains lowercase `controllerType`, a lowercase protocol device `type` (or `"unknown"`), and positive bounded `device.size.columns`/`rows`. SDK identifiers, names, connection state, visible actions, coordinates, and SDK objects are never exposed. Repeated lifecycle announcements update metadata without rerunning `appear`; callers may mutate the returned table without changing context state.
@@ -106,7 +107,15 @@ Returns a defensive copy of optional per-instance controller/device metadata, or
 
 Emit instance-scoped transient feedback after a callback succeeds or fails. `message` must be non-empty valid UTF-8, contain no Unicode control characters, and be at most 256 characters. `durationMs` is an inclusive millisecond range from 100 to 10,000. Invalid arguments return `false` without raising or exposing callback details; a valid emission returns `true` when queued. The plugin displays the message with the Stream Deck success or alert indicator, then restores the instance's previous appearance after the duration. Feedback is discarded safely when the instance disappears or the bridge reconnects.
 
-These are the only context methods in v1. Contexts are per-instance: assigning one action to several keys gives each key an independent context and independent settings. Do not use a module-global settings table when per-key behavior is intended.
+### `context:playSound(spec)`
+
+Explicitly resolves and plays a sound spec through the configured `streamdeck.sound` engine. This is the escape hatch for actions that need playback outside the automatic action policy. It returns `true` when playback is accepted and `false` for a missing, invalid, or failed sound. Playback failure is nonfatal: it never turns a successful callback into a callback failure.
+
+### `context:invoke(name, ...)`
+
+Invokes a named callback for the current action and preserves its return tuple as `ok, ...callbackReturns`. When the callback name is missing, it returns only `true`; when the callback raises or otherwise fails, it returns only `false`. This compatibility contract is also what lets the sound dispatcher inspect an explicit toggle sentinel without changing unrelated callback returns.
+
+These are the context methods in v1. Contexts are per-instance: assigning one action to several keys gives each key an independent context and independent settings. Do not use a module-global settings table when per-key behavior is intended.
 
 ## Composable helper components
 
@@ -119,7 +128,6 @@ Returns a state component with `appear`, `disappear`, `get`, and `set` functions
 ### `helpers.svg(svg)`
 
 Returns a custom SVG icon table with canonical padded base64 in `dataBase64`. The `svg` argument must be a string; bytes are encoded as-is, without markup sanitization. The normal appearance validator still applies its bounded safe-SVG profile before the icon is sent to the plugin.
-
 
 ### `helpers.refreshAfter(callback)`
 
@@ -155,26 +163,27 @@ Lifecycle remains explicit: the bridge invokes `appear` and `disappear`, while t
 
 An action definition is a table with these fields:
 
-| Field | Required | Type | Meaning |
-| --- | --- | --- | --- |
-| `id` | yes | non-empty string | Explicit, stable action ID. It must be unique within this Hammerspoon process. |
-| `name` | yes | non-empty string | Human-readable action name shown when choosing the action in Stream Deck. |
-| `settingsSchema` | no | table | Optional settings schema supplied to the plugin's property inspector. |
-| `settingsSchemaVersion` | no | integer 1–16 | Settings descriptor version. Version 1 enables bounded validation; omitted versions remain legacy opaque arrays and newer bounded versions are preserved without rendering. |
-| `appearance` | yes | function | Computes title/state and optional versioned presentation fields for a context. |
-| `press` | yes | function | Handles a key tap, or a legacy key-down event when `longPress` is absent. Also handles encoder push when `push` is absent. |
-| `release` | no | function | Handles a key-up or encoder push-release event for a context. |
-| `push` | no | function | Handles an encoder push event; when absent, the required `press` callback is used. |
-| `rotate` | no | function | Handles encoder rotation as `rotate(context, ticks, pressed)`, where positive ticks are clockwise and negative ticks are counter-clockwise. |
-| `longPress` | no | function | Handles a press held for `longPressThresholdMs`; paired with the required `press` callback to distinguish taps from long presses. |
-| `longPressThresholdMs` | no | integer 100–10,000 | Milliseconds before `longPress` runs; requires `longPress` and defaults to 500. |
-| `appear` | no | function | Runs when a new visible instance appears or a restored context is rebuilt after reconnect. |
-| `disappear` | no | function | Runs when a visible instance disappears or the connection is torn down. |
+| Field                   | Required | Type               | Meaning                                                                                                                                                                                           |
+| ----------------------- | -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                    | yes      | non-empty string   | Explicit, stable action ID. It must be unique within this Hammerspoon process.                                                                                                                    |
+| `name`                  | yes      | non-empty string   | Human-readable action name shown when choosing the action in Stream Deck.                                                                                                                         |
+| `settingsSchema`        | no       | table              | Optional settings schema supplied to the plugin's property inspector.                                                                                                                             |
+| `settingsSchemaVersion` | no       | integer 1–16       | Settings descriptor version. Version 1 enables bounded validation; omitted versions remain legacy opaque arrays and newer bounded versions are preserved without rendering.                       |
+| `appearance`            | yes      | function           | Computes title/state and optional versioned presentation fields for a context.                                                                                                                    |
+| `press`                 | yes      | function           | Handles a key tap, or a legacy key-down event when `longPress` is absent. Also handles encoder push when `push` is absent.                                                                        |
+| `release`               | no       | function           | Handles a key-up or encoder push-release event for a context.                                                                                                                                     |
+| `push`                  | no       | function           | Handles an encoder push event; when absent, the required `press` callback is used.                                                                                                                |
+| `rotate`                | no       | function           | Handles encoder rotation as `rotate(context, ticks, pressed)`, where positive ticks are clockwise and negative ticks are counter-clockwise.                                                       |
+| `longPress`             | no       | function           | Handles a press held for `longPressThresholdMs`; paired with the required `press` callback to distinguish taps from long presses.                                                                 |
+| `longPressThresholdMs`  | no       | integer 100–10,000 | Milliseconds before `longPress` runs; requires `longPress` and defaults to 500.                                                                                                                   |
+| `appear`                | no       | function           | Runs when a new visible instance appears or a restored context is rebuilt after reconnect.                                                                                                        |
+| `disappear`             | no       | function           | Runs when a visible instance disappears or the connection is torn down.                                                                                                                           |
+| `sound`                 | no       | sound policy       | Optional `streamdeck.sound` policy. A press policy plays the configured press cue after a successful press; a toggle policy plays only for an explicit `sound.ON` or `sound.OFF` callback return. |
 
 `push` and `rotate` are optional encoder-only callbacks. They receive the same per-instance context as key callbacks, including independent settings and device metadata. An action must still define `press`; it is the fallback for encoder push and remains the key callback.
 Registration rejects a non-table definition, missing required fields, wrong field types, an empty ID or name, duplicate IDs, unknown fields, malformed long-press configuration, and thresholds outside 100–10,000 ms. `longPressThresholdMs` requires `longPress`; omitting it uses the deterministic 500 ms default. `settingsSchema`, when supplied, must be a dense array of at most 32 JSON values. With `settingsSchemaVersion = 1`, each descriptor must use one of `text`, `number`, `boolean`, or `select`, with a unique bounded key, optional bounded label/required flag, kind-specific bounded constraints, and a type-correct default. Select options are bounded unique `{ value, label }` objects and defaults must match an option. Unknown descriptor or constraint keys, duplicate keys, invalid combinations, cycles, sparse arrays, non-finite numbers, and out-of-range values are rejected before action listing. Instance settings are not validated against the schema by the Lua bridge; the plugin inspector validates supported edits while Lua callbacks receive the decoded settings.
 
-The callbacks receive the current context. `press`, `release`, `push`, `rotate`, `longPress`, `appear`, and `disappear` return values are ignored. `rotate` additionally receives integer `ticks` and boolean `pressed`; positive ticks are clockwise and negative ticks are counter-clockwise. `appearance` must return:
+The callbacks receive the current context. `press` and other callback return values are preserved by the bridge; the sound policy consumes only its documented `sound.ON`/`sound.OFF` sentinels and otherwise leaves callback values unchanged. `rotate` additionally receives integer `ticks` and boolean `pressed`; positive ticks are clockwise and negative ticks are counter-clockwise. `appearance` must return:
 
 ```lua
 {
@@ -194,18 +203,80 @@ The callbacks receive the current context. `press`, `release`, `push`, `rotate`,
 
 `title` must be a string and `state` must be either `"active"` or `"inactive"`. The optional presentation fields require `appearanceVersion = 1`: colors must be six-digit `#RRGGBB` strings, `progress` must be between `0` and `1`, and `badge` must be valid UTF-8 of at most four characters. An icon is either a semantic bundled slug, which falls back to the shipped `hammerspoon` asset when unknown, or a custom `image/png`/`image/svg+xml` value with canonical padded base64. Custom data is bounded to 32,768 decoded bytes; the plugin derives and validates 72×72 or 144×144 dimensions and applies the constrained SVG profile before SDK rendering. Unknown fields, missing required fields, invalid values, and unsupported appearance versions are rejected and do not update the key. Appearance is independent from press: a press callback does not implicitly change presentation.
 
+## Sound feedback (Lua-only)
+
+Sound feedback in this release is entirely Hammerspoon-side Lua. There are no property-inspector sound settings, no sound-related protocol messages, and no Stream Deck plugin playback. Trusted Hammerspoon configuration chooses sound specs and policies; the bridge plays them only after the callback that owns the action succeeds.
+
+Load the shared module with:
+
+```lua
+local sound = require("streamdeck.sound")
+```
+
+### Sound specs and defaults
+
+`sound.system(name[, options])` creates a system-sound spec resolved by Hammerspoon's `hs.sound.getByName`. `sound.file(path[, options])` creates a trusted local-file spec resolved by Hammerspoon's `hs.sound.getByFile`. File paths belong in Lua configuration, not in Stream Deck settings. Both constructors accept optional `volume`, `loop`, and `stopOnReload` playback options; a per-spec `stopOnReload` value overrides the global setting. Invalid names, paths, or options raise a synchronous Lua error. Missing sounds or later lookup/playback failures are silent and nonfatal.
+
+Global semantic defaults are configured once per Hammerspoon load:
+
+```lua
+sound.configure({
+  defaults = {
+    press = sound.system("Tink"),
+    on = sound.system("Pop"),
+    off = sound.system("Funk"),
+  },
+})
+```
+
+The `press` policy (`sound.press([spec])`) plays one press cue after a successful press. With no spec it uses the global `defaults.press`; with a spec it uses that action's override. The `toggle` policy (`sound.toggle([options])`) waits for the successful press callback to return exactly `sound.ON` or `sound.OFF`, then plays the configured `on` or `off` cue respectively. Its optional `on` and `off` fields override those global defaults. It never calls `appearance`, reads a previous appearance, or infers state. A callback returning any other value is silent.
+
+The `sound.ON` and `sound.OFF` exports are opaque protected cue sentinels. Return them from a toggle callback only after the underlying operation has committed the resulting state; do not construct replacement values.
+
+```lua
+local sound = require("streamdeck.sound")
+
+streamdeck.register({
+  -- id, name, and appearance omitted here
+  sound = sound.toggle(),
+  press = function(context)
+    local enabled = hs.caffeinate.toggle("displayIdle")
+    context:refresh()
+    return enabled and sound.ON or sound.OFF
+  end,
+})
+```
+
+Sound dispatch is tied to the callback actually selected by the gesture. A normal tap plays a press/toggle cue only after `press` succeeds; a failed or thrown callback is silent. A configured long press does not play on key-down, and a completed long press does not accidentally replay the tap cue. `release`, `push`, `rotate`, and `touchTap` do not trigger press audio. Playback lookup or playback itself may fail, including when `hs.sound` is unavailable; such failures are best-effort, silent, and never change the callback result or bridge error handling.
+
+The default Hammerspoon provider caches resolved system and file sound objects and replays them without avoidable allocations. `stopOnReload = true` is best-effort; it must not invalidate unnamed file sounds.
+
+To replace the default provider, pass one resolver/player function. It receives each resolved spec and the current context, and a truthy return means playback was accepted:
+
+```lua
+sound.configure({
+  provider = function(spec, context)
+    -- Resolve and play spec through a trusted Hammerspoon audio path.
+    return my_sound_player(spec, context) == true
+  end,
+  stopOnReload = true,
+})
+```
+
+The custom provider is the single resolver/player for resolved specs; the default Hammerspoon provider is not called as a fallback. A missing provider result or a false/error return is silent and nonfatal.
+
 ## Callback semantics and protected errors
 
 Callbacks run asynchronously in response to bridge events and are protected with `xpcall`. A Lua exception in user code cannot terminate the server or Hammerspoon's callback loop.
 
 - `press(context)` runs for a tap. For legacy actions without `longPress`, it continues to run immediately for a key-down event.
+
 - `longPress(context)` is optional. When configured, the bridge starts one protected per-instance timer on key-down; if it reaches `longPressThresholdMs`, it invokes `longPress` and suppresses `press` for that sequence. A key-up before the threshold cancels the timer and invokes `press` exactly once. The default threshold is 500 ms.
 - `release(context)` runs once for a completed key-up sequence when supplied, after the tap or long-press callback. Duplicate key-up events and canceled/replaced sequences do not invoke callbacks again.
 - `appear(context)` runs once when a new instance/action context is created or when a fresh reconnect rebuilds a previously cleared context. A repeated `instanceAppeared` for the same instance/action is a settings refresh; it updates `context:getSettings()` and does not invoke `appear` again.
 - `disappear(context)` runs when the plugin removes an instance. Use it to release instance-scoped resources. It is not a substitute for `stop()`.
 - A callback failure is logged locally and sent to the plugin as a safe protocol `error`. If the error is associated with an instance, the plugin also shows alert feedback on that instance. Error details never include the shared token or session ID. A failed callback leaves the current presentation unchanged.
 - A malformed appearance result is handled like a callback failure: no malformed fields are sent to Stream Deck, and the previous presentation remains in place.
-
 
 Encoder events use the same context lifecycle and error isolation as key events. `dialDown` invokes `push(context)` when defined, otherwise `press(context)`; `dialRotate` invokes `rotate(context, ticks, pressed)` when defined; and `dialUp` invokes `release(context)` when defined. Encoder callbacks are independent per visible instance, so settings and state are not shared between placements.
 
@@ -228,14 +299,14 @@ The repository includes complete configuration snippets in `hammerspoon/examples
 - `keyboard-layout.lua` (`com.brettinternet.hammerspoon.keyboard-layout`) toggles between two keyboard layouts using `hs.keycodes`, defaults to `U.S.` and `Dvorak` when settings are absent, and refreshes the pressed key after a successful switch.
 - `url-launcher.lua` (`com.brettinternet.hammerspoon.url-launcher`) opens a configured URL with `hs.urlevent`, defaults to a Hammerspoon documentation URL when settings are absent, and reports invalid or unavailable URL launches as protected errors.
 - `window-snap.lua` (`com.brettinternet.hammerspoon.window-snap`) cycles each focused window through left-half, right-half, and full-work-area layouts with per-instance lifecycle state and refreshes after successful moves.
-- `keep-awake.lua` (`com.brettinternet.hammerspoon.keep-awake`) toggles display-idle sleep prevention with `hs.caffeinate`, updates every visible instance after the global state changes, and reports unavailable or failed power APIs as protected errors.
+- `keep-awake.lua` (`com.brettinternet.hammerspoon.keep-awake`) toggles display-idle sleep prevention with `hs.caffeinate`, updates every visible instance after the global state changes, reports unavailable or failed power APIs as protected errors, and demonstrates distinct post-action sounds by returning `sound.ON` or `sound.OFF` for the resulting boolean.
 - `app-launcher.lua` (`com.brettinternet.hammerspoon.app-launcher`) launches or focuses a configured application with safe per-key app/label defaults, shows when the target is frontmost, and refreshes after a successful launch or focus.
 - `clipboard-stash.lua` (`com.brettinternet.hammerspoon.clipboard-stash`) parks one clipboard item per key, restores it on the next press, and resets its per-instance stash on disappearance.
 - `window-center.lua` (`com.brettinternet.hammerspoon.window-center`) centers the focused window within its screen work area without changing its size, reporting when no focused window is available.
 - `meeting-mode.lua` (`com.brettinternet.hammerspoon.meeting-mode`) coordinates microphone input mute and display-idle prevention as one global mode, refreshing every visible instance only after both changes succeed.
-- `lock-screen.lua` (`com.brettinternet.hammerspoon.lock-screen`) provides a one-shot privacy key through `hs.caffeinate.lockScreen` without pretending the locked state is observable.
+- `lock-screen.lua` (`com.brettinternet.hammerspoon.lock-screen`) provides a one-shot privacy key through `hs.caffeinate.lockScreen` without pretending the locked state is observable; its normal press policy demonstrates sound feedback after a successful lock callback.
 
-Copy any of the sixteen files into `~/.hammerspoon` or adapt it in your existing configuration. Each file registers a namespaced action for the generic Stream Deck action; select that registered action ID in the property inspector. The official bridge owns the connection, so the examples use `require("streamdeck")`, never `hs.streamdeck` or direct hardware access. The current v1 inspector edits `actionId` only, so settings-based examples use their documented defaults unless their settings are supplied by an adapted configuration.
+Copy any of the sixteen files into `~/.hammerspoon` or adapt it in your existing configuration. Each file registers a namespaced action for the generic Stream Deck action; select that registered action ID in the property inspector. The official bridge owns the connection, so the examples use `require("streamdeck")`, never `hs.streamdeck` or direct hardware access. The current v1 inspector edits `actionId` only, so settings-based examples use their documented defaults unless their settings are supplied by an adapted configuration. Sound settings are not edited in the property inspector: configure `streamdeck.sound` in trusted Lua.
 
 All sixteen examples are hardware-free and use ordinary Hammerspoon APIs; they can be copied or adapted without a connected Stream Deck. They run without Hammerspoon or hardware in the repository's Lua test harness.
 

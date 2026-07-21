@@ -1,4 +1,5 @@
 local registry = {}
+local Sound = require("streamdeck.sound")
 
 local allowedFields = {
   id = true,
@@ -15,6 +16,7 @@ local allowedFields = {
   longPressThresholdMs = true,
   appear = true,
   disappear = true,
+  sound = true,
 }
 
 local function nonEmptyString(value)
@@ -278,6 +280,12 @@ local function validateDefinition(definition)
   end
   if type(definition.press) ~= "function" then
     error("Stream Deck action press must be a function", 3)
+  end
+  if definition.sound ~= nil then
+    local ok, message = pcall(Sound.validatePolicy, definition.sound)
+    if not ok then
+      error("Stream Deck action sound is invalid: " .. tostring(message), 3)
+    end
   end
   if definition.longPress ~= nil and type(definition.longPress) ~= "function" then
     error("Stream Deck action longPress must be a function", 3)
