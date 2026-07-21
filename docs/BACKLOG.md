@@ -131,7 +131,7 @@ The driving use case: a second Stream Deck, attached to another computer on the 
 
 ### B3 — Strengthen connection authentication and peer identity
 
-**Status:** Planned; prerequisite of B4. Start when the remote-client track begins.
+**Status:** In progress 2026-07-21 — B3-T1 is complete; B3-T2 is next.
 
 **Product assessment:** The current model — a mode-`0600` token file sent in cleartext in `hello` over an unencrypted loopback WebSocket — is proportionate exactly because packets never leave the machine. On a LAN, every part of that sentence fails: the token can be sniffed, replayed, or intercepted by an active peer. B3 must deliver authentication that stays safe off-loopback: confidentiality for the credential (TLS via the transport, or a challenge-response that never transmits the token), a provisioning story for getting the credential onto the second machine, and a deliberate opt-in non-loopback binding decision. Note `hs.httpserver` accepts one WebSocket client, so the transport itself is likely replaced in this track; select the mechanism with that in mind.
 
@@ -146,7 +146,10 @@ The driving use case: a second Stream Deck, attached to another computer on the 
 
 #### Implementation tasks
 
-- [ ] B3-T1 — Select the authentication mechanism (transport encryption, challenge-response, or authenticated upgrade) that remains safe off-loopback, accounting for the likely transport replacement.
+- [x] B3-T1 — Select the authentication mechanism (transport encryption, challenge-response, or authenticated upgrade) that remains safe off-loopback, accounting for the likely transport replacement.
+  - Decision (2026-07-21): remote mode terminates mutual TLS in a new, explicit opt-in macOS bridge companion; `hs.httpserver` remains the loopback-only v1 listener. The companion has a server certificate and trusts one client certificate per provisioned remote plugin; the plugin verifies the server chain/name and presents its assigned certificate. The companion derives a stable client identity from that certificate and passes only its authenticated identity plus the connection-scoped session to Lua over a permission-restricted local IPC channel. It must not forward a claimed identity from remote message data. The existing `0600` shared token and `hello` flow remain loopback-only and are never sent over LAN.
+  - Rationale: `hs.httpserver` HTTPS uses a self-signed certificate and exposes neither authenticated upgrade headers nor client-certificate identity; its WebSocket callback receives only message text and accepts one client. `hs.socket:startTLS` exposes client trust settings, not the server certificate/client-auth configuration and per-peer identity the remote track requires. A nonce/HMAC challenge-response alone avoids token exposure but does not provide confidential, integrity-protected application traffic or authenticated server identity against an active LAN peer. A TLS-terminating companion is therefore the smallest boundary that supplies mutual peer authentication without weakening the shipped loopback bridge.
+  - Compatibility: this decision does not alter the existing loopback v1 wire contract, so B2 is not activated by T1. If T3 changes that contract or introduces a remote application-protocol major, it must complete B2 in the same release before major-specific dispatch.
 - [ ] B3-T2 — Define credential provisioning for a second machine plus rotation, migration, failure, and fallback behavior without weakening v1 authentication.
 - [ ] B3-T3 — Implement coordinated TypeScript/Lua authentication changes.
 - [ ] B3-T4 — Add unauthorized-peer, sniffing/replay, rotation, reconnect, and downgrade-resistance tests.
