@@ -16,7 +16,7 @@ The official Stream Deck application remains the owner of plugin lifecycle, prop
 - `plugin/` contains TypeScript and the compiled official plugin layout.
 - `hs.streamdeck` is not used. This bridge is a separate `streamdeck` Lua module and does not depend on or modify a Hammerspoon `hs.streamdeck` extension.
 
-Non-goals are direct hardware access, an unauthenticated mode, Bonjour/discovery, multiple simultaneous plugin clients, and dynamic property-inspector forms in protocol v1. This is distinct from [Hammerspoon's streamdeck extension](https://github.com/Hammerspoon/hammerspoon/tree/master/extensions/streamdeck) which requires circumventing the Stream Deck software.
+Non-goals are direct hardware access, an unauthenticated mode, Bonjour/discovery, multiple simultaneous plugin clients, arbitrary or unbounded property-inspector forms, and arbitrary plugin-to-Lua configuration messages. Protocol v1 supports bounded `settingsSchemaVersion: 1` descriptors with `text`, `number`, `boolean`, and `select` fields; [the protocol guide](docs/protocol.md) defines their normative contract. This is distinct from [Hammerspoon's streamdeck extension](https://github.com/Hammerspoon/hammerspoon/tree/master/extensions/streamdeck) which requires circumventing the Stream Deck software.
 
 ## Quick start
 

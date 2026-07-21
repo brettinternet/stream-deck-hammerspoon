@@ -155,7 +155,7 @@ Current v1 limitations are intentional:
 - custom icon bytes are bounded and constrained to supported PNG dimensions or a safe SVG profile; arbitrary paths, URLs, MIME parameters, executable SVG, and raw Lua input are rejected;
 - hardware/property-inspector completion cannot be automated without a connected Stream Deck and active inspector; fake transports and official CLI validation cover core bridge behavior, with manual end-to-end verification required.
 
-The roadmap boundary is the protocol-v1 contract above. Remaining appearance fields, dynamic forms, more clients, richer connection authentication, or other phase-3-and-later behavior require a new contract and decision; they must not be inferred from this architecture document. No implementation claim is made for those later possibilities.
+The roadmap boundary is the protocol-v1 contract above. Remaining appearance fields, arbitrary or unbounded property-inspector forms, more clients, richer connection authentication, or other phase-3-and-later behavior require a new contract and decision; they must not be inferred from this architecture document. The bounded version-1 settings descriptors are already part of the current contract. No implementation claim is made for those later possibilities.
 
 ## Decision records
 

@@ -182,6 +182,26 @@ An action definition is a table with these fields:
 
 `push` and `rotate` are optional encoder-only callbacks. They receive the same per-instance context as key callbacks, including independent settings and device metadata. An action must still define `press`; it is the fallback for encoder push and remains the key callback.
 Registration rejects a non-table definition, missing required fields, wrong field types, an empty ID or name, duplicate IDs, unknown fields, malformed long-press configuration, and thresholds outside 100–10,000 ms. `longPressThresholdMs` requires `longPress`; omitting it uses the deterministic 500 ms default. `settingsSchema`, when supplied, must be a dense array of at most 32 JSON values. With `settingsSchemaVersion = 1`, each descriptor must use one of `text`, `number`, `boolean`, or `select`, with a unique bounded key, optional bounded label/required flag, kind-specific bounded constraints, and a type-correct default. Select options are bounded unique `{ value, label }` objects and defaults must match an option. Unknown descriptor or constraint keys, duplicate keys, invalid combinations, cycles, sparse arrays, non-finite numbers, and out-of-range values are rejected before action listing. Instance settings are not validated against the schema by the Lua bridge; the plugin inspector validates supported edits while Lua callbacks receive the decoded settings.
+Version-1 settings descriptors are supported by the property inspector and persist validated values in Stream Deck instance settings. For example:
+
+```lua
+settingsSchemaVersion = 1,
+settingsSchema = {
+  { type = "text", key = "label", label = "Label", maxLength = 32, default = "Timer" },
+  { type = "number", key = "minutes", label = "Minutes", min = 1, max = 120, step = 1, default = 25 },
+  { type = "boolean", key = "notify", label = "Notify", default = true },
+  {
+    type = "select",
+    key = "sound",
+    label = "Sound",
+    options = { { value = "bell", label = "Bell" }, { value = "chime", label = "Chime" } },
+    default = "bell",
+  },
+}
+```
+
+`docs/protocol.md` is the normative field specification; the validated rendering and persistence behavior is covered by `plugin/tests/property-inspector.test.ts`.
+
 
 The callbacks receive the current context. `press` and other callback return values are preserved by the bridge; the sound policy consumes only its documented `sound.ON`/`sound.OFF` sentinels and otherwise leaves callback values unchanged. `rotate` additionally receives integer `ticks` and boolean `pressed`; positive ticks are clockwise and negative ticks are counter-clockwise. `appearance` must return:
 
@@ -401,7 +421,7 @@ The following are intentionally outside this contract:
 - callback return values that mutate settings or presentation implicitly;
 - a Lua settings-write API;
 - multiple simultaneous plugin clients, Bonjour discovery, or non-loopback binding;
-- dynamic property-inspector forms and arbitrary plugin-to-Lua configuration messages;
+- arbitrary or unbounded property-inspector forms and arbitrary plugin-to-Lua configuration messages; bounded `settingsSchemaVersion = 1` descriptors are supported as documented above;
 - polling or a background watcher for appearance changes; use an explicit `refresh` call from a Hammerspoon event source instead.
 
 Code written against this document should use the `streamdeck` module shown above and the official Stream Deck plugin; it should not depend on an alternate Hammerspoon Stream Deck namespace or on remote evaluation.
