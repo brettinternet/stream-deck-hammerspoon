@@ -19544,6 +19544,8 @@ class BridgeClient extends EventEmitter$1 {
             ...(message.progress === undefined ? {} : { progress: message.progress }),
             ...(message.icon === undefined ? {} : { icon: message.icon }),
             ...(message.badge === undefined ? {} : { badge: message.badge }),
+            ...(message.value === undefined ? {} : { value: message.value }),
+            ...(message.indicator === undefined ? {} : { indicator: message.indicator }),
         };
         this.emit("appearance", appearance);
     }
