@@ -203,9 +203,7 @@ function server.new(registry, protocol, contextFactory)
     protocol = protocol,
     contextFactory = contextFactory,
     slots = {},
-    slotsByHttp = {},
     legacySlot = nil,
-    rateBuckets = {},
     started = false,
   }
 
@@ -662,17 +660,14 @@ function server.new(registry, protocol, contextFactory)
     self.lanSendKey = nil
     self.lanReceiveKey = nil
     self.lanSendSequence = 0
+    self.lanReceiveSequence = 0
+  end
+
+  function object:_lanError(code)
+    local encoded = self.protocol.encode(self.protocol.error(code))
+    return encoded or ""
+  end
   function object:_onLanMessage(raw, http)
-    if not self.isSlot then
-      local slot = self.slotsByHttp[http]
-      if not slot then
-        for _, candidate in ipairs(self.slots) do
-          if candidate.mode == "lan" then slot = candidate break end
-        end
-      end
-      if not slot then return self:_lanError("AUTH_FAILED") end
-      return slot:_onLanMessage(raw, http)
-    end
     http = self.http
     local isLanSession = self.authenticated and self.sessionMode == "lan"
     if not self:_admitInbound(http, isLanSession) then
@@ -799,11 +794,6 @@ function server.new(registry, protocol, contextFactory)
   end
 
   function object:_onMessage(raw, mode, http, admitted)
-    if not self.isSlot then
-      local slot = self.slotsByHttp[http] or self.legacySlot
-      if not slot then return self:_safeError("AUTH_FAILED") end
-      return slot:_onMessage(raw, mode or slot.mode, http, admitted)
-    end
     mode = mode or self.mode
     local activeHttp = self.http
     local authenticatedForMode = self.authenticated and self.sessionMode == mode
@@ -933,8 +923,6 @@ function server.new(registry, protocol, contextFactory)
     end
 
     self.slots = startedSlots
-    self.slotsByHttp = {}
-    for _, slot in ipairs(startedSlots) do self.slotsByHttp[slot.http] = slot end
     self.legacySlot = legacy
     self.started = true
     return self
@@ -947,10 +935,8 @@ function server.new(registry, protocol, contextFactory)
     end
     for _, slot in ipairs(self.slots) do stopSlot(slot, true) end
     self.slots = {}
-    self.slotsByHttp = {}
     self.legacySlot = nil
     self.started = false
-    self.rateBuckets = {}
     return self
   end
 
@@ -968,61 +954,6 @@ function server.new(registry, protocol, contextFactory)
     return self
   end
 
-  setmetatable(object, {
-    __index = function(target, key)
-      local slot = target.legacySlot
-      if not slot then return nil end
-      if key == "lanHttp" then
-        for _, candidate in ipairs(target.slots) do
-          if candidate.mode == "lan" then return candidate.http end
-        end
-        return nil
-      end
-      local slotFields = {
-        authenticated = true,
-        dispatching = true,
-        instances = true,
-        http = true,
-        lanKey = true,
-        lanKeyPath = true,
-        lanClientId = true,
-        lanClientNonce = true,
-        lanReceiveKey = true,
-        lanReceiveSequence = true,
-        lanSendKey = true,
-        lanSendSequence = true,
-        sessionId = true,
-        sessionMode = true,
-        token = true,
-      }
-      if slotFields[key] then return slot[key] end
-      return nil
-    end,
-    __newindex = function(target, key, value)
-      local slot = target.legacySlot
-      local slotFields = {
-        authenticated = true,
-        dispatching = true,
-        instances = true,
-        lanKey = true,
-        lanKeyPath = true,
-        lanClientId = true,
-        lanClientNonce = true,
-        lanReceiveKey = true,
-        lanReceiveSequence = true,
-        lanSendKey = true,
-        lanSendSequence = true,
-        sessionId = true,
-        sessionMode = true,
-        token = true,
-      }
-      if slot and slotFields[key] then
-        slot[key] = value
-      else
-        rawset(target, key, value)
-      end
-    end,
-  })
   return object
 end
 

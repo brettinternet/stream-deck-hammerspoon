@@ -336,17 +336,18 @@ local function newServer(registry, tokenPath)
 end
 
 local function exchange(server, request)
-  if request.type ~= "hello" and request.sessionId == nil and server.authenticated then
-    request.sessionId = server.sessionId
+  local slot = server.legacySlot
+  if request.type ~= "hello" and request.sessionId == nil and slot.authenticated then
+    request.sessionId = slot.sessionId
   end
-  local sentAtStart = #fakeHttp.sent
-  local first = server:_onMessage(fakeEncode(request))
+  local sentAtStart = #slot.http.sent
+  local first = slot:_onMessage(fakeEncode(request))
   local responses = {}
   if first ~= "" then
     responses[#responses + 1] = fakeDecode(first)
   end
-  for index = sentAtStart + 1, #fakeHttp.sent do
-    responses[#responses + 1] = fakeDecode(fakeHttp.sent[index])
+  for index = sentAtStart + 1, #slot.http.sent do
+    responses[#responses + 1] = fakeDecode(slot.http.sent[index])
   end
   return responses
 end
@@ -358,7 +359,7 @@ local function authenticate(server, tokenPath)
   }))
   assertEqual(responses[1].type, "helloAck", "hello must be acknowledged")
   assertTrue(type(responses[1].sessionId) == "string" and responses[1].sessionId ~= "", "hello must return a session ID")
-  assertEqual(responses[1].sessionId, server.sessionId, "server must retain the acknowledged session ID")
+  assertEqual(responses[1].sessionId, server.legacySlot.sessionId, "server must retain the acknowledged session ID")
   return responses[1].sessionId
 end
 
@@ -372,6 +373,7 @@ local function withTokenPath(callback)
   if not ok then
     error(err, 0)
   end
+end
 local function writeCredential(path, value)
   local handle = assert(io.open(path, "wb"))
   assert(handle:write(value))
@@ -393,7 +395,6 @@ local function withCredentials(callback)
   if not ok then error(err, 0) end
 end
 
-end
 local function withJson(json, callback)
   local previous = _G.hs.json
   _G.hs.json = json
@@ -848,20 +849,24 @@ test("protocol preflight bounds JSON structure before decoding", function()
 end)
 
 test("server admission limits are bounded and refill deterministically", function()
-  local server = Server.new(Registry.new(), Protocol, Context)
-  local now = 0
-  local listener = {}
-  server._now = function() return now end
+  withTokenPath(function(path)
+    local server = newServer(Registry.new(), path)
+    local slot = server.legacySlot
+    local now = 0
+    local listener = {}
+    slot._now = function() return now end
 
-  for _ = 1, 6 do assertTrue(server:_admitInbound(listener, false)) end
-  assertFalse(server:_admitInbound(listener, false))
-  now = now + 5
-  assertTrue(server:_admitInbound(listener, false))
+    for _ = 1, 6 do assertTrue(slot:_admitInbound(listener, false)) end
+    assertFalse(slot:_admitInbound(listener, false))
+    now = now + 5
+    assertTrue(slot:_admitInbound(listener, false))
 
-  for _ = 1, 240 do assertTrue(server:_admitInbound(listener, true)) end
-  assertFalse(server:_admitInbound(listener, true))
-  now = now + (1 / 120)
-  assertTrue(server:_admitInbound(listener, true))
+    for _ = 1, 240 do assertTrue(slot:_admitInbound(listener, true)) end
+    assertFalse(slot:_admitInbound(listener, true))
+    now = now + (1 / 120)
+    assertTrue(slot:_admitInbound(listener, true))
+    server:stop()
+  end)
 end)
 
 test("rate exhaustion never invokes lifecycle callbacks or evicts another listener", function()
@@ -898,12 +903,13 @@ test("rate exhaustion never invokes lifecycle callbacks or evicts another listen
     assertEqual(disappeared, 0, "rate rejection must not invoke disappear")
     assertTrue(lastScheduledTimer.stopped, "rate rejection must cancel pending long-press work")
 
-    server.authenticated = true
-    server.sessionMode = "lan"
+    local legacy = server.legacySlot
+    legacy.authenticated = true
+    legacy.sessionMode = "lan"
     for _ = 1, 7 do
-      server:_onMessage('{"protocolVersion":1,"type":"listActions","requestId":"other-listener"}', "loopback", fakeHttp)
+      legacy:_onMessage('{"protocolVersion":1,"type":"listActions","requestId":"other-listener"}', "loopback", legacy.http)
     end
-    assertTrue(server.authenticated and server.sessionMode == "lan", "one listener must not evict another")
+    assertTrue(legacy.authenticated and legacy.sessionMode == "lan", "one listener must not evict another")
     server:stop()
   end)
 end)
@@ -2196,11 +2202,14 @@ test("reconnect resets authentication and instance state", function()
     }))
     assertEqual(responses[1].type, "appearance")
     assertEqual(appeared, 1)
+    local stoppedSlot = server.legacySlot
 
     server:stop()
     assertEqual(disappeared, 1, "stopping must discard visible contexts")
-    assertTrue(next(server.instances) == nil, "stop must clear instance registry")
-    assertFalse(server.authenticated, "stop must clear authentication")
+    assertTrue(next(stoppedSlot.instances) == nil, "stop must clear the listener instance registry")
+    assertFalse(stoppedSlot.authenticated, "stop must clear listener authentication")
+    assertEqual(#server.slots, 0, "stop must clear every listener slot")
+    assertFalse(server.started, "stop must clear server state")
 
     server:start({ port = 17321, tokenPath = path })
     assertError("INVALID_FIELD", exchange(server, message("keyDown", {
@@ -2215,9 +2224,12 @@ test("reconnect resets authentication and instance state", function()
       instanceId = "visible-before-reload",
       actionId = "com.test.reconnect",
     })))
+    local restartedSlot = server.legacySlot
     server:stop()
     assertEqual(disappeared, 1, "restarting must not re-fire disappear callbacks")
-    assertTrue(next(server.instances) == nil, "reconnect teardown must leave no instances")
+    assertTrue(next(restartedSlot.instances) == nil, "reconnect teardown must clear listener instances")
+    assertFalse(restartedSlot.authenticated, "reconnect teardown must clear listener authentication")
+    assertEqual(#server.slots, 0, "reconnect teardown must leave no listener slots")
   end)
 end)
 

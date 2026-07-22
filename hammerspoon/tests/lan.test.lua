@@ -67,14 +67,15 @@ local pressPayload = assert(Protocol.encode({ protocolVersion = 1, type = "keyDo
 http.websocketCallback(frame(pressPayload, clientToServer, 3, "client-to-server"))
 assert(pressed == 1, "authenticated LAN frame must dispatch")
 
-local loopbackHttp = server.http
-local lanHttp = server.lanHttp
+local loopbackHttp = server.legacySlot.http
+local lanHttp = server.slots[2].http
 local loopbackError = decode(loopbackHttp.websocketCallback(encode({
   protocolVersion = 1,
   type = "listActions",
+  sessionId = "unauthenticated-loopback",
   requestId = "unauthenticated-loopback",
 })))
-assert(loopbackError.type == "error" and loopbackError.code == "AUTH_FAILED")
+assert(loopbackError.type == "error" and loopbackError.code == "AUTH_REQUIRED")
 local lanSent, loopbackSent = #lanHttp.sent, #loopbackHttp.sent
 server:refresh("com.test.lan")
 assert(#lanHttp.sent == lanSent + 1, "LAN session appearance must remain framed on the LAN listener")
