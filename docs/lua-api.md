@@ -19,7 +19,7 @@ The default protocol is authenticated loopback. An explicit LAN profile can add 
    local streamdeck = require("streamdeck")
    ```
 
-`start()` creates the token file when necessary. The default is `~/.hammerspoon/streamdeck-token`; it contains a generated shared token and is created with owner-only permissions (`0600`). Do not put the token in Stream Deck settings, action settings, source control, or logs. If the token cannot be read or written, the bridge remains disconnected; it never falls back to unauthenticated operation. Session IDs are not tokens: each accepted hello receives a fresh non-empty ID generated with `hs.host.uuid()`, held only in memory, rotated on reconnect/plugin restart, and never logged or persisted.
+`start()` creates the token file when necessary. The default is `~/.hammerspoon/streamdeck-token`; it contains a generated shared token and is created with owner-only permissions (`0600`). Do not put the token in Stream Deck settings, action settings, source control, or logs. If the token cannot be read or written, the bridge remains disconnected; it never falls back to unauthenticated operation. Session IDs are not tokens: each accepted hello receives a fresh non-empty ID from 32 CSPRNG bytes read from `/dev/urandom`, held only in memory, rotated on reconnect/plugin restart, and never logged or persisted.
 
 A normal configuration calls `register` once for each action and then calls `start` once:
 
