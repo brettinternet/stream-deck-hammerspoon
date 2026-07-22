@@ -17,7 +17,7 @@ The official Stream Deck application remains the owner of plugin lifecycle, prop
 - `require("streamdeck")` also provides **Reload Hammerspoon** and **Toggle Hammerspoon Console**. See the [Lua API guide](docs/lua-api.md).
 - `hammerspoon/streamdeck/` is the reusable Lua API. `protocol/schema/` is the canonical protocol-v1 JSON Schema. `plugin/` contains the TypeScript source and compiled official plugin layout.
 
-This is not Hammerspoon's `hs.streamdeck` extension. It is a separate `streamdeck` Lua module and does not depend on or modify `hs.streamdeck`.
+This is not [Hammerspoon's `hs.streamdeck` extension](https://www.hammerspoon.org/docs/hs.streamdeck.html) which requires circumventing the Stream Deck software. It is a separate `streamdeck` Lua module and does not depend on or modify `hs.streamdeck`.
 
 Non-goals are direct hardware access, an unauthenticated mode, Bonjour/discovery, arbitrary or unbounded property-inspector forms, and arbitrary plugin-to-Lua configuration messages. Protocol v1 supports bounded `settingsSchemaVersion: 1` descriptors with `text`, `number`, `boolean`, and `select` fields; [the protocol guide](docs/protocol.md) defines their normative contract. LAN clients are not discovered automatically and require deliberate per-client configuration.
 
