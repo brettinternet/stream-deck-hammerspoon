@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  MAX_FRAME_BYTES,
+  preflightJson,
   parseServerMessage,
   sanitizeDeviceMetadata,
   serializeClientMessage,
@@ -624,5 +626,21 @@ describe("device metadata privacy boundary", () => {
       },
     } satisfies ClientMessage;
     expect(JSON.parse(serializeClientMessage(message))).toEqual(message);
+  });
+});
+
+describe("bounded JSON preflight", () => {
+  test("accepts boundaries and escaped structural characters", () => {
+    expect(() => preflightJson(JSON.stringify("x".repeat(MAX_FRAME_BYTES - 2)))).not.toThrow();
+    expect(() => preflightJson("[".repeat(16) + "0" + "]".repeat(16))).not.toThrow();
+    expect(() => preflightJson('{"value":"\\\\\\"[{\\\\u0041]"}')).not.toThrow();
+  });
+
+  test("rejects excessive structure and malformed scanner input before parsing", () => {
+    expect(() => preflightJson(JSON.stringify("x".repeat(MAX_FRAME_BYTES - 1)))).toThrow("Malformed protocol message");
+    expect(() => preflightJson("[".repeat(17) + "0" + "]".repeat(17))).toThrow("Malformed protocol message");
+    expect(() => preflightJson(`[${Array.from({ length: 129 }, () => "0").join(",")}]`)).toThrow("Malformed protocol message");
+    expect(() => preflightJson(String.raw`{"value":"\u12x4"}`)).toThrow("Malformed protocol message");
+    expect(() => preflightJson('{"protocolVersion":1} {"type":"helloAck"}')).toThrow("Malformed protocol message");
   });
 });

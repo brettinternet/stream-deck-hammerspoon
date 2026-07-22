@@ -7,6 +7,11 @@ local DEFAULT_TOKEN_SUFFIX = "/.hammerspoon/streamdeck-token"
 local SOCKET_PATH = "/streamdeck"
 local LAN_CLIENT_ID_PATTERN = "^[A-Za-z0-9%._%-]+$"
 
+local UNAUTH_RATE_BURST = 6
+local UNAUTH_RATE_REFILL_PER_SECOND = 12 / 60
+local AUTH_RATE_BURST = 240
+local AUTH_RATE_REFILL_PER_SECOND = 120
+
 local function isInteger(value)
   return type(value) == "number"
     and value == value
@@ -149,6 +154,7 @@ function server.new(registry, protocol, contextFactory)
     token = nil,
     sessionId = nil,
     sessionMode = nil,
+    rateBuckets = {},
     sessionGeneration = 0,
     started = false,
     authenticated = false,
@@ -159,7 +165,7 @@ function server.new(registry, protocol, contextFactory)
   function object:_lanFrame(payload)
     local hsapi = rawget(_G, "hs")
     local key = self.lanSendKey
-    if not key then return nil end
+    if not key or type(payload) ~= "string" or #payload > self.protocol.MAX_LAN_PAYLOAD_BYTES then return nil end
     local sequence = self.lanSendSequence + 1
     local mac = Crypto.frameMac(hsapi, key, "server-to-client", sequence, payload)
     if not mac then return nil end
@@ -170,7 +176,7 @@ function server.new(registry, protocol, contextFactory)
       payload = payload,
       mac = Crypto.hexEncode(mac),
     })
-    if not encoded then return nil end
+    if not encoded or #encoded > self.protocol.MAX_FRAME_BYTES then return nil end
     self.lanSendSequence = sequence
     return encoded
   end
@@ -200,6 +206,51 @@ function server.new(registry, protocol, contextFactory)
     end
     local ok = pcall(http.send, http, encoded)
     return ok
+  end
+
+  function object:_now()
+    local hsapi = rawget(_G, "hs")
+    local timer = hsapi and hsapi.timer
+    if timer and type(timer.secondsSinceEpoch) == "function" then
+      local ok, value = pcall(timer.secondsSinceEpoch)
+      if ok and type(value) == "number" and value == value then return value end
+    end
+    return os.clock()
+  end
+
+  function object:_admitInbound(http, authenticated)
+    if not http then return false end
+    local listener = self.rateBuckets[http]
+    if not listener then
+      listener = {
+        unauth = { tokens = UNAUTH_RATE_BURST, at = self:_now() },
+        auth = { tokens = AUTH_RATE_BURST, at = self:_now() },
+      }
+      self.rateBuckets[http] = listener
+    end
+    local bucket = authenticated and listener.auth or listener.unauth
+    local capacity = authenticated and AUTH_RATE_BURST or UNAUTH_RATE_BURST
+    local refill = authenticated and AUTH_RATE_REFILL_PER_SECOND or UNAUTH_RATE_REFILL_PER_SECOND
+    local now = self:_now()
+    local elapsed = math.max(0, now - bucket.at)
+    bucket.tokens = math.min(capacity, bucket.tokens + elapsed * refill)
+    bucket.at = now
+    if bucket.tokens < 1 then return false end
+    bucket.tokens = bucket.tokens - 1
+    return true
+  end
+
+  function object:_clearSession()
+    self:_clearInstances()
+    self.authenticated = false
+    self.sessionId = nil
+    self.sessionMode = nil
+    self:_resetLanSession()
+  end
+
+  function object:_safeError(code)
+    local encoded = self.protocol.encode(self.protocol.error(code))
+    return encoded or ""
   end
 
   function object:_emitAppearance(instanceId, actionId, title, state, appearance)
@@ -526,12 +577,22 @@ function server.new(registry, protocol, contextFactory)
   end
 
   function object:_onLanMessage(raw, http)
+    if not self:_admitInbound(http, self.authenticated) then
+      self:_clearSession()
+      return self:_lanError("AUTH_FAILED")
+    end
     if self.authenticated and self.sessionMode ~= "lan" then return self:_lanError("AUTH_FAILED") end
     self.activeMode = "lan"
     self.activeHttp = http
     local hsapi = rawget(_G, "hs")
+    if not self.protocol.preflight(raw, self.protocol.MAX_FRAME_BYTES) then
+      return self:_lanError("MALFORMED_MESSAGE")
+    end
     local ok, value = pcall(hsapi.json.decode, raw)
     if not ok or type(value) ~= "table" then return self:_lanError("MALFORMED_MESSAGE") end
+    if value.type ~= "lanFrame" and #raw > self.protocol.MAX_LAN_CONTROL_BYTES then
+      return self:_lanError("MALFORMED_MESSAGE")
+    end
     if value.protocolVersion ~= self.protocol.VERSION then return self:_lanError("VERSION_MISMATCH") end
 
     if value.type == "lanHello" then
@@ -616,6 +677,11 @@ function server.new(registry, protocol, contextFactory)
       end
       local sequence = value.sequence
       local payload = value.payload
+      if type(payload) ~= "string" or #payload > self.protocol.MAX_LAN_PAYLOAD_BYTES
+          or not self.protocol.preflight(payload, self.protocol.MAX_LAN_PAYLOAD_BYTES) then
+        self:_clearSession()
+        return self:_lanError("AUTH_FAILED")
+      end
       local mac = Crypto.hexDecode(value.mac, 32)
       local currentKey = self.lanKeyPath and Crypto.readKey(hsapi, self.lanKeyPath)
       if not currentKey or not Crypto.doubleHmacEqual(hsapi, self.lanKey, currentKey) then
@@ -638,17 +704,21 @@ function server.new(registry, protocol, contextFactory)
         return self:_lanError("AUTH_FAILED")
       end
       self.lanReceiveSequence = sequence
-      return self:_onMessage(payload, "lan", http)
+      return self:_onMessage(payload, "lan", http, true)
     end
-
     return self:_lanError("AUTH_REQUIRED")
   end
 
-  function object:_onMessage(raw, mode, http)
+  function object:_onMessage(raw, mode, http, admitted)
     mode = mode or "loopback"
-    if self.authenticated and self.sessionMode ~= mode then return self:_lanError("AUTH_FAILED") end
+    local activeHttp = http or self.http
+    if not admitted and not self:_admitInbound(activeHttp, self.authenticated) then
+      self:_clearSession()
+      return self:_safeError("AUTH_FAILED")
+    end
+    if self.authenticated and self.sessionMode ~= mode then return self:_safeError("AUTH_FAILED") end
     self.activeMode = mode
-    self.activeHttp = http or self.http
+    self.activeHttp = activeHttp
     self.responseQueue = {}
     self.dispatching = true
     local ok, codeOrNil = xpcall(function()
@@ -758,6 +828,7 @@ function server.new(registry, protocol, contextFactory)
     self.authenticated = false
     self.sessionId = nil
     self.sessionMode = nil
+    self.rateBuckets = {}
     self:_resetLanSession()
     self.started = true
     return self
@@ -780,6 +851,7 @@ function server.new(registry, protocol, contextFactory)
     self.sessionId = nil
     self.sessionMode = nil
     self.authenticated = false
+    self.rateBuckets = {}
     self.responseQueue = nil
     self:_resetLanSession()
     return self

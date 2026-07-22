@@ -1,7 +1,87 @@
 local protocol = {
   VERSION = 1,
   MAX_FRAME_BYTES = 65536,
+  MAX_LAN_CONTROL_BYTES = 4096,
+  MAX_LAN_PAYLOAD_BYTES = 49152,
+  MAX_JSON_DEPTH = 16,
+  MAX_JSON_CONTAINER_ITEMS = 128,
+  MAX_JSON_TOTAL_ITEMS = 2048,
 }
+
+function protocol.preflight(raw, maxBytes)
+  if type(raw) ~= "string" or raw == "" or #raw > (maxBytes or protocol.MAX_FRAME_BYTES) then
+    return false
+  end
+
+  local depth = 0
+  local totalItems = 0
+  local stack = {}
+  local inString = false
+  local escaped = false
+  local unicodeDigits = 0
+  local rootStarted = false
+  local rootComplete = false
+
+  for index = 1, #raw do
+    local character = raw:sub(index, index)
+    if rootComplete and character ~= " " and character ~= "\t" and character ~= "\r" and character ~= "\n" then
+      return false
+    end
+    if inString then
+      if unicodeDigits > 0 then
+        if not character:match("^[0-9A-Fa-f]$") then return false end
+        unicodeDigits = unicodeDigits - 1
+      elseif escaped then
+        if character == "u" then
+          unicodeDigits = 4
+        elseif not character:match('^[\\/bfnrt"]$') then
+          return false
+        end
+        escaped = false
+      elseif character == "\\" then
+        escaped = true
+      elseif character == '"' then
+        inString = false
+      elseif string.byte(character) < 32 then
+        return false
+      end
+    elseif character == '"' then
+      inString = true
+      rootStarted = true
+    elseif character == "{" or character == "[" then
+      rootStarted = true
+      if depth > 0 then stack[depth].saw = true end
+      depth = depth + 1
+      if depth > protocol.MAX_JSON_DEPTH then return false end
+      stack[depth] = { closing = character == "{" and "}" or "]", commas = 0, saw = false }
+    elseif character == "}" or character == "]" then
+      local container = stack[depth]
+      if not container or container.closing ~= character then return false end
+      local itemCount = container.saw and container.commas + 1 or 0
+      if itemCount > protocol.MAX_JSON_CONTAINER_ITEMS then return false end
+      totalItems = totalItems + itemCount
+      if totalItems > protocol.MAX_JSON_TOTAL_ITEMS then return false end
+      stack[depth] = nil
+      depth = depth - 1
+      if depth == 0 then rootComplete = true end
+    elseif character == "," then
+      local container = stack[depth]
+      if not container then return false end
+      container.saw = true
+      container.commas = container.commas + 1
+      if container.commas + 1 > protocol.MAX_JSON_CONTAINER_ITEMS then return false end
+    elseif character == ":" then
+      local container = stack[depth]
+      if not container or container.closing ~= "}" then return false end
+      container.saw = true
+    elseif character ~= " " and character ~= "\t" and character ~= "\r" and character ~= "\n" then
+      rootStarted = true
+      if depth > 0 then stack[depth].saw = true end
+    end
+  end
+
+  return rootStarted and rootComplete and not inString and not escaped and unicodeDigits == 0 and depth == 0
+end
 
 local messageTypes = {
   hello = true,
@@ -927,7 +1007,7 @@ function protocol.validateDeviceMetadata(value)
 end
 
 function protocol.decode(raw)
-  if type(raw) ~= "string" or #raw > protocol.MAX_FRAME_BYTES then
+  if not protocol.preflight(raw, protocol.MAX_FRAME_BYTES) then
     return nil, "MALFORMED_MESSAGE"
   end
   local hsapi = rawget(_G, "hs")

@@ -18478,6 +18478,246 @@ const SERVER_MESSAGE_TYPES = {
     feedback: true,
     error: true,
 };
+const MAX_FRAME_BYTES = 64 * 1024;
+const MAX_LAN_CONTROL_BYTES = 4 * 1024;
+const MAX_LAN_PAYLOAD_BYTES = 48 * 1024;
+const MAX_JSON_DEPTH = 16;
+const MAX_JSON_CONTAINER_ITEMS = 128;
+const MAX_JSON_TOTAL_ITEMS = 2048;
+function malformedJson(message = "Malformed protocol message.") {
+    const error = new Error(message);
+    error.code = "MALFORMED_MESSAGE";
+    return error;
+}
+function jsonByteLength(value) {
+    return Buffer.byteLength(value, "utf8");
+}
+/**
+ * Scan JSON syntax and collection structure without constructing a value.
+ * This is intentionally iterative: JSON.parse is called only after this
+ * bounded scan accepts the frame.
+ */
+function preflightJson(source, maxBytes = MAX_FRAME_BYTES) {
+    if (typeof source !== "string" || source.length === 0 || jsonByteLength(source) > maxBytes) {
+        throw malformedJson();
+    }
+    let index = 0;
+    let totalItems = 0;
+    let rootDone = false;
+    const stack = [];
+    const fail = () => {
+        throw malformedJson();
+    };
+    const skipWhitespace = () => {
+        while (index < source.length) {
+            const character = source[index];
+            if (character !== " " && character !== "\t" && character !== "\r" && character !== "\n")
+                break;
+            index += 1;
+        }
+    };
+    const isDelimiter = (character) => character === undefined || character === " " || character === "\t" || character === "\r"
+        || character === "\n" || character === "," || character === "]" || character === "}";
+    const parseString = () => {
+        if (source[index] !== '"')
+            fail();
+        index += 1;
+        while (index < source.length) {
+            const character = source[index];
+            index += 1;
+            if (character === '"')
+                return;
+            if (character === undefined || character.charCodeAt(0) < 0x20)
+                fail();
+            if (character !== "\\")
+                continue;
+            const escape = source[index];
+            index += 1;
+            if (escape === "u") {
+                for (let digit = 0; digit < 4; digit += 1) {
+                    const code = source[index]?.charCodeAt(0);
+                    if (code === undefined || !((code >= 0x30 && code <= 0x39)
+                        || (code >= 0x41 && code <= 0x46)
+                        || (code >= 0x61 && code <= 0x66)))
+                        fail();
+                    index += 1;
+                }
+            }
+            else if (escape !== '"' && escape !== "\\" && escape !== "/" && escape !== "b"
+                && escape !== "f" && escape !== "n" && escape !== "r" && escape !== "t") {
+                fail();
+            }
+        }
+        fail();
+    };
+    const parsePrimitive = () => {
+        const character = source[index];
+        if (character === '"') {
+            parseString();
+            return;
+        }
+        if (character === "t" && source.startsWith("true", index)) {
+            index += 4;
+        }
+        else if (character === "f" && source.startsWith("false", index)) {
+            index += 5;
+        }
+        else if (character === "n" && source.startsWith("null", index)) {
+            index += 4;
+        }
+        else {
+            const start = index;
+            if (source[index] === "-")
+                index += 1;
+            if (source[index] === "0") {
+                index += 1;
+            }
+            else if (source[index] !== undefined && source[index] >= "1" && source[index] <= "9") {
+                index += 1;
+                while (source[index] !== undefined && source[index] >= "0" && source[index] <= "9")
+                    index += 1;
+            }
+            else {
+                fail();
+            }
+            if (source[index] === ".") {
+                index += 1;
+                const fractionStart = index;
+                while (source[index] !== undefined && source[index] >= "0" && source[index] <= "9")
+                    index += 1;
+                if (index === fractionStart)
+                    fail();
+            }
+            if (source[index] === "e" || source[index] === "E") {
+                index += 1;
+                if (source[index] === "+" || source[index] === "-")
+                    index += 1;
+                const exponentStart = index;
+                while (source[index] !== undefined && source[index] >= "0" && source[index] <= "9")
+                    index += 1;
+                if (index === exponentStart)
+                    fail();
+            }
+            if (index === start)
+                fail();
+        }
+        if (!isDelimiter(source[index]))
+            fail();
+    };
+    const beginValue = () => {
+        const parent = stack.at(-1);
+        if (parent) {
+            if (parent.kind === "object") {
+                if (parent.state !== "value")
+                    fail();
+                parent.state = "commaOrEnd";
+            }
+            else {
+                if (parent.state !== "valueOrEnd")
+                    fail();
+                parent.state = "commaOrEnd";
+                parent.count += 1;
+                totalItems += 1;
+            }
+            if (parent.count > MAX_JSON_CONTAINER_ITEMS || totalItems > MAX_JSON_TOTAL_ITEMS)
+                fail();
+        }
+        const character = source[index];
+        if (character === "{" || character === "[") {
+            if (stack.length >= MAX_JSON_DEPTH)
+                fail();
+            index += 1;
+            stack.push({
+                kind: character === "{" ? "object" : "array",
+                state: character === "{" ? "keyOrEnd" : "valueOrEnd",
+                count: 0,
+            });
+            return;
+        }
+        parsePrimitive();
+        if (stack.length === 0)
+            rootDone = true;
+    };
+    while (!rootDone) {
+        skipWhitespace();
+        if (stack.length === 0) {
+            beginValue();
+            continue;
+        }
+        const container = stack.at(-1);
+        if (container.kind === "object") {
+            if (container.state === "keyOrEnd") {
+                if (source[index] === "}") {
+                    index += 1;
+                    stack.pop();
+                    if (stack.length === 0)
+                        rootDone = true;
+                }
+                else {
+                    parseString();
+                    container.count += 1;
+                    totalItems += 1;
+                    if (container.count > MAX_JSON_CONTAINER_ITEMS || totalItems > MAX_JSON_TOTAL_ITEMS)
+                        fail();
+                    container.state = "colon";
+                }
+            }
+            else if (container.state === "colon") {
+                if (source[index] !== ":")
+                    fail();
+                index += 1;
+                container.state = "value";
+            }
+            else if (container.state === "value") {
+                beginValue();
+            }
+            else {
+                if (source[index] === ",") {
+                    index += 1;
+                    container.state = "keyOrEnd";
+                }
+                else if (source[index] === "}") {
+                    index += 1;
+                    stack.pop();
+                    if (stack.length === 0)
+                        rootDone = true;
+                }
+                else {
+                    fail();
+                }
+            }
+        }
+        else if (container.state === "valueOrEnd") {
+            if (source[index] === "]") {
+                index += 1;
+                stack.pop();
+                if (stack.length === 0)
+                    rootDone = true;
+            }
+            else {
+                beginValue();
+            }
+        }
+        else {
+            if (source[index] === ",") {
+                index += 1;
+                container.state = "valueOrEnd";
+            }
+            else if (source[index] === "]") {
+                index += 1;
+                stack.pop();
+                if (stack.length === 0)
+                    rootDone = true;
+            }
+            else {
+                fail();
+            }
+        }
+    }
+    skipWhitespace();
+    if (index !== source.length)
+        fail();
+}
 const ajv = new Ajv2020({ allErrors: true });
 const validateProtocolMessage = ajv.compile(protocolSchema);
 function isObject(value) {
@@ -19002,12 +19242,13 @@ function parseServerMessage(data) {
     if (data.length === 0) {
         throw new Error("Cannot parse server message: empty frame.");
     }
+    preflightJson(data);
     let parsed;
     try {
         parsed = JSON.parse(data);
     }
     catch {
-        throw new Error("Cannot parse server message: invalid JSON.");
+        throw malformedJson("Cannot parse server message: invalid JSON.");
     }
     if (!isObject(parsed)) {
         throw new Error("Invalid server message: expected a JSON object.");
@@ -19098,9 +19339,14 @@ function serializeClientMessage(message) {
         if (encoded === undefined) {
             throw new Error("not JSON");
         }
+        if (jsonByteLength(encoded) > MAX_FRAME_BYTES) {
+            throw malformedJson("Invalid client message: frame exceeds 65536 UTF-8 bytes.");
+        }
         return encoded;
     }
-    catch {
+    catch (error) {
+        if (error instanceof Error && error.message.includes("frame exceeds"))
+            throw error;
         throw new Error("Invalid client message: value is not JSON-serializable.");
     }
 }
@@ -19111,6 +19357,10 @@ const LAN_CHALLENGE_TYPE = "lanChallenge";
 const LAN_PROOF_TYPE = "lanProof";
 const LAN_READY_TYPE = "lanReady";
 const LAN_CLIENT_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+const UNAUTH_RATE_BURST = 6;
+const UNAUTH_RATE_REFILL_PER_MS = 12 / 60_000;
+const AUTH_RATE_BURST = 240;
+const AUTH_RATE_REFILL_PER_MS = 120 / 1_000;
 function isLanUrl(value) {
     try {
         const parsed = new URL(value);
@@ -19283,6 +19533,8 @@ class BridgeClient extends EventEmitter$1 {
     latestDiagnostic;
     retryInMs;
     loggedDiagnosticKeys = new Set();
+    inboundUnauthRate = { tokens: UNAUTH_RATE_BURST, atMs: undefined };
+    inboundAuthRate = { tokens: AUTH_RATE_BURST, atMs: undefined };
     preserveFailureCause = false;
     lanPhase;
     lanKey;
@@ -19518,9 +19770,41 @@ class BridgeClient extends EventEmitter$1 {
         this.authenticated = false;
         this.sessionId = undefined;
         this.resetLanState();
+        this.inboundUnauthRate = { tokens: UNAUTH_RATE_BURST, atMs: undefined };
+        this.inboundAuthRate = { tokens: AUTH_RATE_BURST, atMs: undefined };
         this.setStatus("connecting");
         const generation = ++this.socketGeneration;
         void this.openSocket(generation);
+    }
+    currentTimeMs() {
+        try {
+            const timestamp = this.now();
+            const milliseconds = timestamp.getTime();
+            if (Number.isFinite(milliseconds))
+                return milliseconds;
+        }
+        catch {
+            // Fall back to a monotonic-enough wall clock for admission only.
+        }
+        return Date.now();
+    }
+    admitInbound(authenticated) {
+        const bucket = authenticated ? this.inboundAuthRate : this.inboundUnauthRate;
+        const capacity = authenticated ? AUTH_RATE_BURST : UNAUTH_RATE_BURST;
+        const refillPerMs = authenticated ? AUTH_RATE_REFILL_PER_MS : UNAUTH_RATE_REFILL_PER_MS;
+        const now = this.currentTimeMs();
+        if (bucket.atMs === undefined) {
+            bucket.atMs = now;
+        }
+        else {
+            const elapsed = Math.max(0, now - bucket.atMs);
+            bucket.tokens = Math.min(capacity, bucket.tokens + elapsed * refillPerMs);
+            bucket.atMs = now;
+        }
+        if (bucket.tokens < 1)
+            return false;
+        bucket.tokens -= 1;
+        return true;
     }
     async openSocket(generation) {
         let token;
@@ -19639,7 +19923,10 @@ class BridgeClient extends EventEmitter$1 {
         if (!this.socket)
             return false;
         try {
-            this.socket.send(JSON.stringify(message));
+            const encoded = JSON.stringify(message);
+            if (jsonByteLength(encoded) > MAX_LAN_CONTROL_BYTES)
+                return false;
+            this.socket.send(encoded);
             return true;
         }
         catch {
@@ -19655,8 +19942,13 @@ class BridgeClient extends EventEmitter$1 {
         this.closeCurrentSocket(generation);
     }
     handleLanMessage(generation, frame) {
+        if (!this.admitInbound(this.authenticated)) {
+            this.failLanAuthentication(generation);
+            return;
+        }
         let value;
         try {
+            preflightJson(frame, MAX_FRAME_BYTES);
             value = JSON.parse(frame);
         }
         catch {
@@ -19668,6 +19960,10 @@ class BridgeClient extends EventEmitter$1 {
             return;
         }
         const message = value;
+        if (message.type !== LAN_FRAME_TYPE && jsonByteLength(frame) > MAX_LAN_CONTROL_BYTES) {
+            this.failLanAuthentication(generation);
+            return;
+        }
         if (message.protocolVersion !== PROTOCOL_VERSION) {
             this.emitDiagnostic("auth", "VERSION_MISMATCH", undefined, true);
             this.closeCurrentSocket(generation);
@@ -19722,6 +20018,17 @@ class BridgeClient extends EventEmitter$1 {
         if (this.authenticated && this.lanPhase === "ready" && message.type === LAN_FRAME_TYPE) {
             const sequence = message.sequence;
             const payload = message.payload;
+            if (typeof payload !== "string" || jsonByteLength(payload) > MAX_LAN_PAYLOAD_BYTES) {
+                this.failLanAuthentication(generation);
+                return;
+            }
+            try {
+                preflightJson(payload, MAX_LAN_PAYLOAD_BYTES);
+            }
+            catch {
+                this.failLanAuthentication(generation);
+                return;
+            }
             const mac = typeof message.mac === "string" ? decodeHex(message.mac, 32) : undefined;
             if (!Number.isSafeInteger(sequence) || sequence !== this.lanReceiveSequence + 1
                 || typeof payload !== "string" || !mac || !this.lanReceiveKey) {
@@ -19781,6 +20088,13 @@ class BridgeClient extends EventEmitter$1 {
             return;
         if (this.lan) {
             this.handleLanMessage(generation, frame);
+            return;
+        }
+        if (!this.admitInbound(this.authenticated)) {
+            const error = { code: "MALFORMED_MESSAGE", message: SAFE_PROTOCOL_MESSAGES.MALFORMED_MESSAGE };
+            this.emitProtocolError(error);
+            this.emitDiagnostic("schema", "MALFORMED_MESSAGE", undefined, true);
+            this.closeCurrentSocket(generation);
             return;
         }
         let message;
@@ -19976,17 +20290,20 @@ class BridgeClient extends EventEmitter$1 {
     }
     sendLanPayload(payload) {
         const key = this.lanSendKey;
-        if (!this.socket || !key)
+        if (!this.socket || !key || jsonByteLength(payload) > MAX_LAN_PAYLOAD_BYTES)
             return false;
         const sequence = this.lanSendSequence + 1;
         try {
-            this.socket.send(JSON.stringify({
+            const encoded = JSON.stringify({
                 protocolVersion: PROTOCOL_VERSION,
                 type: LAN_FRAME_TYPE,
                 sequence,
                 payload,
                 mac: encodeHex(lanFrameMac(key, "client-to-server", sequence, payload)),
-            }));
+            });
+            if (jsonByteLength(encoded) > MAX_FRAME_BYTES)
+                return false;
+            this.socket.send(encoded);
             this.lanSendSequence = sequence;
             return true;
         }

@@ -17,10 +17,15 @@ import {
 } from "./lan-crypto.js";
 
 import {
+  MAX_FRAME_BYTES,
+  MAX_LAN_CONTROL_BYTES,
+  MAX_LAN_PAYLOAD_BYTES,
   PROTOCOL_VERSION,
   TOUCH_TAP_CANVAS_HEIGHT,
   TOUCH_TAP_CANVAS_WIDTH,
+  jsonByteLength,
   parseServerMessage,
+  preflightJson,
   sanitizeDeviceMetadata,
   serializeClientMessage,
   type AppearanceFields,
@@ -159,6 +164,15 @@ const LAN_CHALLENGE_TYPE = "lanChallenge";
 const LAN_PROOF_TYPE = "lanProof";
 const LAN_READY_TYPE = "lanReady";
 const LAN_CLIENT_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+const UNAUTH_RATE_BURST = 6;
+const UNAUTH_RATE_REFILL_PER_MS = 12 / 60_000;
+const AUTH_RATE_BURST = 240;
+const AUTH_RATE_REFILL_PER_MS = 120 / 1_000;
+
+type InboundRateBucket = {
+  tokens: number;
+  atMs: number | undefined;
+};
 
 function isLanUrl(value: string): boolean {
   try {
@@ -338,6 +352,8 @@ export class BridgeClient extends EventEmitter {
   private latestDiagnostic: BridgeDiagnosticLatest | undefined;
   private retryInMs: number | undefined;
   private readonly loggedDiagnosticKeys = new Set<string>();
+  private inboundUnauthRate: InboundRateBucket = { tokens: UNAUTH_RATE_BURST, atMs: undefined };
+  private inboundAuthRate: InboundRateBucket = { tokens: AUTH_RATE_BURST, atMs: undefined };
   private preserveFailureCause = false;
   private lanPhase: LanHandshakePhase | undefined;
   private lanKey: Buffer | undefined;
@@ -586,9 +602,38 @@ export class BridgeClient extends EventEmitter {
     this.authenticated = false;
     this.sessionId = undefined;
     this.resetLanState();
+    this.inboundUnauthRate = { tokens: UNAUTH_RATE_BURST, atMs: undefined };
+    this.inboundAuthRate = { tokens: AUTH_RATE_BURST, atMs: undefined };
     this.setStatus("connecting");
     const generation = ++this.socketGeneration;
     void this.openSocket(generation);
+  }
+  private currentTimeMs(): number {
+    try {
+      const timestamp = this.now();
+      const milliseconds = timestamp.getTime();
+      if (Number.isFinite(milliseconds)) return milliseconds;
+    } catch {
+      // Fall back to a monotonic-enough wall clock for admission only.
+    }
+    return Date.now();
+  }
+
+  private admitInbound(authenticated: boolean): boolean {
+    const bucket = authenticated ? this.inboundAuthRate : this.inboundUnauthRate;
+    const capacity = authenticated ? AUTH_RATE_BURST : UNAUTH_RATE_BURST;
+    const refillPerMs = authenticated ? AUTH_RATE_REFILL_PER_MS : UNAUTH_RATE_REFILL_PER_MS;
+    const now = this.currentTimeMs();
+    if (bucket.atMs === undefined) {
+      bucket.atMs = now;
+    } else {
+      const elapsed = Math.max(0, now - bucket.atMs);
+      bucket.tokens = Math.min(capacity, bucket.tokens + elapsed * refillPerMs);
+      bucket.atMs = now;
+    }
+    if (bucket.tokens < 1) return false;
+    bucket.tokens -= 1;
+    return true;
   }
   private async openSocket(generation: number): Promise<void> {
     let token: string | undefined;
@@ -695,7 +740,9 @@ export class BridgeClient extends EventEmitter {
   private sendLanHandshake(message: Record<string, unknown>): boolean {
     if (!this.socket) return false;
     try {
-      this.socket.send(JSON.stringify(message));
+      const encoded = JSON.stringify(message);
+      if (jsonByteLength(encoded) > MAX_LAN_CONTROL_BYTES) return false;
+      this.socket.send(encoded);
       return true;
     } catch {
       this.emitDiagnostic("reconnect", "SOCKET_FAILED");
@@ -711,8 +758,13 @@ export class BridgeClient extends EventEmitter {
   }
 
   private handleLanMessage(generation: number, frame: string): void {
+    if (!this.admitInbound(this.authenticated)) {
+      this.failLanAuthentication(generation);
+      return;
+    }
     let value: unknown;
     try {
+      preflightJson(frame, MAX_FRAME_BYTES);
       value = JSON.parse(frame) as unknown;
     } catch {
       this.failLanAuthentication(generation);
@@ -723,6 +775,10 @@ export class BridgeClient extends EventEmitter {
       return;
     }
     const message = value as Record<string, unknown>;
+    if (message.type !== LAN_FRAME_TYPE && jsonByteLength(frame) > MAX_LAN_CONTROL_BYTES) {
+      this.failLanAuthentication(generation);
+      return;
+    }
     if (message.protocolVersion !== PROTOCOL_VERSION) {
       this.emitDiagnostic("auth", "VERSION_MISMATCH", undefined, true);
       this.closeCurrentSocket(generation);
@@ -777,6 +833,16 @@ export class BridgeClient extends EventEmitter {
     if (this.authenticated && this.lanPhase === "ready" && message.type === LAN_FRAME_TYPE) {
       const sequence = message.sequence;
       const payload = message.payload;
+      if (typeof payload !== "string" || jsonByteLength(payload) > MAX_LAN_PAYLOAD_BYTES) {
+        this.failLanAuthentication(generation);
+        return;
+      }
+      try {
+        preflightJson(payload, MAX_LAN_PAYLOAD_BYTES);
+      } catch {
+        this.failLanAuthentication(generation);
+        return;
+      }
       const mac = typeof message.mac === "string" ? decodeHex(message.mac, 32) : undefined;
       if (!Number.isSafeInteger(sequence) || sequence !== this.lanReceiveSequence + 1
         || typeof payload !== "string" || !mac || !this.lanReceiveKey) {
@@ -833,6 +899,13 @@ export class BridgeClient extends EventEmitter {
     if (frame.length === 0) return;
     if (this.lan) {
       this.handleLanMessage(generation, frame);
+      return;
+    }
+    if (!this.admitInbound(this.authenticated)) {
+      const error = { code: "MALFORMED_MESSAGE", message: SAFE_PROTOCOL_MESSAGES.MALFORMED_MESSAGE };
+      this.emitProtocolError(error);
+      this.emitDiagnostic("schema", "MALFORMED_MESSAGE", undefined, true);
+      this.closeCurrentSocket(generation);
       return;
     }
 
@@ -1021,19 +1094,22 @@ export class BridgeClient extends EventEmitter {
       return false;
     }
   }
-
+  
+  
   private sendLanPayload(payload: string): boolean {
     const key = this.lanSendKey;
-    if (!this.socket || !key) return false;
+    if (!this.socket || !key || jsonByteLength(payload) > MAX_LAN_PAYLOAD_BYTES) return false;
     const sequence = this.lanSendSequence + 1;
     try {
-      this.socket.send(JSON.stringify({
+      const encoded = JSON.stringify({
         protocolVersion: PROTOCOL_VERSION,
         type: LAN_FRAME_TYPE,
         sequence,
         payload,
         mac: encodeHex(lanFrameMac(key, "client-to-server", sequence, payload)),
-      }));
+      });
+      if (jsonByteLength(encoded) > MAX_FRAME_BYTES) return false;
+      this.socket.send(encoded);
       this.lanSendSequence = sequence;
       return true;
     } catch {
