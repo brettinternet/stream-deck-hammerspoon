@@ -32,6 +32,153 @@ function helpers.svg(svg)
   }
 end
 
+local function areaChartError(message)
+  error("Stream Deck area chart " .. message, 3)
+end
+
+local function isFiniteNumber(value)
+  return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+end
+
+local function isHexColor(value)
+  return type(value) == "string"
+    and value:match("^#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]$") ~= nil
+end
+
+local function formatChartNumber(value)
+  local rounded = math.floor(value * 1000 + 0.5) / 1000
+  if rounded == 0 then
+    return "0"
+  end
+  local formatted = string.format("%.3f", rounded)
+  formatted = formatted:gsub("0+$", ""):gsub("%.$", "")
+  return formatted
+end
+
+local function chartValueRatio(value, minimum, maximum)
+  local range = maximum - minimum
+  local ratio
+  if range == math.huge then
+    local scale = math.max(math.abs(minimum), math.abs(maximum))
+    ratio = (value / scale - minimum / scale) / (maximum / scale - minimum / scale)
+  else
+    ratio = (value - minimum) / range
+  end
+  if ratio < 0 then
+    return 0
+  elseif ratio > 1 then
+    return 1
+  end
+  return ratio
+end
+
+local function validateChartValues(values)
+  if type(values) ~= "table" then
+    areaChartError("values must be a dense numeric array")
+  end
+
+  local count = rawlen(values)
+  for key in next, values do
+    if type(key) ~= "number" or key < 1 or key > count or key % 1 ~= 0 then
+      areaChartError("values must be a dense numeric array")
+    end
+  end
+  for index = 1, count do
+    local value = rawget(values, index)
+    if value == nil then
+      areaChartError("values must be a dense numeric array")
+    elseif not isFiniteNumber(value) then
+      areaChartError("values[" .. index .. "] must be a finite number")
+    end
+  end
+  return count
+end
+
+function helpers.areaChart(values, options)
+  local count = validateChartValues(values)
+  if options ~= nil and type(options) ~= "table" then
+    areaChartError("options must be a table")
+  end
+
+  local settings = options or {}
+  for key in next, settings do
+    if key ~= "size" and key ~= "min" and key ~= "max"
+        and key ~= "backgroundColor" and key ~= "fillColor" then
+      areaChartError("option '" .. tostring(key) .. "' is not supported")
+    end
+  end
+
+  local size = rawget(settings, "size")
+  if size == nil then
+    size = 72
+  elseif not isFiniteNumber(size) or size % 1 ~= 0 or (size ~= 72 and size ~= 144) then
+    areaChartError("size must be 72 or 144")
+  end
+
+  local minimum = rawget(settings, "min")
+  if minimum == nil then
+    minimum = 0
+  elseif not isFiniteNumber(minimum) then
+    areaChartError("min must be a finite number")
+  end
+  local maximum = rawget(settings, "max")
+  if maximum == nil then
+    maximum = 100
+  elseif not isFiniteNumber(maximum) then
+    areaChartError("max must be a finite number")
+  end
+  if maximum <= minimum then
+    areaChartError("max must be greater than min")
+  end
+
+  local backgroundColor = rawget(settings, "backgroundColor")
+  if backgroundColor == nil then
+    backgroundColor = "#000000"
+  elseif not isHexColor(backgroundColor) then
+    areaChartError("backgroundColor must be a six-digit #RRGGBB color")
+  end
+  local fillColor = rawget(settings, "fillColor")
+  if fillColor == nil then
+    fillColor = "#FFFFFF"
+  elseif not isHexColor(fillColor) then
+    areaChartError("fillColor must be a six-digit #RRGGBB color")
+  end
+
+  local sampleCount = math.min(count, size)
+  local path = { "M0 ", tostring(size) }
+  local width = size - 1
+  for sampleIndex = 1, sampleCount do
+    local sourceIndex
+    if sampleCount == 1 then
+      sourceIndex = 1
+    else
+      sourceIndex = math.floor((sampleIndex - 1) * (count - 1) / (sampleCount - 1)) + 1
+    end
+    local value = rawget(values, sourceIndex)
+    if value < minimum then
+      value = minimum
+    elseif value > maximum then
+      value = maximum
+    end
+    local x = sampleCount == 1 and 0
+      or math.floor((sampleIndex - 1) * width / (sampleCount - 1) + 0.5)
+    local y = size - chartValueRatio(value, minimum, maximum) * size
+    path[#path + 1] = " L" .. formatChartNumber(x) .. " " .. formatChartNumber(y)
+  end
+  if sampleCount > 0 then
+    local lastX = sampleCount == 1 and 0 or width
+    path[#path + 1] = " L" .. formatChartNumber(lastX) .. " " .. tostring(size)
+  end
+  path[#path + 1] = " Z"
+
+  local svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '
+    .. tostring(size) .. " " .. tostring(size) .. '"><rect width="'
+    .. tostring(size) .. '" height="' .. tostring(size) .. '" fill="'
+    .. backgroundColor .. '"/><path fill="' .. fillColor .. '" d="'
+    .. table.concat(path) .. '"/></svg>'
+  return helpers.svg(svg)
+end
+
 local function validateContext(context)
   if type(context) ~= "table" or type(context.instanceId) ~= "string" or context.instanceId == "" then
     error("Stream Deck helper context must have a non-empty instanceId", 3)

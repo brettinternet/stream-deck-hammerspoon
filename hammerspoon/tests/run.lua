@@ -1919,6 +1919,100 @@ test("SVG helper wraps canonical base64 custom icons", function()
   end
   assertFalse(pcall(Helpers.svg, 123), "SVG helper must reject non-string input")
 end)
+test("area chart helper clamps and bounds safe SVG geometry", function()
+  local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  local function decodeBase64(encoded)
+    local output = {}
+    for index = 1, #encoded, 4 do
+      local first = alphabet:find(encoded:sub(index, index), 1, true)
+      local second = alphabet:find(encoded:sub(index + 1, index + 1), 1, true)
+      local thirdCharacter = encoded:sub(index + 2, index + 2)
+      local fourthCharacter = encoded:sub(index + 3, index + 3)
+      local third = thirdCharacter == "=" and 0 or alphabet:find(thirdCharacter, 1, true) - 1
+      local fourth = fourthCharacter == "=" and 0 or alphabet:find(fourthCharacter, 1, true) - 1
+      local combined = (first - 1) * 262144 + (second - 1) * 4096 + third * 64 + fourth
+      output[#output + 1] = string.char(math.floor(combined / 65536))
+      if thirdCharacter ~= "=" then
+        output[#output + 1] = string.char(math.floor(combined / 256) % 256)
+      end
+      if fourthCharacter ~= "=" then
+        output[#output + 1] = string.char(combined % 256)
+      end
+    end
+    return table.concat(output)
+  end
+
+  local function svgFor(icon)
+    assertEqual(icon.kind, "custom")
+    assertEqual(icon.mediaType, "image/svg+xml")
+    return decodeBase64(icon.dataBase64)
+  end
+
+  local emptySvg = svgFor(Helpers.areaChart({}))
+  assertTrue(emptySvg:find('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72">', 1, true) ~= nil)
+  assertTrue(emptySvg:find('<rect width="72" height="72" fill="#000000"/>', 1, true) ~= nil)
+  assertTrue(emptySvg:find('<path fill="#FFFFFF" d="M0 72 Z"/>', 1, true) ~= nil)
+  local singleSvg = svgFor(Helpers.areaChart({ 50 }))
+  assertTrue(singleSvg:find('d="M0 72 L0 36 L0 72 Z"', 1, true) ~= nil)
+
+  local multipleSvg = svgFor(Helpers.areaChart({ 0, 50, 100 }))
+  assertTrue(multipleSvg:find('d="M0 72 L0 72 L36 36 L71 0 L71 72 Z"', 1, true) ~= nil)
+  local clampedSvg = svgFor(Helpers.areaChart({ -10, 200 }))
+  assertTrue(clampedSvg:find('d="M0 72 L0 72 L71 0 L71 72 Z"', 1, true) ~= nil)
+
+  local samples = {}
+  for index = 1, 120 do
+    samples[index] = index - 1
+  end
+  local boundedSvg = svgFor(Helpers.areaChart(samples))
+  local lineCount = 0
+  for _ in boundedSvg:gmatch(" L") do
+    lineCount = lineCount + 1
+  end
+  assertEqual(lineCount, 73, "downsampling must retain at most 72 plotted points plus baseline")
+  assertTrue(boundedSvg:find("L71 0 L71 72 Z", 1, true) ~= nil, "downsampling must retain newest value")
+
+  local chart144Svg = svgFor(Helpers.areaChart({ 0, 100 }, {
+    size = 144,
+    backgroundColor = "#123456",
+    fillColor = "#abcdef",
+  }))
+  assertTrue(chart144Svg:find('viewBox="0 0 144 144"', 1, true) ~= nil)
+  assertTrue(chart144Svg:find('<rect width="144" height="144" fill="#123456"/>', 1, true) ~= nil)
+  assertTrue(chart144Svg:find('<path fill="#abcdef"', 1, true) ~= nil)
+
+  local valid, code = Protocol.validate(message("appearance", {
+    instanceId = "chart",
+    actionId = "com.test.chart",
+    title = "Chart",
+    state = 0,
+    appearanceVersion = 1,
+    icon = Helpers.areaChart({ 25, 75 }),
+  }))
+  assertTrue(valid, code or "area chart SVG must pass the safe icon validator")
+
+  local sparse = { [1] = 1, [3] = 3 }
+  local invalidArguments = {
+    { "not an array" },
+    { sparse },
+    { { 1, math.huge } },
+    { { 1 }, false },
+    { { 1 }, { size = 73 } },
+    { { 1 }, { size = 72.5 } },
+    { { 1 }, { min = 1 / 0 } },
+    { { 1 }, { max = 0 / 0 } },
+    { { 1 }, { min = 10, max = 10 } },
+    { { 1 }, { backgroundColor = "#fff" } },
+    { { 1 }, { fillColor = "red" } },
+    { { 1 }, { unknown = true } },
+  }
+  for _, arguments in ipairs(invalidArguments) do
+    assertFalse(pcall(Helpers.areaChart, table.unpack(arguments)), "malformed area chart arguments must fail")
+  end
+  local ok, err = pcall(Helpers.areaChart, "not an array")
+  assertFalse(ok)
+  assertTrue(tostring(err):find("dense numeric array", 1, true) ~= nil, "area chart errors must explain malformed values")
+end)
 
 
 

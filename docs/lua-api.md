@@ -163,6 +163,19 @@ Returns a state component with `appear`, `disappear`, `get`, and `set` functions
 
 Returns a custom SVG icon table with canonical padded base64 in `dataBase64`. The `svg` argument must be a string; bytes are encoded as-is, without markup sanitization. The normal appearance validator still applies its bounded safe-SVG profile before the icon is sent to the plugin.
 
+### `helpers.areaChart(values, options)`
+
+Returns a custom SVG icon containing a bounded square area chart. `values` must be a dense array of finite numbers; values outside the chart range are clamped. The optional `options` table accepts only `size` (`72` or `144`, default `72`), finite `min`/`max` bounds (defaults `0` and `100`, with `max > min`), and six-digit `#RRGGBB` `backgroundColor` (default `#000000`) and `fillColor` (default `#FFFFFF`). When there are more samples than pixels, points are deterministically downsampled in chronological order while retaining the newest value.
+
+```lua
+local icon = helpers.areaChart({ 18, 27, 34 }, {
+  fillColor = "#2E86DE",
+  backgroundColor = "#101820",
+})
+```
+
+The helper emits only the protocol's allowlisted SVG elements and attributes, so its result can be returned directly as `appearance.icon`.
+
 ### `helpers.refreshAfter(callback)`
 
 Returns a callback wrapper that invokes `callback(context, ...)`, refreshes that same context once after a successful callback, and returns the callback's values unchanged. Errors propagate without refreshing. The callback must be a function.

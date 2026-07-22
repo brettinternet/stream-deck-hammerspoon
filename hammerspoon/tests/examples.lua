@@ -657,6 +657,151 @@ test("focus timer example covers lifecycle, completion, stopping, and unavailabl
   end, "focus timer unavailable")
 end)
 
+test("system monitor samples bounded shared CPU/RAM history and isolates toggles", function()
+  local scheduled = {}
+  local timer_count = 0
+  local tick_count = 0
+  local fake_hs = {
+    host = {
+      cpuUsageTicks = function()
+        tick_count = tick_count + 1
+        return {
+          overall = {
+            user = tick_count * 10,
+            system = 0,
+            nice = 0,
+            idle = tick_count * 90,
+          },
+        }
+      end,
+      vmStat = function()
+        return {
+          pagesActive = 2,
+          pagesWiredDown = 1,
+          pagesUsedByVMCompressor = 1,
+          pageSize = 10,
+          memSize = 1000,
+        }
+      end,
+    },
+    timer = {
+      doEvery = function(seconds, callback)
+        timer_count = timer_count + 1
+        local timer = {
+          seconds = seconds,
+          callback = callback,
+          stop_calls = 0,
+        }
+        function timer:stop()
+          self.stop_calls = self.stop_calls + 1
+        end
+        scheduled = timer
+        return timer
+      end,
+    },
+  }
+
+  local helpers = require("streamdeck.helpers")
+  local original_area_chart = helpers.areaChart
+  local chart_lengths = {}
+  helpers.areaChart = function(values, options)
+    chart_lengths[#chart_lengths + 1] = #values
+    return original_area_chart(values, options)
+  end
+
+  local streamdeck = load_fixture("hammerspoon/streamdeck/actions/system-monitor.lua", fake_hs)
+  local action = streamdeck.registrations[1]
+  local first = context("system-first")
+  local second = context("system-second")
+
+  assertEqual(action.id, "com.brettinternet.hammerspoon.system-monitor")
+  assertEqual(action.name, "System monitor")
+  action.appear(first)
+  assertEqual(scheduled.seconds, 1, "system monitor must sample once per second")
+  assertEqual(timer_count, 1, "first visible instance must start one timer")
+  action.appear(second)
+  assertEqual(timer_count, 1, "all visible instances must share one timer")
+
+  local initial = action.appearance(first)
+  assertEqual(initial.title, "CPU 0%", "CPU must remain informative before a valid delta")
+  assertEqual(initial.icon.mediaType, "image/svg+xml")
+  assertEqual(chart_lengths[#chart_lengths], 0, "the initial chart may be empty")
+
+  local function tick()
+    local previous_hs = _G.hs
+    _G.hs = fake_hs
+    scheduled.callback()
+    _G.hs = previous_hs
+  end
+
+  tick()
+  assertEqual(first.refreshes, 1, "a valid RAM sample must refresh the first key")
+  assertEqual(second.refreshes, 1, "a valid RAM sample must refresh every visible key")
+  assertEqual(action.appearance(first).title, "CPU 0%")
+  assertEqual(action.appearance(second).title, "CPU 0%")
+  tick()
+  assertEqual(action.appearance(first).title, "CPU 10%", "CPU must use tick deltas")
+  assertEqual(action.appearance(first).icon.kind, "custom")
+  action.press(first)
+  assertEqual(action.appearance(first).title, "RAM 4%", "press must toggle only this key")
+  assertEqual(action.appearance(second).title, "CPU 10%", "another key must keep its metric")
+
+  for _ = 1, 119 do
+    tick()
+  end
+  local rolled_over = action.appearance(first)
+  assertEqual(chart_lengths[#chart_lengths], 120, "history must retain at most 120 samples")
+  assertEqual(rolled_over.title, "RAM 4%")
+
+  action.disappear(first)
+  local old_callback = scheduled.callback
+  assertEqual(scheduled.stop_calls, 0, "shared timer must remain for another visible key")
+  local second_refreshes = second.refreshes
+  action.disappear(second)
+  assertEqual(scheduled.stop_calls, 1, "final disappearance must stop the shared timer")
+  old_callback()
+  assertEqual(second.refreshes, second_refreshes, "stale timer callbacks must not refresh removed keys")
+
+  action.appear(first)
+  assertEqual(timer_count, 2, "a new visible period must start a fresh timer")
+  assertEqual(action.appearance(first).title, "CPU 0%", "final cleanup must reset metric and CPU baseline")
+  local replacement = context("system-first")
+  action.press(first)
+  action.appear(replacement)
+  assertEqual(action.appearance(replacement).title, "CPU 0%")
+  local replacement_refreshes = replacement.refreshes
+  action.press(first)
+  assertEqual(action.appearance(replacement).title, "CPU 0%",
+    "a stale context must not toggle its replacement")
+  assertEqual(replacement.refreshes, replacement_refreshes,
+    "a stale context must not refresh its replacement")
+  action.disappear(replacement)
+  helpers.areaChart = original_area_chart
+end)
+
+test("system monitor validates required APIs on first appearance", function()
+  local unavailable = {
+    {
+      hs = { host = { cpuUsageTicks = function() end }, timer = { doEvery = function() end } },
+      message = "hs.host.vmStat",
+    },
+    {
+      hs = { host = { vmStat = function() end }, timer = { doEvery = function() end } },
+      message = "hs.host.cpuUsageTicks",
+    },
+    {
+      hs = { host = { cpuUsageTicks = function() end, vmStat = function() end } },
+      message = "hs.timer.doEvery",
+    },
+  }
+  for _, fixture in ipairs(unavailable) do
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/system-monitor.lua", fixture.hs)
+    assertError(function()
+      streamdeck.registrations[1].appear(context("system-unavailable"))
+    end, fixture.message)
+  end
+end)
+
 test("window zoom example covers appearance, lifecycle, toggling, and errors", function()
   local focused
   local zoom_result = true
