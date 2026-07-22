@@ -288,6 +288,9 @@ describe("BridgeClient authentication and transport", () => {
     }));
     expect(events).toEqual([[{ actionId: "com.example.action", name: "Example action" }]]);
     expect(timers.delays()).toEqual([]);
+    socket.receive(JSON.stringify({ protocolVersion: 1, type: "error", code: "AUTH_FAILED", message: "Rejected" }));
+    expect(socket.closeCalls).toBe(1);
+    expect(client.status).toBe("disconnected");
     client.stop();
   });
   test("LAN rejects reflected or tampered handshake proof and wrong-key peers", async () => {

@@ -65,6 +65,19 @@ local pressPayload = assert(Protocol.encode({ protocolVersion = 1, type = "keyDo
 http.websocketCallback(frame(pressPayload, clientToServer, 3, "client-to-server"))
 assert(pressed == 1, "authenticated LAN frame must dispatch")
 
+local loopbackHttp = server.http
+local lanHttp = server.lanHttp
+local loopbackError = decode(loopbackHttp.websocketCallback(encode({
+  protocolVersion = 1,
+  type = "listActions",
+  requestId = "unauthenticated-loopback",
+})))
+assert(loopbackError.type == "error" and loopbackError.code == "AUTH_FAILED")
+local lanSent, loopbackSent = #lanHttp.sent, #loopbackHttp.sent
+server:refresh("com.test.lan")
+assert(#lanHttp.sent == lanSent + 1, "LAN session appearance must remain framed on the LAN listener")
+assert(#loopbackHttp.sent == loopbackSent, "unauthenticated loopback traffic must not receive LAN appearance")
+
 local tampered = encode({ protocolVersion = 1, type = "lanFrame", sequence = 4, payload = pressPayload, mac = Crypto.hexEncode(Crypto.frameMac(_G.__streamdeckTestHash, clientToServer, "client-to-server", 3, pressPayload)) })
 local tamperedResponse = decode(http.websocketCallback(tampered))
 assert(tamperedResponse.type == "error" and tamperedResponse.code == "AUTH_FAILED")
@@ -105,6 +118,25 @@ local rotatedPress = assert(Protocol.encode({ protocolVersion = 1, type = "keyDo
 http.websocketCallback(frame(rotatedPress, rotatedClientToServer, 2, "client-to-server"))
 assert(pressed == 2, "rotated key reconnect must dispatch")
 
+local staleHello = decode(http.websocketCallback(hello("unknown", string.rep("\5", 32))))
+assert(staleHello.type == "error" and staleHello.code == "AUTH_FAILED")
+local replayedProof = decode(http.websocketCallback(encode({
+  protocolVersion = 1,
+  type = "lanProof",
+  clientId = "remote",
+  clientProof = Crypto.hexEncode(rotatedProof),
+})))
+assert(replayedProof.type == "error" and replayedProof.code == "AUTH_FAILED", "stale LAN proof must not restore a session")
+
+local unsafeSequence = decode(http.websocketCallback(encode({
+  protocolVersion = 1,
+  type = "lanFrame",
+  sequence = 9007199254740992,
+  payload = rotatedPress,
+  mac = string.rep("00", 32),
+})))
+assert(unsafeSequence.type == "error" and unsafeSequence.code == "AUTH_FAILED", "unsafe frame sequence must fail closed")
+
 local wrongNonce = string.rep("\2", 32)
 local wrongChallenge = decode(http.websocketCallback(hello("remote", wrongNonce)))
 local wrongServerNonce = assert(Crypto.hexDecode(wrongChallenge.serverNonce, 32))
@@ -112,6 +144,7 @@ local wrongKeyProof = Crypto.proof(_G.__streamdeckTestHash, string.rep("W", 32),
 local wrongResponse = decode(http.websocketCallback(encode({ protocolVersion = 1, type = "lanProof", clientId = "remote", clientProof = Crypto.hexEncode(wrongKeyProof) })))
 assert(wrongResponse.type == "error" and wrongResponse.code == "AUTH_FAILED")
 assert(pressed == 2, "wrong-key LAN peer must not dispatch")
+
 
 server:stop()
 os.remove(tokenPath)

@@ -15,6 +15,10 @@ local function isInteger(value)
     and math.floor(value) == value
 end
 
+local function isSafeInteger(value)
+  return isInteger(value) and value <= 9007199254740991
+end
+
 local function shellQuote(value)
   return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
 end
@@ -522,6 +526,7 @@ function server.new(registry, protocol, contextFactory)
   end
 
   function object:_onLanMessage(raw, http)
+    if self.authenticated and self.sessionMode ~= "lan" then return self:_lanError("AUTH_FAILED") end
     self.activeMode = "lan"
     self.activeHttp = http
     local hsapi = rawget(_G, "hs")
@@ -531,12 +536,6 @@ function server.new(registry, protocol, contextFactory)
 
     if value.type == "lanHello" then
       if self.authenticated and self.sessionMode ~= "lan" then return self:_lanError("AUTH_FAILED") end
-      if self.authenticated then
-        self:_clearInstances()
-        self.authenticated = false
-        self.sessionId = nil
-        self.sessionMode = nil
-      end
       if type(value.clientId) ~= "string" or #value.clientId < 1 or #value.clientId > 64
           or value.clientId:match(LAN_CLIENT_ID_PATTERN) == nil then
         return self:_lanError("AUTH_FAILED")
@@ -549,6 +548,12 @@ function server.new(registry, protocol, contextFactory)
       if not key or not serverNonce then return self:_lanError("AUTH_FAILED") end
       local serverProof = Crypto.proof(hsapi, key, "server", value.clientId, clientNonce, serverNonce)
       if not serverProof then return self:_lanError("AUTH_FAILED") end
+      if self.authenticated then
+        self:_clearInstances()
+        self.authenticated = false
+        self.sessionId = nil
+        self.sessionMode = nil
+      end
       self:_resetLanSession()
       self.lanClientId = value.clientId
       self.lanKeyPath = keyPath
@@ -620,9 +625,9 @@ function server.new(registry, protocol, contextFactory)
         self.sessionMode = nil
         return self:_lanError("AUTH_FAILED")
       end
-      local expected = type(sequence) == "number" and type(payload) == "string"
+      local expected = isSafeInteger(sequence) and type(payload) == "string"
         and Crypto.frameMac(hsapi, self.lanReceiveKey, "client-to-server", sequence, payload)
-      if type(sequence) ~= "number" or sequence ~= self.lanReceiveSequence + 1
+      if not isSafeInteger(sequence) or sequence ~= self.lanReceiveSequence + 1
           or not mac or not expected or not Crypto.doubleHmacEqual(hsapi, expected, mac) then
         self:_clearInstances()
         self.authenticated = false
@@ -638,7 +643,9 @@ function server.new(registry, protocol, contextFactory)
   end
 
   function object:_onMessage(raw, mode, http)
-    self.activeMode = mode or "loopback"
+    mode = mode or "loopback"
+    if self.authenticated and self.sessionMode ~= mode then return self:_lanError("AUTH_FAILED") end
+    self.activeMode = mode
     self.activeHttp = http or self.http
     self.responseQueue = {}
     self.dispatching = true

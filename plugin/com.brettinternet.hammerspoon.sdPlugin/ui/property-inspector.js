@@ -99,7 +99,7 @@
             case "AUTH_REQUIRED":
                 return "Hammerspoon requested authentication. Reload Hammerspoon so the bridge can reconnect.";
             case "AUTH_FAILED":
-                return "Authentication failed. Check the shared token file and reload Hammerspoon.";
+                return "Authentication failed. Check the configured bridge credential and reload Hammerspoon.";
             case "VERSION_MISMATCH":
                 return "The plugin and Hammerspoon bridge use different protocol versions. Update or rebuild both sides.";
             case "MALFORMED_MESSAGE":

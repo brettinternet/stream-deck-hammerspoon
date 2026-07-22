@@ -13,8 +13,8 @@ import path, { join } from 'node:path';
 import { cwd } from 'node:process';
 import { randomUUID, timingSafeEqual, hkdfSync, createHmac, randomBytes } from 'node:crypto';
 import { EventEmitter as EventEmitter$1 } from 'node:events';
+import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { readFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
 
 /**
@@ -19122,6 +19122,13 @@ function isLanUrl(value) {
         return false;
     }
 }
+async function readLanKeyFile(path) {
+    const attributes = await stat(path);
+    if (!attributes.isFile() || (attributes.mode & 0o777) !== 0o600) {
+        throw new Error("LAN credential permissions are unsafe.");
+    }
+    return readFile(path);
+}
 const DEFAULT_URL = "ws://localhost:17321/streamdeck";
 const DEFAULT_TOKEN_PATH = join(homedir(), ".hammerspoon", "streamdeck-token");
 const INITIAL_RECONNECT_MS = 250;
@@ -19308,7 +19315,7 @@ class BridgeClient extends EventEmitter$1 {
         this.logger = options.logger ?? (() => { });
         this.createSocket = options.createSocket ?? ((url) => new WebSocket(url));
         this.readToken = options.readToken ?? ((tokenPath) => readFile(tokenPath, "utf8"));
-        this.readKey = options.readKey ?? ((keyPath) => readFile(keyPath));
+        this.readKey = options.readKey ?? readLanKeyFile;
         this.randomBytes = options.randomBytes ?? randomBytes;
         this.scheduleTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
         this.cancelTimeout = options.clearTimeout ?? ((handle) => clearTimeout(handle));
@@ -19752,7 +19759,11 @@ class BridgeClient extends EventEmitter$1 {
         }
         if (message.type === "error") {
             try {
-                this.handleRemoteError(parseServerMessage(frame));
+                const error = parseServerMessage(frame);
+                this.handleRemoteError(error);
+                if (["AUTH_REQUIRED", "AUTH_FAILED", "VERSION_MISMATCH"].includes(safeProtocolCode(error.code))) {
+                    this.failLanAuthentication(generation);
+                }
             }
             catch {
                 this.failLanAuthentication(generation);

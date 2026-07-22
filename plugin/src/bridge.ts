@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
+import { readFile as nodeReadFile, stat as nodeStat } from "node:fs/promises";
+import { randomBytes as nodeRandomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readFile as nodeReadFile } from "node:fs/promises";
-import { randomBytes as nodeRandomBytes } from "node:crypto";
 import WebSocket from "ws";
 
 import {
@@ -169,6 +169,14 @@ function isLanUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+async function readLanKeyFile(path: string): Promise<Buffer> {
+  const attributes = await nodeStat(path);
+  if (!attributes.isFile() || (attributes.mode & 0o777) !== 0o600) {
+    throw new Error("LAN credential permissions are unsafe.");
+  }
+  return nodeReadFile(path);
 }
 
 
@@ -359,7 +367,7 @@ export class BridgeClient extends EventEmitter {
     this.logger = options.logger ?? (() => {});
     this.createSocket = options.createSocket ?? ((url) => new WebSocket(url) as unknown as BridgeSocket);
     this.readToken = options.readToken ?? ((tokenPath) => nodeReadFile(tokenPath, "utf8"));
-    this.readKey = options.readKey ?? ((keyPath) => nodeReadFile(keyPath));
+    this.readKey = options.readKey ?? readLanKeyFile;
     this.randomBytes = options.randomBytes ?? nodeRandomBytes;
     this.scheduleTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
     this.cancelTimeout = options.clearTimeout ?? ((handle) => clearTimeout(handle as NodeJS.Timeout));
@@ -804,7 +812,11 @@ export class BridgeClient extends EventEmitter {
     }
     if (message.type === "error") {
       try {
-        this.handleRemoteError(parseServerMessage(frame) as ServerErrorMessage);
+        const error = parseServerMessage(frame) as ServerErrorMessage;
+        this.handleRemoteError(error);
+        if (["AUTH_REQUIRED", "AUTH_FAILED", "VERSION_MISMATCH"].includes(safeProtocolCode(error.code))) {
+          this.failLanAuthentication(generation);
+        }
       } catch {
         this.failLanAuthentication(generation);
       }
