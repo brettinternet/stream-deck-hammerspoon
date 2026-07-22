@@ -171,7 +171,7 @@ function isLanUrl(value: string): boolean {
   }
 }
 
-async function readLanKeyFile(path: string): Promise<Buffer> {
+export async function readLanKeyFile(path: string): Promise<Buffer> {
   const attributes = await nodeStat(path);
   if (!attributes.isFile() || (attributes.mode & 0o777) !== 0o600) {
     throw new Error("LAN credential permissions are unsafe.");
@@ -354,7 +354,9 @@ export class BridgeClient extends EventEmitter {
     this.lan = options.lan;
     if (this.lan) {
       if (!isLanUrl(this.url)) throw new Error("LAN bridge URL must use ws://<host>/streamdeck.");
-      if (!LAN_CLIENT_ID_PATTERN.test(this.lan.clientId)) throw new Error("LAN clientId must use 1-64 safe characters.");
+      if (typeof this.lan.clientId !== "string" || !LAN_CLIENT_ID_PATTERN.test(this.lan.clientId)) {
+        throw new Error("LAN clientId must use 1-64 safe characters.");
+      }
       if (!isNonEmptyString(this.lan.keyPath)) throw new Error("LAN keyPath must be a non-empty string.");
     } else if (!isLegacyLoopbackUrl(this.url)) {
       throw new Error("Legacy bridge URL must target loopback.");

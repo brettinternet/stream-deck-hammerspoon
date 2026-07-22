@@ -19299,8 +19299,9 @@ class BridgeClient extends EventEmitter$1 {
         if (this.lan) {
             if (!isLanUrl(this.url))
                 throw new Error("LAN bridge URL must use ws://<host>/streamdeck.");
-            if (!LAN_CLIENT_ID_PATTERN.test(this.lan.clientId))
+            if (typeof this.lan.clientId !== "string" || !LAN_CLIENT_ID_PATTERN.test(this.lan.clientId)) {
                 throw new Error("LAN clientId must use 1-64 safe characters.");
+            }
             if (!isNonEmptyString(this.lan.keyPath))
                 throw new Error("LAN keyPath must be a non-empty string.");
         }

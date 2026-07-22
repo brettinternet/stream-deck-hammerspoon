@@ -137,13 +137,70 @@ local unsafeSequence = decode(http.websocketCallback(encode({
 })))
 assert(unsafeSequence.type == "error" and unsafeSequence.code == "AUTH_FAILED", "unsafe frame sequence must fail closed")
 
+local replayNonce = string.rep("\6", 32)
+local replayChallenge = decode(http.websocketCallback(hello("remote", replayNonce)))
+local replayServerNonce = assert(Crypto.hexDecode(replayChallenge.serverNonce, 32))
+local replayProof = Crypto.proof(_G.__streamdeckTestHash, rotatedKey, "client", "remote", replayNonce, replayServerNonce)
+local replayReady = decode(http.websocketCallback(encode({
+  protocolVersion = 1,
+  type = "lanProof",
+  clientId = "remote",
+  clientProof = Crypto.hexEncode(replayProof),
+})))
+local replaySalt = Crypto.kdfSalt("remote", replayNonce, replayServerNonce)
+local replayClientToServer = assert(Crypto.hkdf(_G.__streamdeckTestHash, rotatedKey, replaySalt, Crypto.frameInfo("client-to-server"), 32))
+local replayAppeared = assert(Protocol.encode({
+  protocolVersion = 1,
+  type = "instanceAppeared",
+  sessionId = replayReady.sessionId,
+  instanceId = "lan-instance",
+  actionId = "com.test.lan",
+  settings = {},
+}))
+http.websocketCallback(frame(replayAppeared, replayClientToServer, 1, "client-to-server"))
+local replayPress = assert(Protocol.encode({
+  protocolVersion = 1,
+  type = "keyDown",
+  sessionId = replayReady.sessionId,
+  instanceId = "lan-instance",
+  actionId = "com.test.lan",
+}))
+http.websocketCallback(frame(replayPress, replayClientToServer, 2, "client-to-server"))
+local replayedFrame = decode(http.websocketCallback(frame(replayPress, replayClientToServer, 2, "client-to-server")))
+assert(replayedFrame.type == "error" and replayedFrame.code == "AUTH_FAILED", "replayed LAN frame must fail closed")
+
+local reflectedNonce = string.rep("\7", 32)
+local reflectedChallenge = decode(http.websocketCallback(hello("remote", reflectedNonce)))
+local reflectedServerNonce = assert(Crypto.hexDecode(reflectedChallenge.serverNonce, 32))
+local reflectedProof = Crypto.proof(_G.__streamdeckTestHash, rotatedKey, "client", "remote", reflectedNonce, reflectedServerNonce)
+local reflectedReady = decode(http.websocketCallback(encode({
+  protocolVersion = 1,
+  type = "lanProof",
+  clientId = "remote",
+  clientProof = Crypto.hexEncode(reflectedProof),
+})))
+local reflectedSalt = Crypto.kdfSalt("remote", reflectedNonce, reflectedServerNonce)
+local reflectedClientToServer = assert(Crypto.hkdf(_G.__streamdeckTestHash, rotatedKey, reflectedSalt, Crypto.frameInfo("client-to-server"), 32))
+local reflectedServerToClient = assert(Crypto.hkdf(_G.__streamdeckTestHash, rotatedKey, reflectedSalt, Crypto.frameInfo("server-to-client"), 32))
+local reflectedAppeared = assert(Protocol.encode({
+  protocolVersion = 1,
+  type = "instanceAppeared",
+  sessionId = reflectedReady.sessionId,
+  instanceId = "lan-instance",
+  actionId = "com.test.lan",
+  settings = {},
+}))
+http.websocketCallback(frame(reflectedAppeared, reflectedClientToServer, 1, "client-to-server"))
+local reflectedFrame = decode(http.websocketCallback(frame(reflectedAppeared, reflectedServerToClient, 2, "server-to-client")))
+assert(reflectedFrame.type == "error" and reflectedFrame.code == "AUTH_FAILED", "reflected LAN frame must fail closed")
+
 local wrongNonce = string.rep("\2", 32)
 local wrongChallenge = decode(http.websocketCallback(hello("remote", wrongNonce)))
 local wrongServerNonce = assert(Crypto.hexDecode(wrongChallenge.serverNonce, 32))
 local wrongKeyProof = Crypto.proof(_G.__streamdeckTestHash, string.rep("W", 32), "client", "remote", wrongNonce, wrongServerNonce)
 local wrongResponse = decode(http.websocketCallback(encode({ protocolVersion = 1, type = "lanProof", clientId = "remote", clientProof = Crypto.hexEncode(wrongKeyProof) })))
 assert(wrongResponse.type == "error" and wrongResponse.code == "AUTH_FAILED")
-assert(pressed == 2, "wrong-key LAN peer must not dispatch")
+assert(pressed == 3, "wrong-key LAN peer must not dispatch")
 
 
 server:stop()

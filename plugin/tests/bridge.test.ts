@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { homedir } from "node:os";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { BridgeClient } from "../src/bridge";
+import { BridgeClient, readLanKeyFile } from "../src/bridge";
 import {
   deriveLanFrameKey,
   doubleHmacEqual,
@@ -328,8 +329,44 @@ describe("BridgeClient authentication and transport", () => {
       serverNonce: encodeHex(serverNonce),
       serverProof: encodeHex(lanProof(Buffer.alloc(32, 0x4b), "server", "remote", wrongNonce, serverNonce)),
     }));
+
     expect(wrongSocket.closeCalls).toBe(1);
     wrong.stop();
+  });
+
+  test("LAN default credential reader requires an owner-only key file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "streamdeck-lan-"));
+    const keyPath = join(directory, "credential");
+    try {
+      expect(() => new BridgeClient({
+        url: "ws://192.168.1.20:17322/streamdeck",
+        lan: { clientId: undefined as unknown as string, keyPath },
+        pluginVersion: "1.0.0",
+      })).toThrow("LAN clientId must use 1-64 safe characters.");
+
+      await writeFile(keyPath, Buffer.alloc(32, 0x4b), { mode: 0o644 });
+      await chmod(keyPath, 0o644);
+      await expect(readLanKeyFile(keyPath)).rejects.toThrow("LAN credential permissions are unsafe.");
+
+      await chmod(keyPath, 0o600);
+      await expect(readLanKeyFile(keyPath)).resolves.toEqual(Buffer.alloc(32, 0x4b));
+
+      const unavailable = new BridgeClient({
+        url: "ws://192.168.1.20:17322/streamdeck",
+        lan: { clientId: "remote", keyPath },
+        pluginVersion: "1.0.0",
+        readKey: async () => {
+          throw new Error("unavailable");
+        },
+      });
+      const diagnostic = new Promise<void>((resolve) => unavailable.once("diagnostics", () => resolve()));
+      unavailable.start();
+      await diagnostic;
+      expect(unavailable.diagnostics.latest?.code).toBe("LAN_KEY_UNAVAILABLE");
+      unavailable.stop();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   test("rejects non-literal loopback legacy bridge URLs before token authentication", () => {
