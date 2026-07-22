@@ -493,19 +493,9 @@ function server.new(registry, protocol, contextFactory)
   end
 
   function object:_newSessionId()
-    local hsapi = rawget(_G, "hs")
-    if not hsapi or not hsapi.host or type(hsapi.host.uuid) ~= "function" then
-      return nil
-    end
-    local ok, sessionId = pcall(hsapi.host.uuid)
-    if not ok or type(sessionId) ~= "string" or sessionId == "" then
-      return nil
-    end
-    self.sessionGeneration = self.sessionGeneration + 1
-    if self.sessionGeneration > 1 then
-      sessionId = sessionId .. "-" .. tostring(self.sessionGeneration)
-    end
-    return sessionId
+    local random = Crypto.randomBytes(Crypto.KEY_BYTES)
+    if not random then return nil end
+    return Crypto.hexEncode(random)
   end
 
 

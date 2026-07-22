@@ -2078,6 +2078,40 @@ test("session rotation rejects stale and missing clients before invocation", fun
   end)
 end)
 
+test("session IDs remain unique across bridge restarts", function()
+  local pressed = 0
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.restart-session",
+    name = "Restart session",
+    appearance = function() return { title = "Restart", state = "active" } end,
+    press = function() pressed = pressed + 1 end,
+  })
+
+  withTokenPath(function(path)
+    local firstServer = newServer(registry, path)
+    local oldSession = authenticate(firstServer, path)
+    firstServer:stop()
+
+    local restartedServer = newServer(registry, path)
+    local currentSession = authenticate(restartedServer, path)
+    assertTrue(currentSession ~= oldSession, "restart must not reuse a session ID")
+    exchange(restartedServer, message("instanceAppeared", {
+      instanceId = "restart-session-instance",
+      actionId = "com.test.restart-session",
+      settings = {},
+    }))
+
+    assertError("AUTH_REQUIRED", exchange(restartedServer, message("keyDown", {
+      sessionId = oldSession,
+      instanceId = "restart-session-instance",
+      actionId = "com.test.restart-session",
+    })))
+    assertEqual(pressed, 0, "a pre-restart session ID must not invoke a callback")
+    restartedServer:stop()
+  end)
+end)
+
 test("callback exceptions are protected and reported", function()
   local registry = Registry.new()
   registry:register({

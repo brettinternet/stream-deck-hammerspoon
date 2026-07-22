@@ -25,7 +25,7 @@ ws://localhost:17321/streamdeck
 
 Hammerspoon binds this endpoint to localhost/loopback with Bonjour disabled. The `hs.httpserver:websocket` message callback must return a string, so lifecycle events with no response can produce a zero-length transport frame. The TypeScript transport ignores only zero-length frames before JSON/protocol validation; every non-empty frame remains strict. Empty frames are transport artifacts, not protocol messages or an unauthenticated fallback, and this is a reversible transport-specific limitation.
 
-Authentication starts with the shared token in the plugin's first `hello`. Hammerspoon then creates a fresh non-empty opaque `sessionId` with `hs.host.uuid()` and returns it in `helloAck.sessionId`. The plugin stores that ID only in memory and includes it in every later application message (`listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, `keyUp`, `dialDown`, `dialRotate`, `dialUp`, `touchTap`, and `requestAppearance`). Missing or stale IDs are rejected before dispatch.
+Authentication starts with the shared token in the plugin's first `hello`. Hammerspoon then creates a fresh non-empty opaque `sessionId` from 32 CSPRNG bytes read from `/dev/urandom` and returns it in `helloAck.sessionId`. The plugin stores that ID only in memory and includes it in every later application message (`listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, `keyUp`, `dialDown`, `dialRotate`, `dialUp`, `touchTap`, and `requestAppearance`). Missing or stale IDs are rejected before dispatch.
 
 Install the project runtimes with [mise](https://mise.jdx.dev/):
 
