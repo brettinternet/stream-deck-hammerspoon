@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that trims text in the clipboard.
+-- Stream Deck action: a Stream Deck key that trims text in the clipboard.
 -- Press the key to remove leading and trailing whitespace from the current clipboard text.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.clipboard-clean"
 
@@ -22,7 +19,7 @@ local function trim(contents)
   return (contents:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
-streamdeck.register({
+return {
   id = action_id,
   name = "Clean clipboard",
 
@@ -60,9 +57,6 @@ streamdeck.register({
     if not hs.pasteboard.setContents(trim(contents)) then
       error("failed to update clipboard")
     end
-    context:refresh()
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

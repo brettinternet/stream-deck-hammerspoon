@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that stashes and restores clipboard text.
+-- Stream Deck action: a Stream Deck key that stashes and restores clipboard text.
 -- The first press stores text for that key instance; the next press restores it and clears the stash.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.clipboard-stash"
 local state_by_instance = {}
@@ -28,7 +25,7 @@ local function capture_clipboard()
   return contents
 end
 
-streamdeck.register({
+return {
   id = action_id,
   name = "Clipboard stash",
 
@@ -54,7 +51,6 @@ streamdeck.register({
     local stashed = state_by_instance[instance_id]
     if stashed == nil then
       state_by_instance[instance_id] = capture_clipboard()
-      context:refresh()
       return
     end
 
@@ -68,13 +64,10 @@ streamdeck.register({
     end
 
     state_by_instance[instance_id] = nil
-    context:refresh()
   end,
 
   disappear = function(context)
     state_by_instance[context.instanceId] = nil
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

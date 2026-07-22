@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a per-key Pomodoro session with timed work and breaks.
+-- Stream Deck action: a per-key Pomodoro session with timed work and breaks.
 -- Press to run four 25-minute focus cycles with 5-minute breaks and a final 15-minute break; press to reset.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.pomodoro"
 local focus_duration = 25 * 60
@@ -114,7 +111,6 @@ local function start_session(context, state)
     error(err)
   end
 
-  refresh(context)
 end
 
 local function reset_session(state)
@@ -158,7 +154,7 @@ local function appearance_for(state)
   }
 end
 
-streamdeck.register({
+return {
   id = action_id,
   name = "Pomodoro session",
 
@@ -179,7 +175,6 @@ streamdeck.register({
       or state.phase == "short-break"
       or state.phase == "long-break" then
       reset_session(state)
-      refresh(context)
       return
     end
 
@@ -193,7 +188,5 @@ streamdeck.register({
       state_by_instance[context.instanceId] = nil
     end
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

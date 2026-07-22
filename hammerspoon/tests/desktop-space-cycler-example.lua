@@ -45,9 +45,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     }
 
-    local streamdeck = load_fixture("hammerspoon/examples/desktop-space-cycler.lua", fake_hs)
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/desktop-space-cycler.lua", fake_hs)
     assertEqual(#streamdeck.registrations, 1)
-    assertEqual(streamdeck.starts, 1)
+    assertEqual(streamdeck.starts, 0)
     local action = streamdeck.registrations[1]
     local cycler = context("spaces")
 
@@ -62,7 +62,8 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     for presentation_state, space_id in ipairs({ 12, 13, 14 }) do
       action.press(cycler)
       assertEqual(goto_calls[presentation_state], space_id)
-      assertEqual(cycler.refreshes, presentation_state)
+      assertEqual(cycler.refreshes, presentation_state * 2,
+        "catalog and delayed transition refreshes must both run")
       appearance = action.appearance(cycler)
       assertEqual(appearance.title, "Desktop " .. (presentation_state + 1))
       assertEqual(appearance.state, "active")
@@ -108,7 +109,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
   end)
 
   test("desktop space cycler reports unavailable APIs", function()
-    local streamdeck = load_fixture("hammerspoon/examples/desktop-space-cycler.lua", {})
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/desktop-space-cycler.lua", {})
     local action = streamdeck.registrations[1]
     local cycler = context("unavailable")
 

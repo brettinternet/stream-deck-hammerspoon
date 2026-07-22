@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that cycles focused-window layouts.
+-- Stream Deck action: a Stream Deck key that cycles focused-window layouts.
 -- Press repeatedly for left half, right half, and full screen; layout state is independent per key.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.window-snap"
 local layouts = {
@@ -18,7 +15,7 @@ local function focused_window_api_available()
     and type(hs.window.focusedWindow) == "function"
 end
 
-streamdeck.register({
+return {
   id = action_id,
   name = "Snap focused window",
 
@@ -77,13 +74,10 @@ streamdeck.register({
     end
 
     layout_by_instance[instance_id] = next_index
-    context:refresh()
   end,
 
   disappear = function(context)
     layout_by_instance[context.instanceId] = nil
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

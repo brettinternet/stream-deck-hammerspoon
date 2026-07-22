@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key for YouTube playback.
+-- Stream Deck action: a Stream Deck key for YouTube playback.
 -- Press the key to play/pause the first YouTube video tab in Chromium, or open the configured URL when no video tab exists.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.youtube"
 local browser_bundle_id = "org.chromium.Chromium"
@@ -165,7 +162,7 @@ local function play_pause_first_youtube_tab(browser)
   return true
 end
 
-streamdeck.register({
+return {
   id = action_id,
   name = "YouTube play/pause",
   settingsSchemaVersion = 1,
@@ -188,14 +185,10 @@ streamdeck.register({
 
     local browser = browser_application()
     if browser and play_pause_first_youtube_tab(browser) then
-      context:refresh()
       return
     end
 
     open_youtube_url(url)
-    context:refresh()
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

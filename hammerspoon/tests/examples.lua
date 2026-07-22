@@ -57,16 +57,21 @@ local function load_fixture(path, fake_hs)
     refreshes = {},
     starts = 0,
   }
+  local invocation_context
+
 
   local function invoke_with_fake_hs(callback, ...)
     local previous_hs = _G.hs
     local arguments = table.pack(...)
+    local previous_invocation_context = invocation_context
+    invocation_context = arguments[1]
     _G.hs = fake_hs
     local results = {
       xpcall(function()
         return callback(table.unpack(arguments, 1, arguments.n))
       end, debug.traceback),
     }
+    invocation_context = previous_invocation_context
     _G.hs = previous_hs
     if not results[1] then
       error(results[2], 0)
@@ -93,6 +98,9 @@ local function load_fixture(path, fake_hs)
 
   function streamdeck.refresh(action_id)
     streamdeck.refreshes[#streamdeck.refreshes + 1] = action_id
+    if invocation_context and type(invocation_context.refresh) == "function" then
+      invocation_context:refresh()
+    end
     return streamdeck
   end
 
@@ -108,7 +116,16 @@ local function load_fixture(path, fake_hs)
   _G.hs = fake_hs
 
   local ok, err = xpcall(function()
-    dofile(path)
+    local chunk, load_error = loadfile(path)
+    if not chunk then
+      error(load_error)
+    end
+    local action_name = path:match("/([^/]+)%.lua$")
+    local module_name = "streamdeck.actions." .. action_name
+    local previous_action_module = package.loaded[module_name]
+    package.loaded[module_name] = nil
+    require("streamdeck.actions").register(streamdeck, { action_name })
+    package.loaded[module_name] = previous_action_module
   end, debug.traceback)
 
   _G.hs = previous_hs
@@ -149,7 +166,7 @@ test("example fixture loader restores module and hs state after failure", functi
   package.preload.streamdeck = sentinel_preload
 
   assertError(function()
-    load_fixture("hammerspoon/examples/example-that-does-not-exist.lua", {})
+    load_fixture("hammerspoon/streamdeck/actions/example-that-does-not-exist.lua", {})
   end, "example-that-does-not-exist.lua")
 
   assertSame(_G.hs, sentinel_hs, "hs must be restored after a fixture failure")
@@ -180,7 +197,7 @@ test("microphone example covers appearance, toggling, and no-device errors", fun
   end
 
   local available = microphone
-  local streamdeck = load_fixture("hammerspoon/examples/microphone.lua", {
+  local streamdeck = load_fixture("hammerspoon/streamdeck/actions/microphone.lua", {
     audiodevice = {
       defaultInputDevice = function()
         return available
@@ -190,7 +207,7 @@ test("microphone example covers appearance, toggling, and no-device errors", fun
   assertEqual(#streamdeck.registrations, 1, "microphone must register one action")
   local action = streamdeck.registrations[1]
   assertEqual(action.id, "com.brettinternet.hammerspoon.microphone-toggle")
-  assertEqual(streamdeck.starts, 1, "microphone must start the bridge")
+  assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
 
   local appearance = action.appearance(context("mic"))
   assertEqual(appearance.title, "Live")
@@ -233,6 +250,7 @@ test("application example toggles focused and configured applications", function
   local fallback_after_hide
   local watcher_callback
   local watcher_started = false
+  local watcher_stopped = false
   local events = {
     activated = "activated",
     deactivated = "deactivated",
@@ -349,6 +367,9 @@ test("application example toggles focused and configured applications", function
             start = function()
               watcher_started = true
             end,
+            stop = function()
+              watcher_stopped = true
+            end,
           }
         end,
       },
@@ -361,7 +382,7 @@ test("application example toggles focused and configured applications", function
     },
   }
 
-  local streamdeck = load_fixture("hammerspoon/examples/application.lua", fake_hs)
+  local streamdeck = load_fixture("hammerspoon/streamdeck/actions/application.lua", fake_hs)
   assertEqual(#streamdeck.registrations, 1, "application must register one action")
   local action = streamdeck.registrations[1]
   assertEqual(action.id, "com.brettinternet.hammerspoon.application-toggle")
@@ -374,10 +395,12 @@ test("application example toggles focused and configured applications", function
   assertEqual(action.settingsSchema[2].type, "boolean")
   assertEqual(action.settingsSchema[2].key, "focusOnShow")
   assertFalse(action.settingsSchema[2].default)
-  assertEqual(streamdeck.starts, 1, "application must start the bridge")
-  assertTrue(watcher_started, "application watcher must start")
+  assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
+  assertFalse(watcher_started, "application watcher must wait for a visible instance")
 
   local press_context = context("application")
+  action.appear(press_context)
+  assertTrue(watcher_started, "application watcher must start for a visible instance")
   local appearance = action.appearance(press_context)
   assertEqual(appearance.title, "No app")
   assertEqual(appearance.state, "inactive")
@@ -441,6 +464,7 @@ test("application example toggles focused and configured applications", function
   local configured_context = context("configured", {
     bundleID = "com.example.Editor",
   })
+  action.appear(configured_context)
   configured = app
   frontmost = app
   appearance = action.appearance(configured_context)
@@ -550,62 +574,28 @@ test("application example toggles focused and configured applications", function
     events.launched,
     events.terminated,
   }
+  local press_refreshes = press_context.refreshes
+  local configured_refreshes_after_actions = configured_context.refreshes
+  local bridge_refreshes = #streamdeck.refreshes
   for _, event in ipairs(relevant) do
     watcher_callback("Editor", event, app)
   end
-  assertEqual(#streamdeck.refreshes, #relevant,
-    "all relevant application events must refresh")
+  assertEqual(press_context.refreshes, press_refreshes + #relevant,
+    "all relevant application events must refresh every visible instance")
+  assertEqual(configured_context.refreshes, configured_refreshes_after_actions + #relevant,
+    "all relevant application events must refresh every visible instance")
   watcher_callback("Editor", "replaced", app)
-  assertEqual(#streamdeck.refreshes, #relevant,
+  assertEqual(press_context.refreshes, press_refreshes + #relevant,
     "irrelevant application events must not refresh")
-  for _, action_id in ipairs(streamdeck.refreshes) do
-    assertEqual(action_id, action.id, "watcher must refresh the application action")
-  end
+  assertEqual(#streamdeck.refreshes, bridge_refreshes,
+    "action watchers must refresh contexts without the bridge")
+
+  action.disappear(press_context)
+  assertFalse(watcher_stopped, "watcher must remain active while another instance is visible")
+  action.disappear(configured_context)
+  assertTrue(watcher_stopped, "watcher must stop after the last instance disappears")
 end)
 
-test("multi-instance example isolates state, labels, and lifecycle", function()
-  local streamdeck = load_fixture("hammerspoon/examples/multi-instance.lua", {})
-  assertEqual(#streamdeck.registrations, 1, "multi-instance must register one action")
-  local action = streamdeck.registrations[1]
-  assertEqual(action.id, "com.brettinternet.hammerspoon.per-instance-toggle")
-  assertEqual(streamdeck.starts, 1, "multi-instance must start the bridge")
-
-  local a = context("instance-a", { label = "Alpha" })
-  local b = context("instance-b", { label = "Beta" })
-  action.appear(a)
-  action.appear(b)
-  local a_appearance = action.appearance(a)
-  local b_appearance = action.appearance(b)
-  assertEqual(a_appearance.title, "Alpha")
-  assertEqual(b_appearance.title, "Beta")
-  assertEqual(a_appearance.state, "inactive")
-  assertEqual(b_appearance.state, "inactive")
-
-  action.press(a)
-  assertEqual(a.refreshes, 1, "A press must refresh A")
-  assertEqual(b.refreshes, 0, "A press must not refresh B")
-  assertEqual(action.appearance(a).state, "active")
-  assertEqual(action.appearance(b).state, "inactive")
-  action.press(b)
-  assertEqual(a.refreshes, 1)
-  assertEqual(b.refreshes, 1, "B press must refresh B")
-  assertEqual(action.appearance(a).state, "active")
-  assertEqual(action.appearance(b).state, "active")
-
-  local no_settings = context("instance-no-settings", nil)
-  local invalid_label = context("instance-invalid-label", { label = 42 })
-  action.appear(no_settings)
-  action.appear(invalid_label)
-  assertEqual(action.appearance(no_settings).title, "Toggle")
-  assertEqual(action.appearance(invalid_label).title, "Toggle")
-
-  action.disappear(a)
-  assertEqual(action.appearance(a).title, "Alpha")
-  assertEqual(action.appearance(a).state, "inactive", "disappear must reset A state")
-  action.appear(a)
-  assertEqual(action.appearance(a).state, "inactive", "reappear must start A inactive")
-  assertEqual(action.appearance(b).state, "active", "B state must survive A lifecycle")
-end)
 
 test("focus timer example covers lifecycle, completion, stopping, and unavailable timers", function()
   local scheduled
@@ -626,7 +616,7 @@ test("focus timer example covers lifecycle, completion, stopping, and unavailabl
       end,
     },
   }
-  local streamdeck = load_fixture("hammerspoon/examples/focus-timer.lua", fake_hs)
+  local streamdeck = load_fixture("hammerspoon/streamdeck/actions/focus-timer.lua", fake_hs)
   local action = streamdeck.registrations[1]
   local focus = context("focus")
 
@@ -659,7 +649,7 @@ test("focus timer example covers lifecycle, completion, stopping, and unavailabl
   action.appear(focus)
   assertEqual(action.appearance(focus).title, "Ready", "reappearing must reset timer state")
 
-  local unavailable = load_fixture("hammerspoon/examples/focus-timer.lua", {})
+  local unavailable = load_fixture("hammerspoon/streamdeck/actions/focus-timer.lua", {})
   local unavailable_context = context("unavailable")
   unavailable.registrations[1].appear(unavailable_context)
   assertError(function()
@@ -685,7 +675,7 @@ test("window zoom example covers appearance, lifecycle, toggling, and errors", f
       return zoom_result
     end,
   }
-  local streamdeck = load_fixture("hammerspoon/examples/window-maximize.lua", {
+  local streamdeck = load_fixture("hammerspoon/streamdeck/actions/window-maximize.lua", {
     window = {
       focusedWindow = function()
         return focused
@@ -727,7 +717,7 @@ test("window zoom example covers appearance, lifecycle, toggling, and errors", f
   assertEqual(action.appearance(window_context).state, "inactive",
     "reappearing must reset window zoom state")
 
-  local unavailable = load_fixture("hammerspoon/examples/window-maximize.lua", {})
+  local unavailable = load_fixture("hammerspoon/streamdeck/actions/window-maximize.lua", {})
   local unavailable_context = context("unavailable-window")
   assertError(function()
     unavailable.registrations[1].press(unavailable_context)
@@ -738,7 +728,7 @@ test("clipboard clean example covers trim, refresh, write errors, and unavailabl
   local clipboard
   local set_result = true
   local set_calls = 0
-  local streamdeck = load_fixture("hammerspoon/examples/clipboard-clean.lua", {
+  local streamdeck = load_fixture("hammerspoon/streamdeck/actions/clipboard-clean.lua", {
     pasteboard = {
       getContents = function()
         return clipboard
@@ -784,7 +774,7 @@ test("clipboard clean example covers trim, refresh, write errors, and unavailabl
   end, "failed to update clipboard")
   assertEqual(clipboard_context.refreshes, 2, "failed clipboard write must not refresh")
 
-  local unavailable = load_fixture("hammerspoon/examples/clipboard-clean.lua", {})
+  local unavailable = load_fixture("hammerspoon/streamdeck/actions/clipboard-clean.lua", {})
   local unavailable_context = context("unavailable-clipboard")
   assertError(function()
     unavailable.registrations[1].appearance(unavailable_context)
@@ -821,5 +811,8 @@ dofile("hammerspoon/tests/pomodoro-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/lock-screen-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
+
+dofile("hammerspoon/tests/action-catalog.test.lua")(
+  test, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 
 return passed

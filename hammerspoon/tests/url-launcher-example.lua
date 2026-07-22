@@ -11,9 +11,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     }
 
-    local streamdeck = load_fixture("hammerspoon/examples/url-launcher.lua", fake_hs)
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/url-launcher.lua", fake_hs)
     assertEqual(#streamdeck.registrations, 1, "URL launcher must register one action")
-    assertEqual(streamdeck.starts, 1, "URL launcher must start the bridge")
+    assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
     local action = streamdeck.registrations[1]
     assertEqual(action.id, "com.brettinternet.hammerspoon.url-launcher")
     assertEqual(action.settingsSchemaVersion, 1)
@@ -80,7 +80,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       "empty URL must use the default URL")
     assertEqual(empty_url_context.refreshes, 1)
 
-    local unavailable = load_fixture("hammerspoon/examples/url-launcher.lua", {})
+    local unavailable = load_fixture("hammerspoon/streamdeck/actions/url-launcher.lua", {})
     local unavailable_context = context("unavailable", {
       url = "https://example.com/",
     })

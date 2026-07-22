@@ -3,7 +3,7 @@
 [![CI](https://github.com/brettinternet/stream-deck-hammerspoon/actions/workflows/ci.yml/badge.svg)](https://github.com/brettinternet/stream-deck-hammerspoon/actions/workflows/ci.yml)
 
 An Elgato Stream Deck plugin bridge for Hammerspoon. The plugin uses an authenticated loopback WebSocket by default to send key and lifecycle events to a Hammerspoon Lua module; Hammerspoon returns registered actions and appearance updates. An explicit LAN profile can add up to four isolated per-client PSK listeners without changing the loopback default.
-Browse the [Hammerspoon examples](hammerspoon/examples/) for ready-to-copy configurations.
+Browse the installed [Hammerspoon action library](hammerspoon/examples/) for ready-to-use actions and a combined configuration.
 
 The official Stream Deck application remains the owner of plugin lifecycle, property inspectors, rendering, and hardware access. Keep it running during development and manual checks. Direct USB/HID or other hardware control is forbidden. This project does **not** replace the official application.
 
@@ -15,6 +15,7 @@ The official Stream Deck application remains the owner of plugin lifecycle, prop
 - The property inspector lists registered actions and can render bounded per-instance `text`, `number`, `boolean`, and `select` settings declared in Lua.
 - Lua actions can update their title, state, colors, progress, badge, and icon while visible, show transient success or error feedback, handle taps, long presses, and releases, and optionally play trusted Hammerspoon sounds.
 - `require("streamdeck")` also provides **Reload Hammerspoon** and **Toggle Hammerspoon Console**. See the [Lua API guide](docs/lua-api.md).
+- The optional `streamdeck.actions` catalog ships with the Lua module and can register all actions or only selected names; no separate action installation is required.
 - `hammerspoon/streamdeck/` is the reusable Lua API. `protocol/schema/` is the canonical protocol-v1 JSON Schema. `plugin/` contains the TypeScript source and compiled official plugin layout.
 
 This is not [Hammerspoon's `hs.streamdeck` extension](https://www.hammerspoon.org/docs/hs.streamdeck.html) which requires circumventing the Stream Deck software. It is a separate `streamdeck` Lua module and does not depend on or modify `hs.streamdeck`.
@@ -53,16 +54,17 @@ bun run install:dev
 
 ### Configure Hammerspoon
 
-Add the bridge, your registrations, and `streamdeck.start()` to `~/.hammerspoon/init.lua`, then reload Hammerspoon:
+Register the installed action catalog in `~/.hammerspoon/init.lua`, then reload Hammerspoon:
 
 ```lua
 local streamdeck = require("streamdeck")
+local actions = require("streamdeck.actions")
 
--- streamdeck.register({ ... })
+actions.registerAll(streamdeck)
 streamdeck.start()
 ```
 
-The bridge creates `~/.hammerspoon/streamdeck-token` on its first successful start. It contains two UUIDs and must remain mode `0600`. Never commit or log it. Start with the registration and context example in [the Lua API guide](docs/lua-api.md), or browse the [Hammerspoon examples](hammerspoon/examples/) for ready-to-copy configurations.
+Use `actions.register(streamdeck, { "application", "keep-awake" })` instead to expose only selected catalog actions. The bridge creates `~/.hammerspoon/streamdeck-token` on its first successful start. It contains two UUIDs and must remain mode `0600`. Never commit or log it. See the [action catalog](hammerspoon/examples/) or define custom actions with the [Lua API guide](docs/lua-api.md).
 
 LAN operation is an explicit opt-in. Configure one listener per remote client with a specific interface, unique port, and manually provisioned 32-byte key file (`0600`); the default `streamdeck.start()` above still creates only the legacy loopback listener:
 

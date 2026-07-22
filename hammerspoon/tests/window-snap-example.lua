@@ -12,7 +12,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         return move_result
       end,
     }
-    local streamdeck = load_fixture("hammerspoon/examples/window-snap.lua", {
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/window-snap.lua", {
       window = {
         focusedWindow = function()
           return focused
@@ -24,7 +24,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local action = streamdeck.registrations[1]
     assertSame(action, streamdeck.registrations[1])
     assertEqual(action.id, "com.brettinternet.hammerspoon.window-snap")
-    assertEqual(streamdeck.starts, 1, "example must start the bridge")
+    assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
 
     local first = context("first")
     local second = context("second")
@@ -101,7 +101,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
   end)
 
   test("window snap example reports unavailable focused-window API", function()
-    local streamdeck = load_fixture("hammerspoon/examples/window-snap.lua", {
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/window-snap.lua", {
       window = {},
     })
     local action = streamdeck.registrations[1]
@@ -113,7 +113,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       action.press(action_context)
     end, "focused window API unavailable")
     assertEqual(action_context.refreshes, 0, "unavailable focused-window API must not refresh")
-    local no_hs = load_fixture("hammerspoon/examples/window-snap.lua", nil)
+    local no_hs = load_fixture("hammerspoon/streamdeck/actions/window-snap.lua", nil)
     local no_hs_context = context("no-hs")
     assertEqual(no_hs.registrations[1].appearance(no_hs_context).title, "Window unavailable")
     assertError(function()

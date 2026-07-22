@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that toggles the focused window's zoom.
+-- Stream Deck action: a Stream Deck key that toggles the focused window's zoom.
 -- Pressing the key uses Hammerspoon's toggleZoom API and tracks the zoom state independently per key.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.window-maximize"
 local zoomed_by_instance = {}
@@ -31,7 +28,7 @@ local function window_name(window)
   return name
 end
 
-streamdeck.register({
+return {
   id = action_id,
   name = "Zoom focused window",
 
@@ -67,14 +64,11 @@ streamdeck.register({
     end
 
     zoomed_by_instance[context.instanceId] = not zoomed_by_instance[context.instanceId]
-    context:refresh()
   end,
 
   disappear = function(context)
     zoomed_by_instance[context.instanceId] = nil
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()
 

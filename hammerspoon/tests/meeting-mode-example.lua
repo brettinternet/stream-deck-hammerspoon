@@ -67,9 +67,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     }
 
-    local streamdeck = load_fixture("hammerspoon/examples/meeting-mode.lua", fake_hs)
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/meeting-mode.lua", fake_hs)
     assertEqual(#streamdeck.registrations, 1, "meeting mode must register one action")
-    assertEqual(streamdeck.starts, 1, "meeting mode must start the bridge once")
+    assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
     local action = streamdeck.registrations[1]
     local action_id = "com.brettinternet.hammerspoon.meeting-mode"
     assertEqual(action.id, action_id)
@@ -89,10 +89,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertTrue(display_idle, "meeting mode must prevent display idle sleep")
     assertEqual(set_calls[1], true)
     assertEqual(toggle_calls[1], "displayIdle")
-    assertEqual(#streamdeck.refreshes, 1, "successful mode changes refresh globally")
-    assertSame(streamdeck.refreshes[1], action_id)
-    assertEqual(first_context.refreshes, 0, "global refresh must not refresh only the pressed context")
-    assertEqual(second_context.refreshes, 0, "global refresh must reach all visible instances")
+    assertEqual(#streamdeck.refreshes, 1, "catalog must refresh the registered action")
+    assertEqual(first_context.refreshes, 1)
+    assertEqual(second_context.refreshes, 0)
 
     appearance = action.appearance(first_context)
     assertEqual(appearance.title, "Meeting")
@@ -107,7 +106,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(set_calls[2], false)
     assertEqual(toggle_calls[2], "displayIdle")
     assertEqual(#streamdeck.refreshes, 2)
-    assertSame(streamdeck.refreshes[2], action_id)
+    assertEqual(second_context.refreshes, 1)
     appearance = action.appearance(first_context)
     assertEqual(appearance.title, "Normal")
     assertEqual(appearance.state, "inactive")
@@ -122,6 +121,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertTrue(display_idle, "reconciliation must preserve an already desired idle state")
     assertEqual(#toggle_calls, toggles_before_reconcile, "reconciliation must not toggle an already desired state")
     assertEqual(#streamdeck.refreshes, 3)
+    assertEqual(first_context.refreshes, 2)
     appearance = action.appearance(second_context)
     assertEqual(appearance.title, "Meeting")
     assertEqual(appearance.state, "active")
@@ -134,7 +134,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertTrue(display_idle, "reconciliation must enable display idle prevention")
     assertEqual(#toggle_calls, toggles_before_reconcile + 1)
     assertEqual(#streamdeck.refreshes, 4)
-    assertEqual(streamdeck.refreshes[4], action_id)
+    assertEqual(second_context.refreshes, 2)
 
     failure = "muted-throws"
     assertError(function()
@@ -202,7 +202,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     end, "unexpected state result")
     assertEqual(#streamdeck.refreshes, 4)
 
-    local no_device = load_fixture("hammerspoon/examples/meeting-mode.lua", {
+    local no_device = load_fixture("hammerspoon/streamdeck/actions/meeting-mode.lua", {
       audiodevice = {
         defaultInputDevice = function()
           return nil
@@ -219,7 +219,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     end, "no default input device")
     assertEqual(#no_device.refreshes, 0, "no device must not refresh")
 
-    local unavailable_audio = load_fixture("hammerspoon/examples/meeting-mode.lua", {})
+    local unavailable_audio = load_fixture("hammerspoon/streamdeck/actions/meeting-mode.lua", {})
     local unavailable_context = context("unavailable")
     assertError(function()
       unavailable_audio.registrations[1].appearance(unavailable_context)
@@ -229,7 +229,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     end, "audio input API unavailable")
     assertEqual(#unavailable_audio.refreshes, 0)
 
-    local unavailable_display = load_fixture("hammerspoon/examples/meeting-mode.lua", {
+    local unavailable_display = load_fixture("hammerspoon/streamdeck/actions/meeting-mode.lua", {
       audiodevice = {
         defaultInputDevice = function()
           return microphone

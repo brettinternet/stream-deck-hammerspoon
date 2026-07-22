@@ -105,7 +105,7 @@ B1 and B6 follow B7 by priority order, not technical dependency; they are indepe
 - `docs/architecture.md:86,117` — shipped dial/touch events and encoder LCD rendering profiles.
 - `plugin/com.brettinternet.hammerspoon.sdPlugin/manifest.json:3-71` — current two shipped actions, including `Controllers` and `Encoder` layout blocks at 7-19 and 37-48.
 - `plugin/src/actions/hammerspoon-action.ts:550-607` — shipped dial and touch event handlers.
-- `hammerspoon/examples/pomodoro.lua` — multi-phase example a multi-state action would serve directly.
+- `hammerspoon/streamdeck/actions/pomodoro.lua` — multi-phase action a multi-state control would serve directly.
 - `README.md:12-14` — current Button and Toggle user-facing behavior.
 
 #### Implementation tasks

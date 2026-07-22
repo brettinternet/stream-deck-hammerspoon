@@ -57,7 +57,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     }
 
-    local streamdeck = load_fixture("hammerspoon/examples/youtube.lua", fake_hs)
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/youtube.lua", fake_hs)
     assertEqual(#streamdeck.registrations, 1, "YouTube must register one action")
     local action = streamdeck.registrations[1]
     assertEqual(action.id, "com.brettinternet.hammerspoon.youtube")
@@ -66,7 +66,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(#action.settingsSchema, 1)
     assertEqual(action.settingsSchema[1].key, "url")
     assertEqual(action.settingsSchema[1].maxLength, 1024)
-    assertEqual(streamdeck.starts, 1, "YouTube must start the bridge")
+    assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
 
     local playback_context = context("youtube", {
       url = "https://www.youtube.com/watch?v=example",
@@ -131,7 +131,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     }
 
-    local streamdeck = load_fixture("hammerspoon/examples/youtube.lua", fake_hs)
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/youtube.lua", fake_hs)
     local action = streamdeck.registrations[1]
     assertError(function()
       action.press(context("malformed"))

@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that switches keyboard layouts.
+-- Stream Deck action: a Stream Deck key that switches keyboard layouts.
 -- It toggles between U.S. and Dvorak by default; set both layout names in the action settings.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local DEFAULT_FIRST_LAYOUT = "U.S."
 local DEFAULT_SECOND_LAYOUT = "Dvorak"
@@ -51,7 +48,7 @@ local function current_layout()
   return layout
 end
 
-streamdeck.register({
+return {
   id = "com.brettinternet.hammerspoon.keyboard-layout",
   name = "Keyboard layout",
   settingsSchemaVersion = 1,
@@ -86,9 +83,6 @@ streamdeck.register({
       error("failed to switch keyboard layout")
     end
 
-    context:refresh()
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

@@ -25,7 +25,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       end,
     }
 
-    local streamdeck = load_fixture("hammerspoon/examples/window-next-screen.lua", {
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/window-next-screen.lua", {
       window = {
         focusedWindow = function()
           return focused
@@ -33,7 +33,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     })
     assertEqual(#streamdeck.registrations, 1, "example must register one action")
-    assertEqual(streamdeck.starts, 1, "example must start the bridge exactly once")
+    assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
     local action = streamdeck.registrations[1]
     assertEqual(action.id, "com.brettinternet.hammerspoon.window-next-screen")
     assertEqual(action.name, "Move window to next screen")
@@ -76,7 +76,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
   end)
 
   test("window next-screen example reports unavailable and failed Hammerspoon APIs", function()
-    local unavailable = load_fixture("hammerspoon/examples/window-next-screen.lua", {})
+    local unavailable = load_fixture("hammerspoon/streamdeck/actions/window-next-screen.lua", {})
     local action = unavailable.registrations[1]
     local action_context = context("unavailable")
     assertError(function()
@@ -91,7 +91,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         error("screen exploded")
       end,
     }
-    local streamdeck = load_fixture("hammerspoon/examples/window-next-screen.lua", {
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/window-next-screen.lua", {
       window = {
         focusedWindow = function()
           return focused

@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that toggles the default microphone mute state.
+-- Stream Deck action: a Stream Deck key that toggles the default microphone mute state.
 -- The key shows Muted or Live and reports No mic when Hammerspoon has no default input device.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local function default_microphone()
   return hs.audiodevice.defaultInputDevice()
@@ -16,7 +13,7 @@ local function microphone_muted(microphone)
 end
 
 
-streamdeck.register({
+return {
   id = "com.brettinternet.hammerspoon.microphone-toggle",
   name = "Microphone mute",
 
@@ -52,9 +49,6 @@ streamdeck.register({
     if microphone:setInputMuted(not muted) ~= true then
       error("failed to set microphone mute state")
     end
-    context:refresh()
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

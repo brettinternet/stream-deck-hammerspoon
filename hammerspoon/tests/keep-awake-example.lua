@@ -1,5 +1,5 @@
 return function(test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
-  test("keep awake example toggles display idle prevention globally and reports failures", function()
+  test("keep awake action toggles display idle prevention and reports failures", function()
     local display_idle = false
     local failure = nil
     local toggle_calls = {}
@@ -30,9 +30,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     }
 
-    local streamdeck = load_fixture("hammerspoon/examples/keep-awake.lua", fake_hs)
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/keep-awake.lua", fake_hs)
     assertEqual(#streamdeck.registrations, 1, "keep awake must register one action")
-    assertEqual(streamdeck.starts, 1, "keep awake must start the bridge")
+    assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
     local action = streamdeck.registrations[1]
     local action_id = "com.brettinternet.hammerspoon.keep-awake"
     assertEqual(action.id, action_id)
@@ -47,10 +47,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     action.press(first_context)
     assertEqual(toggle_calls[1], "displayIdle")
     assertTrue(display_idle, "first toggle must prevent display idle sleep")
-    assertEqual(#streamdeck.refreshes, 1, "successful toggle must refresh globally")
-    assertSame(streamdeck.refreshes[1], action_id)
-    assertEqual(first_context.refreshes, 0, "global refresh must not refresh only the pressed context")
-    assertEqual(second_context.refreshes, 0, "global refresh must not refresh only the pressed context")
+    assertEqual(#streamdeck.refreshes, 1, "catalog must refresh the registered action")
+    assertEqual(first_context.refreshes, 1, "successful toggle must refresh its context")
+    assertEqual(second_context.refreshes, 0)
 
     appearance = action.appearance(first_context)
     assertEqual(appearance.title, "Awake")
@@ -61,10 +60,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     action.press(second_context)
     assertEqual(toggle_calls[2], "displayIdle")
     assertFalse(display_idle, "second toggle must allow display idle sleep")
-    assertEqual(#streamdeck.refreshes, 2, "both successful toggles must refresh globally")
-    assertSame(streamdeck.refreshes[2], action_id)
-    assertEqual(first_context.refreshes, 0)
-    assertEqual(second_context.refreshes, 0)
+    assertEqual(#streamdeck.refreshes, 2)
+    assertEqual(first_context.refreshes, 1)
+    assertEqual(second_context.refreshes, 1)
     appearance = action.appearance(first_context)
     assertEqual(appearance.title, "Allow sleep")
     assertEqual(appearance.state, "inactive")
@@ -73,27 +71,27 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertError(function()
       action.appearance(first_context)
     end, "failed to read display idle state")
-    assertEqual(#streamdeck.refreshes, 2, "failed state reads must not refresh")
+    assertEqual(first_context.refreshes, 1, "failed state reads must not refresh")
 
     failure = "get-nonboolean"
     assertError(function()
       action.appearance(first_context)
     end, "expected boolean result")
-    assertEqual(#streamdeck.refreshes, 2, "invalid state reads must not refresh")
+    assertEqual(first_context.refreshes, 1, "invalid state reads must not refresh")
 
     failure = "toggle"
     assertError(function()
       action.press(first_context)
     end, "failed to toggle display idle prevention")
-    assertEqual(#streamdeck.refreshes, 2, "thrown toggle calls must not refresh")
+    assertEqual(first_context.refreshes, 1, "thrown toggle calls must not refresh")
 
     failure = "toggle-nonboolean"
     assertError(function()
       action.press(second_context)
     end, "expected boolean result")
-    assertEqual(#streamdeck.refreshes, 2, "invalid toggle results must not refresh")
+    assertEqual(second_context.refreshes, 1, "invalid toggle results must not refresh")
 
-    local unavailable = load_fixture("hammerspoon/examples/keep-awake.lua", {})
+    local unavailable = load_fixture("hammerspoon/streamdeck/actions/keep-awake.lua", {})
     local unavailable_context = context("unavailable")
     assertError(function()
       unavailable.registrations[1].appearance(unavailable_context)

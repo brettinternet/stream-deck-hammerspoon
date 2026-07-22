@@ -21,9 +21,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     }
 
-    local streamdeck = load_fixture("hammerspoon/examples/lock-screen.lua", fake_hs)
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/lock-screen.lua", fake_hs)
     assertEqual(#streamdeck.registrations, 1, "lock screen must register one action")
-    assertEqual(streamdeck.starts, 1, "lock screen must start the bridge once")
+    assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
     local action = streamdeck.registrations[1]
     local action_id = "com.brettinternet.hammerspoon.lock-screen"
     assertEqual(action.id, action_id)
@@ -37,36 +37,36 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
 
     action.press(key_context)
     assertEqual(calls, 1, "press must invoke lockScreen")
-    assertEqual(#streamdeck.refreshes, 0, "one-shot lock must not refresh")
-    assertEqual(key_context.refreshes, 0, "one-shot lock must not refresh the pressed context")
+    assertEqual(#streamdeck.refreshes, 1, "catalog must refresh after a successful action")
+    assertEqual(key_context.refreshes, 1)
 
     return_value = true
     action.press(key_context)
     assertEqual(calls, 2, "true is an accepted successful return")
-    assertEqual(#streamdeck.refreshes, 0)
+    assertEqual(#streamdeck.refreshes, 2)
 
     failure = "throws"
     assertError(function()
       action.press(key_context)
     end, "failed to lock screen")
     assertEqual(calls, 3)
-    assertEqual(#streamdeck.refreshes, 0, "thrown lock calls must not refresh")
+    assertEqual(#streamdeck.refreshes, 2, "thrown lock calls must not refresh")
 
     failure = "false"
     assertError(function()
       action.press(key_context)
     end, "failed to lock screen")
     assertEqual(calls, 4)
-    assertEqual(#streamdeck.refreshes, 0, "false lock results must not refresh")
+    assertEqual(#streamdeck.refreshes, 2, "false lock results must not refresh")
 
     failure = "invalid"
     assertError(function()
       action.press(key_context)
     end, "expected true or nil result")
     assertEqual(calls, 5)
-    assertEqual(#streamdeck.refreshes, 0, "invalid lock results must not refresh")
+    assertEqual(#streamdeck.refreshes, 2, "invalid lock results must not refresh")
 
-    local unavailable = load_fixture("hammerspoon/examples/lock-screen.lua", {})
+    local unavailable = load_fixture("hammerspoon/streamdeck/actions/lock-screen.lua", {})
     local unavailable_context = context("unavailable")
     assertError(function()
       unavailable.registrations[1].appearance(unavailable_context)

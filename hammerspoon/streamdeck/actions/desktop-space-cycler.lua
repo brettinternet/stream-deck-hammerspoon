@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that cycles through up to four user desktops.
+-- Stream Deck action: a Stream Deck key that cycles through up to four user desktops.
 -- Use Hammerspoon Multi-State to show the current desktop; full-screen and tiled spaces are skipped.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.desktop-space-cycler"
 local maximum_desktops = 4
@@ -92,7 +89,7 @@ local function refresh_after_transition(context)
   context:refresh()
 end
 
-streamdeck.register({
+return {
   id = action_id,
   name = "Desktop space cycler",
 
@@ -117,7 +114,5 @@ streamdeck.register({
     end
     refresh_after_transition(context)
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

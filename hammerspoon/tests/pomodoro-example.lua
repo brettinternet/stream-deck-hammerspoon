@@ -28,7 +28,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         error(err, 0)
       end
     end
-    local streamdeck = load_fixture("hammerspoon/examples/pomodoro.lua", fake_hs)
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/pomodoro.lua", fake_hs)
     local action = streamdeck.registrations[1]
     local pomodoro = context("pomodoro")
 
@@ -101,7 +101,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
   end)
 
   test("pomodoro example reports unavailable timer without refreshing", function()
-    local streamdeck = load_fixture("hammerspoon/examples/pomodoro.lua", {})
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/pomodoro.lua", {})
     local action = streamdeck.registrations[1]
     local pomodoro = context("unavailable")
 

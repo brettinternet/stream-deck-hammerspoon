@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that toggles an application's hidden state and uses its system icon.
+-- Stream Deck action: a Stream Deck key that toggles an application's hidden state and uses its system icon.
 -- Set an application bundle ID in the action settings, or omit it to track the frontmost application. Active means hidden; hold to close. Enable focusing when showing if the app should also come to the front; hiding it restores the previous frontmost application.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.application-toggle"
 local target_by_instance = {}
@@ -15,6 +12,36 @@ local relevant_events = {
   [hs.application.watcher.launched] = true,
   [hs.application.watcher.terminated] = true,
 }
+local visible_contexts = {}
+local application_watcher
+
+local function refresh_visible_contexts()
+  for _, context in pairs(visible_contexts) do
+    context:refresh()
+  end
+end
+
+local function start_application_watcher()
+  if application_watcher then
+    return
+  end
+
+  local watcher = hs.application.watcher.new(function(_name, event, _application)
+    if relevant_events[event] then
+      refresh_visible_contexts()
+    end
+  end)
+  watcher:start()
+  application_watcher = watcher
+end
+
+local function stop_application_watcher_if_unused()
+  if application_watcher and next(visible_contexts) == nil then
+    application_watcher:stop()
+    application_watcher = nil
+  end
+end
+
 
 local function settings_for(context)
   local settings = nil
@@ -272,7 +299,7 @@ local function close_application(application)
   end
 end
 
-streamdeck.register({
+return {
   id = action_id,
   name = "Hide/show application",
   settingsSchemaVersion = 1,
@@ -280,6 +307,17 @@ streamdeck.register({
     { type = "text", key = "bundleID", label = "Application bundle ID", maxLength = 128 },
     { type = "boolean", key = "focusOnShow", label = "Focus app when showing", default = false },
   },
+
+  appear = function(context)
+    visible_contexts[context.instanceId] = context
+    start_application_watcher()
+  end,
+  disappear = function(context)
+    visible_contexts[context.instanceId] = nil
+    target_by_instance[context.instanceId] = nil
+    fallback_by_instance[context.instanceId] = nil
+    stop_application_watcher_if_unused()
+  end,
 
   appearance = function(context)
     local application, bundle_id = application_for(context)
@@ -331,7 +369,6 @@ streamdeck.register({
         restore_fallback_application(context, application)
       end
     end
-    context:refresh()
   end,
   longPress = function(context)
     local application, bundle_id = application_for(context)
@@ -348,16 +385,7 @@ streamdeck.register({
     if bundle_id == nil then
       target_by_instance[key] = nil
     end
-    context:refresh()
   end,
-})
+}
 
-local application_watcher = hs.application.watcher.new(function(_name, event, _application)
-  if relevant_events[event] then
-    streamdeck.refresh(action_id)
-  end
-end)
-application_watcher:start()
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

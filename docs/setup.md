@@ -46,14 +46,17 @@ The installer is failure-recoverable rather than filesystem-atomic: do not reloa
 
 ## Configure Hammerspoon
 
-Add the bridge and your action registrations to `~/.hammerspoon/init.lua`:
+Register the installed action catalog in `~/.hammerspoon/init.lua`:
 
 ```lua
 local streamdeck = require("streamdeck")
+local actions = require("streamdeck.actions")
 
--- streamdeck.register({ ... })
+actions.registerAll(streamdeck)
 streamdeck.start()
 ```
+
+The action files are included in the same managed `~/.hammerspoon/streamdeck` directory; no second archive or symlink is needed. Use `actions.register(streamdeck, { "application", "keep-awake" })` to expose only selected actions.
 
 Reload Hammerspoon after saving the configuration. The bridge creates `~/.hammerspoon/streamdeck-token` on its first successful start and keeps it owner-readable/writable (`0600`). Do not create, copy, or log this file manually.
 

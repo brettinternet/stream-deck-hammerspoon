@@ -192,8 +192,9 @@ async function main() {
 Setup complete.
 
 Manual Hammerspoon step:
-  Add require("streamdeck"), your streamdeck.register(...) calls, and
-  streamdeck.start() to $HOME/.hammerspoon/init.lua, then reload Hammerspoon.
+  Add require("streamdeck"), require("streamdeck.actions"), one catalog
+  registration call, and streamdeck.start() to $HOME/.hammerspoon/init.lua,
+  then reload Hammerspoon.
 
 Manual Stream Deck step:
   Add the Hammerspoon Action and select a registered action ID in its inspector.

@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a configurable Stream Deck key that launches or focuses an app.
+-- Stream Deck action: a configurable Stream Deck key that launches or focuses an app.
 -- Set the app name and key label in the action settings; the key is active while that app is frontmost.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.app-launcher"
 local default_app = "Hammerspoon"
@@ -70,7 +67,7 @@ local function frontmost_application()
 end
 
 
-streamdeck.register({
+return {
   id = action_id,
   name = "Launch or focus app",
   settingsSchemaVersion = 1,
@@ -100,9 +97,6 @@ streamdeck.register({
       error("failed to launch or focus app")
     end
 
-    context:refresh()
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

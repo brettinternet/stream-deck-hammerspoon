@@ -18,9 +18,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     }
 
-    local streamdeck = load_fixture("hammerspoon/examples/keyboard-layout.lua", fake_hs)
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/keyboard-layout.lua", fake_hs)
     assertEqual(#streamdeck.registrations, 1, "keyboard layout must register one action")
-    assertEqual(streamdeck.starts, 1, "keyboard layout must start the bridge")
+    assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
     local action = streamdeck.registrations[1]
     assertEqual(action.id, "com.brettinternet.hammerspoon.keyboard-layout")
     assertEqual(action.settingsSchemaVersion, 1)
@@ -61,7 +61,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(set_calls[3], "Dvorak", "malformed settings must use defaults")
     assertEqual(malformed_context.refreshes, 1)
 
-    local unavailable = load_fixture("hammerspoon/examples/keyboard-layout.lua", {})
+    local unavailable = load_fixture("hammerspoon/streamdeck/actions/keyboard-layout.lua", {})
     local unavailable_context = context("unavailable")
     assertError(function()
       unavailable.registrations[1].appearance(unavailable_context)

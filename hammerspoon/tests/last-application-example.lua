@@ -44,7 +44,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         }
       end,
     }
-    local streamdeck = load_fixture("hammerspoon/examples/last-application.lua", {
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/last-application.lua", {
       application = {
         frontmostApplication = function()
           return frontmost
@@ -53,34 +53,36 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     })
 
-    assertTrue(watcher_started, "application watcher must start")
-    assertEqual(#streamdeck.registrations, 1, "example must register one action")
-    assertEqual(streamdeck.starts, 1, "example must start the bridge exactly once")
+    assertFalse(watcher_started, "application watcher must wait for a visible instance")
+    assertEqual(#streamdeck.registrations, 1, "action module must return one action")
+    assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
     local action = streamdeck.registrations[1]
     assertEqual(action.id, "com.brettinternet.hammerspoon.last-application")
     assertEqual(action.name, "Switch to last application")
 
     local action_context = context("last-app")
+    action.appear(action_context)
+    assertTrue(watcher_started, "application watcher must start for a visible instance")
     local appearance = action.appearance(action_context)
     assertEqual(appearance.title, "No previous")
     assertEqual(appearance.state, "inactive")
 
     frontmost = second
     watcher_callback("Second", watcher_api.activated, second)
-    assertEqual(#streamdeck.refreshes, 1)
-    assertEqual(streamdeck.refreshes[1], action.id)
+    assertEqual(action_context.refreshes, 1)
+    assertEqual(#streamdeck.refreshes, 0, "watcher must not depend on the bridge")
     appearance = action.appearance(action_context)
     assertEqual(appearance.title, "First")
     assertEqual(appearance.state, "active")
 
     watcher_callback("Second", watcher_api.activated, second)
-    assertEqual(#streamdeck.refreshes, 1, "duplicate activation must not refresh")
+    assertEqual(action_context.refreshes, 1, "duplicate activation must not refresh")
 
     action.press(action_context)
     assertEqual(first.activate_calls, 1)
     assertTrue(first.activate_all_windows, "activation must bring forward all application windows")
     assertSame(frontmost, first)
-    assertEqual(action_context.refreshes, 1)
+    assertEqual(action_context.refreshes, 2)
     appearance = action.appearance(action_context)
     assertEqual(appearance.title, "Second", "a second press must toggle back")
 
@@ -89,7 +91,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       action.press(action_context)
     end, "failed to activate previous application")
     assertEqual(second.activate_calls, 1)
-    assertEqual(action_context.refreshes, 1, "failed activation must not refresh")
+    assertEqual(action_context.refreshes, 2, "failed activation must not refresh")
   end)
 
   test("last-application example clears terminated targets and requires watcher support", function()
@@ -126,7 +128,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         }
       end,
     }
-    local streamdeck = load_fixture("hammerspoon/examples/last-application.lua", {
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/last-application.lua", {
       application = {
         frontmostApplication = function()
           return frontmost
@@ -136,28 +138,30 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     })
     local action = streamdeck.registrations[1]
     local action_context = context("terminated")
+    action.appear(action_context)
 
     frontmost = second
     watcher_callback("Second", watcher_api.activated, second)
     first.running = false
     watcher_callback(nil, watcher_api.terminated, first)
-    assertEqual(#streamdeck.refreshes, 2, "termination must refresh stale availability")
+    assertEqual(action_context.refreshes, 2, "termination must refresh stale availability")
     local appearance = action.appearance(action_context)
     assertEqual(appearance.title, "No previous")
     assertEqual(appearance.state, "inactive")
     assertError(function()
       action.press(action_context)
     end, "no previous application")
-    assertEqual(action_context.refreshes, 0)
+    assertEqual(action_context.refreshes, 2)
 
+    local unavailable = load_fixture("hammerspoon/streamdeck/actions/last-application.lua", {
+      application = {
+        frontmostApplication = function()
+          return first
+        end,
+      },
+    })
     assertError(function()
-      load_fixture("hammerspoon/examples/last-application.lua", {
-        application = {
-          frontmostApplication = function()
-            return first
-          end,
-        },
-      })
+      unavailable.registrations[1].appear(context("unavailable"))
     end, "application watcher API unavailable")
   end)
 end

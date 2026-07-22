@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that toggles meeting mode.
+-- Stream Deck action: a Stream Deck key that toggles meeting mode.
 -- Meeting mode mutes the default microphone and prevents display sleep; the key is active only when both are set.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.meeting-mode"
 local idle_type = "displayIdle"
@@ -102,7 +99,7 @@ local function set_display_idle_state(current, desired)
   end
 end
 
-streamdeck.register({
+return {
   id = action_id,
   name = "Meeting mode",
 
@@ -128,7 +125,7 @@ streamdeck.register({
     }
   end,
 
-  press = function(_context)
+  press = function(context)
     local microphone = default_microphone()
     if not microphone then
       error("no default input device")
@@ -140,9 +137,6 @@ streamdeck.register({
 
     set_microphone_state(microphone, desired)
     set_display_idle_state(display_idle, desired)
-    streamdeck.refresh(action_id)
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

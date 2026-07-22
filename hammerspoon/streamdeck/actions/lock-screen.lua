@@ -1,8 +1,6 @@
--- Hammerspoon configuration example: a Stream Deck key that locks the screen.
+-- Stream Deck action: a Stream Deck key that locks the screen.
 -- Pressing the key calls Hammerspoon's screen-lock API; it has no persistent active state.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
-local streamdeck = require("streamdeck")
 local sound = require("streamdeck.sound")
 
 local action_id = "com.brettinternet.hammerspoon.lock-screen"
@@ -16,7 +14,7 @@ local function caffeinate_api()
   return hs.caffeinate
 end
 
-streamdeck.register({
+return {
   id = action_id,
   name = "Lock screen",
   sound = sound.press(),
@@ -42,7 +40,5 @@ streamdeck.register({
       error("failed to lock screen: expected true or nil result")
     end
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

@@ -1,13 +1,18 @@
--- Hammerspoon configuration example: a Stream Deck key that switches to the last active application.
+-- Stream Deck action: a Stream Deck key that switches to the last active application.
 -- Repeated presses toggle between the two most recently active applications, like a dedicated Command-Tab key.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.last-application"
 local current_application = nil
 local previous_application = nil
 local application_watcher = nil
+local visible_contexts = {}
+
+local function refresh_visible_contexts()
+  for _, context in pairs(visible_contexts) do
+    context:refresh()
+  end
+end
+
 
 local function require_application_api(method_name)
   if type(hs) ~= "table"
@@ -91,10 +96,10 @@ local function start_application_watcher()
   local ok, watcher = pcall(watcher_api.new, function(_name, event, application)
     if event == watcher_api.activated then
       if remember_activation(application) then
-        streamdeck.refresh(action_id)
+        refresh_visible_contexts()
       end
     elseif event == watcher_api.terminated then
-      streamdeck.refresh(action_id)
+      refresh_visible_contexts()
     end
   end)
   if not ok then
@@ -114,9 +119,30 @@ local function start_application_watcher()
   application_watcher = watcher
 end
 
-streamdeck.register({
+local function stop_application_watcher_if_unused()
+  if application_watcher and next(visible_contexts) == nil then
+    application_watcher:stop()
+    application_watcher = nil
+    current_application = nil
+    previous_application = nil
+  end
+end
+
+
+return {
   id = action_id,
   name = "Switch to last application",
+
+  appear = function(context)
+    visible_contexts[context.instanceId] = context
+    if not application_watcher then
+      start_application_watcher()
+    end
+  end,
+  disappear = function(context)
+    visible_contexts[context.instanceId] = nil
+    stop_application_watcher_if_unused()
+  end,
 
   appearance = function(_context)
     if not application_watcher then
@@ -162,10 +188,6 @@ streamdeck.register({
       error("failed to activate previous application")
     end
 
-    context:refresh()
   end,
-})
-start_application_watcher()
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

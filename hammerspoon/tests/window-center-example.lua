@@ -22,7 +22,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         return set_result
       end,
     }
-    local streamdeck = load_fixture("hammerspoon/examples/window-center.lua", {
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/window-center.lua", {
       window = {
         focusedWindow = function()
           return focused
@@ -35,7 +35,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertSame(action, streamdeck.registrations[1])
     assertEqual(action.id, "com.brettinternet.hammerspoon.window-center")
     assertEqual(action.name, "Center window")
-    assertEqual(streamdeck.starts, 1, "example must start the bridge exactly once")
+    assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
 
     local action_context = context("center")
     local appearance = action.appearance(action_context)
@@ -75,7 +75,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
 
   test("window center example reports missing window APIs and frame data", function()
     local focused
-    local streamdeck = load_fixture("hammerspoon/examples/window-center.lua", {
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/window-center.lua", {
       window = {
         focusedWindow = function()
           return focused
@@ -163,7 +163,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
   test("window center example protects failed Hammerspoon calls and unavailable focused-window APIs", function()
     local focused = {}
     local failure = "screen exploded"
-    local streamdeck = load_fixture("hammerspoon/examples/window-center.lua", {
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/window-center.lua", {
       window = {
         focusedWindow = function()
           error("focused window exploded")
@@ -181,7 +181,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     end, "failed to get focused window")
     assertEqual(action_context.refreshes, 0)
 
-    streamdeck = load_fixture("hammerspoon/examples/window-center.lua", {
+    streamdeck = load_fixture("hammerspoon/streamdeck/actions/window-center.lua", {
       window = {
         focusedWindow = function()
           return focused
@@ -236,7 +236,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     end, "failed to set focused window frame")
     assertEqual(action_context.refreshes, 0)
 
-    local unavailable = load_fixture("hammerspoon/examples/window-center.lua", {})
+    local unavailable = load_fixture("hammerspoon/streamdeck/actions/window-center.lua", {})
     local unavailable_action = unavailable.registrations[1]
     local unavailable_context = context("unavailable-focused-window")
     assertError(function()
@@ -247,7 +247,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     end, "focused window API unavailable")
     assertEqual(unavailable_context.refreshes, 0, "unavailable API must not refresh")
 
-    local no_hs = load_fixture("hammerspoon/examples/window-center.lua", nil)
+    local no_hs = load_fixture("hammerspoon/streamdeck/actions/window-center.lua", nil)
     local no_hs_action = no_hs.registrations[1]
     local no_hs_context = context("no-hs")
     assertError(function()

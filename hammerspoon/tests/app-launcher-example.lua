@@ -30,9 +30,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       }
     end
 
-    local streamdeck = load_fixture("hammerspoon/examples/app-launcher.lua", fake_hs)
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/app-launcher.lua", fake_hs)
     assertEqual(#streamdeck.registrations, 1, "app launcher must register one action")
-    assertEqual(streamdeck.starts, 1, "app launcher must start the bridge")
+    assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
     local action = streamdeck.registrations[1]
     assertEqual(action.id, "com.brettinternet.hammerspoon.app-launcher")
     assertEqual(action.name, "Launch or focus app")
@@ -115,7 +115,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(custom_context.refreshes, 1, "thrown launch API must not refresh")
 
     launch_error = false
-    local unavailable = load_fixture("hammerspoon/examples/app-launcher.lua", {
+    local unavailable = load_fixture("hammerspoon/streamdeck/actions/app-launcher.lua", {
       application = {},
     })
     local unavailable_context = context("unavailable", {
@@ -131,7 +131,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     end, "app launcher unavailable")
     assertEqual(unavailable_context.refreshes, 0)
 
-    local throwing_frontmost = load_fixture("hammerspoon/examples/app-launcher.lua", {
+    local throwing_frontmost = load_fixture("hammerspoon/streamdeck/actions/app-launcher.lua", {
       application = {
         frontmostApplication = function()
           error("frontmost unavailable")
@@ -145,7 +145,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       throwing_frontmost.registrations[1].appearance(context("throwing-frontmost"))
     end, "failed to inspect frontmost application")
 
-    local invalid_frontmost = load_fixture("hammerspoon/examples/app-launcher.lua", {
+    local invalid_frontmost = load_fixture("hammerspoon/streamdeck/actions/app-launcher.lua", {
       application = {
         frontmostApplication = function()
           return "Safari"
@@ -159,7 +159,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       invalid_frontmost.registrations[1].appearance(context("invalid-frontmost"))
     end, "invalid frontmost application")
 
-    local invalid_name = load_fixture("hammerspoon/examples/app-launcher.lua", {
+    local invalid_name = load_fixture("hammerspoon/streamdeck/actions/app-launcher.lua", {
       application = {
         frontmostApplication = function()
           return { name = function() return 42 end }

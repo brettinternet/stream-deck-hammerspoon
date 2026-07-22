@@ -1,8 +1,6 @@
--- Hammerspoon configuration example: a Stream Deck key that toggles display sleep prevention.
+-- Stream Deck action: a Stream Deck key that toggles display sleep prevention.
 -- Add it as a Hammerspoon Toggle to choose separate Awake and Allow sleep icons in Stream Deck.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
 
-local streamdeck = require("streamdeck")
 local sound = require("streamdeck.sound")
 
 local action_id = "com.brettinternet.hammerspoon.keep-awake"
@@ -30,7 +28,7 @@ local function display_idle_state()
   return enabled
 end
 
-streamdeck.register({
+return {
   id = action_id,
   name = "Keep awake",
   sound = sound.toggle(),
@@ -50,7 +48,7 @@ streamdeck.register({
     }
   end,
 
-  press = function(_context)
+  press = function(context)
     local caffeinate = caffeinate_api()
     local ok, enabled = pcall(caffeinate.toggle, idle_type)
     if not ok then
@@ -60,11 +58,8 @@ streamdeck.register({
       error("failed to toggle display idle prevention: expected boolean result")
     end
 
-    streamdeck.refresh(action_id)
     -- Report the boolean produced by hs.caffeinate.toggle; sound never infers it from appearance.
     return enabled and sound.ON or sound.OFF
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

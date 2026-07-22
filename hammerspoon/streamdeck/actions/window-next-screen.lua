@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key that moves the focused window to the next display.
+-- Stream Deck action: a Stream Deck key that moves the focused window to the next display.
 -- The window keeps its relative position and size, and the destination frame is kept inside the display.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local action_id = "com.brettinternet.hammerspoon.window-next-screen"
 
@@ -46,7 +43,7 @@ local function next_screen_for(window)
   return next_screen
 end
 
-streamdeck.register({
+return {
   id = action_id,
   name = "Move window to next screen",
 
@@ -94,9 +91,6 @@ streamdeck.register({
       error("failed to move focused window")
     end
 
-    context:refresh()
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

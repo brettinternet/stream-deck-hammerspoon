@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a configurable Stream Deck key that opens a URL.
+-- Stream Deck action: a configurable Stream Deck key that opens a URL.
 -- Set the label and URL in the action settings; pressing the key opens it with Hammerspoon's URL event API.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local DEFAULT_LABEL = "Open URL"
 local DEFAULT_URL = "https://www.hammerspoon.org/"
@@ -38,7 +35,7 @@ local function valid_url(url)
     and url:match("^[%a][%w+.-]*://%S+$") ~= nil
 end
 
-streamdeck.register({
+return {
   id = "com.brettinternet.hammerspoon.url-launcher",
   name = "URL launcher",
   settingsSchemaVersion = 1,
@@ -75,9 +72,6 @@ streamdeck.register({
       error("failed to open URL")
     end
 
-    context:refresh()
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()

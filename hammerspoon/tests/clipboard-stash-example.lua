@@ -7,7 +7,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local get_calls = 0
     local set_calls = 0
 
-    local streamdeck = load_fixture("hammerspoon/examples/clipboard-stash.lua", {
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/clipboard-stash.lua", {
       pasteboard = {
         getContents = function()
           get_calls = get_calls + 1
@@ -30,7 +30,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     })
 
     assertEqual(#streamdeck.registrations, 1, "clipboard stash must register one action")
-    assertEqual(streamdeck.starts, 1, "clipboard stash must start the bridge once")
+    assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
     local action = streamdeck.registrations[1]
     local action_id = "com.brettinternet.hammerspoon.clipboard-stash"
     assertEqual(action.id, action_id)
@@ -149,8 +149,8 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(first.refreshes, refreshes_before_failed_write + 1)
     assertEqual(action.appearance(first).title, "Empty")
 
-    local unavailable = load_fixture("hammerspoon/examples/clipboard-stash.lua", {})
-    assertEqual(unavailable.starts, 1)
+    local unavailable = load_fixture("hammerspoon/streamdeck/actions/clipboard-stash.lua", {})
+    assertEqual(unavailable.starts, 0)
     local unavailable_action = unavailable.registrations[1]
     local unavailable_context = context("unavailable")
     unavailable_action.appear(unavailable_context)
@@ -161,7 +161,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(unavailable_context.refreshes, 0, "unavailable clipboard must not refresh")
     assertEqual(#unavailable.refreshes, 0, "unavailable clipboard must not globally refresh")
 
-    local invalid_set = load_fixture("hammerspoon/examples/clipboard-stash.lua", {
+    local invalid_set = load_fixture("hammerspoon/streamdeck/actions/clipboard-stash.lua", {
       pasteboard = {
         getContents = function()
           return "invalid set stash"

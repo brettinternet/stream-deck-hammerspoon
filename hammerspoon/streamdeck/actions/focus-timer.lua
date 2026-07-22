@@ -1,8 +1,5 @@
--- Hammerspoon configuration example: a Stream Deck key for a per-key 25-minute focus timer.
+-- Stream Deck action: a Stream Deck key for a per-key 25-minute focus timer.
 -- Press once to start the timer, press again to cancel it, or let it finish to return the key to Ready.
--- Copy this file into ~/.hammerspoon or adapt it in your existing init.lua.
-
-local streamdeck = require("streamdeck")
 
 local focus_duration = 25 * 60
 local state_by_instance = {}
@@ -14,7 +11,7 @@ local function stop_timer(state)
   end
 end
 
-streamdeck.register({
+return {
   id = "com.brettinternet.hammerspoon.focus-timer",
   name = "Focus timer",
 
@@ -54,7 +51,6 @@ streamdeck.register({
     if state.running then
       stop_timer(state)
       state.running = false
-      context:refresh()
       return
     end
 
@@ -80,7 +76,6 @@ streamdeck.register({
 
     state.timer = timer_or_error
     state.running = true
-    context:refresh()
   end,
 
   disappear = function(context)
@@ -90,7 +85,5 @@ streamdeck.register({
       state_by_instance[context.instanceId] = nil
     end
   end,
-})
+}
 
--- The bridge owns the local authenticated connection; do not use hs.streamdeck.
-streamdeck.start()
