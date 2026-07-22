@@ -800,10 +800,14 @@ end)
 test("protocol preflight bounds JSON structure before decoding", function()
   assertTrue(Protocol.preflight(string.rep("[", 16) .. "0" .. string.rep("]", 16)))
   assertTrue(Protocol.preflight('{"value":"\\"[{\\u0041]"}'))
+  assertTrue(Protocol.preflight("[1,2]"))
   assertFalse(Protocol.preflight(string.rep("[", 17) .. "0" .. string.rep("]", 17)))
   assertFalse(Protocol.preflight("[" .. string.rep("0,", 128) .. "0]"))
   assertFalse(Protocol.preflight('{"value":"\\u12x4"}'))
   assertFalse(Protocol.preflight('{"protocolVersion":1} {"type":"helloAck"}'))
+  for _, malformed in ipairs({ '{"a":tru}', "[1 2]", '{"a":1,}', "undefined", "01", "1." }) do
+    assertFalse(Protocol.preflight(malformed))
+  end
 end)
 
 test("server admission limits are bounded and refill deterministically", function()
@@ -821,6 +825,42 @@ test("server admission limits are bounded and refill deterministically", functio
   assertFalse(server:_admitInbound(listener, true))
   now = now + (1 / 120)
   assertTrue(server:_admitInbound(listener, true))
+end)
+
+test("rate exhaustion never invokes lifecycle callbacks or evicts another listener", function()
+  withTokenPath(function(path)
+    local disappeared = 0
+    local registry = Registry.new()
+    registry:register({
+      id = "com.test.rate",
+      name = "Rate",
+      appearance = function() return { title = "Rate", state = 0 } end,
+      press = function() end,
+      disappear = function() disappeared = disappeared + 1 end,
+    })
+    local server = newServer(registry, path)
+    local now = 0
+    server._now = function() return now end
+    authenticate(server, path)
+    exchange(server, message("instanceAppeared", {
+      instanceId = "rate-instance",
+      actionId = "com.test.rate",
+      settings = {},
+    }))
+    for index = 1, 239 do
+      exchange(server, message("listActions", { requestId = "rate-" .. tostring(index) }))
+    end
+    assertError("AUTH_FAILED", exchange(server, message("listActions", { requestId = "rate-limit" })))
+    assertEqual(disappeared, 0, "rate rejection must not invoke disappear")
+
+    server.authenticated = true
+    server.sessionMode = "lan"
+    for _ = 1, 7 do
+      server:_onMessage('{"protocolVersion":1,"type":"listActions","requestId":"other-listener"}', "loopback", fakeHttp)
+    end
+    assertTrue(server.authenticated and server.sessionMode == "lan", "one listener must not evict another")
+    server:stop()
+  end)
 end)
 
 test("protocol codec rejects defensive frame and JSON failures", function()

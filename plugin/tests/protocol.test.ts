@@ -642,5 +642,8 @@ describe("bounded JSON preflight", () => {
     expect(() => preflightJson(`[${Array.from({ length: 129 }, () => "0").join(",")}]`)).toThrow("Malformed protocol message");
     expect(() => preflightJson(String.raw`{"value":"\u12x4"}`)).toThrow("Malformed protocol message");
     expect(() => preflightJson('{"protocolVersion":1} {"type":"helloAck"}')).toThrow("Malformed protocol message");
+    for (const malformed of ['{"a":tru}', '[1 2]', '{"a":1,}', "undefined", "01", "1."]) {
+      expect(() => preflightJson(malformed)).toThrow("Malformed protocol message");
+    }
   });
 });

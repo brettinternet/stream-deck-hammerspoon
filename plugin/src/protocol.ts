@@ -397,7 +397,7 @@ export const MAX_JSON_TOTAL_ITEMS = 2048;
 
 type JsonFrameContainer = {
   kind: "object" | "array";
-  state: "keyOrEnd" | "colon" | "value" | "valueOrEnd" | "commaOrEnd";
+  state: "keyOrEnd" | "key" | "colon" | "value" | "valueOrEnd" | "arrayValue" | "commaOrEnd";
   count: number;
 };
 
@@ -516,7 +516,7 @@ export function preflightJson(
         if (parent.state !== "value") fail();
         parent.state = "commaOrEnd";
       } else {
-        if (parent.state !== "valueOrEnd") fail();
+        if (parent.state !== "valueOrEnd" && parent.state !== "arrayValue") fail();
         parent.state = "commaOrEnd";
         parent.count += 1;
         totalItems += 1;
@@ -546,8 +546,8 @@ export function preflightJson(
     }
     const container = stack.at(-1)!;
     if (container.kind === "object") {
-      if (container.state === "keyOrEnd") {
-        if (source[index] === "}") {
+      if (container.state === "keyOrEnd" || container.state === "key") {
+        if (container.state === "keyOrEnd" && source[index] === "}") {
           index += 1;
           stack.pop();
           if (stack.length === 0) rootDone = true;
@@ -567,7 +567,7 @@ export function preflightJson(
       } else {
         if (source[index] === ",") {
           index += 1;
-          container.state = "keyOrEnd";
+          container.state = "key";
         } else if (source[index] === "}") {
           index += 1;
           stack.pop();
@@ -576,18 +576,16 @@ export function preflightJson(
           fail();
         }
       }
-    } else if (container.state === "valueOrEnd") {
-      if (source[index] === "]") {
-        index += 1;
-        stack.pop();
-        if (stack.length === 0) rootDone = true;
-      } else {
-        beginValue();
-      }
+    } else if (container.state === "valueOrEnd" && source[index] === "]") {
+      index += 1;
+      stack.pop();
+      if (stack.length === 0) rootDone = true;
+    } else if (container.state === "valueOrEnd" || container.state === "arrayValue") {
+      beginValue();
     } else {
       if (source[index] === ",") {
         index += 1;
-        container.state = "valueOrEnd";
+        container.state = "arrayValue";
       } else if (source[index] === "]") {
         index += 1;
         stack.pop();

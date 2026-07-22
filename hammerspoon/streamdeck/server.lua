@@ -240,8 +240,8 @@ function server.new(registry, protocol, contextFactory)
     return true
   end
 
-  function object:_clearSession()
-    self:_clearInstances()
+  function object:_dropSession()
+    self.instances = {}
     self.authenticated = false
     self.sessionId = nil
     self.sessionMode = nil
@@ -577,8 +577,9 @@ function server.new(registry, protocol, contextFactory)
   end
 
   function object:_onLanMessage(raw, http)
-    if not self:_admitInbound(http, self.authenticated) then
-      self:_clearSession()
+    local isLanSession = self.authenticated and self.sessionMode == "lan"
+    if not self:_admitInbound(http, isLanSession) then
+      if isLanSession then self:_dropSession() end
       return self:_lanError("AUTH_FAILED")
     end
     if self.authenticated and self.sessionMode ~= "lan" then return self:_lanError("AUTH_FAILED") end
@@ -679,28 +680,20 @@ function server.new(registry, protocol, contextFactory)
       local payload = value.payload
       if type(payload) ~= "string" or #payload > self.protocol.MAX_LAN_PAYLOAD_BYTES
           or not self.protocol.preflight(payload, self.protocol.MAX_LAN_PAYLOAD_BYTES) then
-        self:_clearSession()
+        self:_dropSession()
         return self:_lanError("AUTH_FAILED")
       end
       local mac = Crypto.hexDecode(value.mac, 32)
       local currentKey = self.lanKeyPath and Crypto.readKey(hsapi, self.lanKeyPath)
       if not currentKey or not Crypto.doubleHmacEqual(hsapi, self.lanKey, currentKey) then
-        self:_clearInstances()
-        self.authenticated = false
-        self.sessionId = nil
-        self.sessionMode = nil
-        self:_resetLanSession()
+        self:_dropSession()
         return self:_lanError("AUTH_FAILED")
       end
       local expected = isSafeInteger(sequence) and type(payload) == "string"
         and Crypto.frameMac(hsapi, self.lanReceiveKey, "client-to-server", sequence, payload)
       if not isSafeInteger(sequence) or sequence ~= self.lanReceiveSequence + 1
           or not mac or not expected or not Crypto.doubleHmacEqual(hsapi, expected, mac) then
-        self:_clearInstances()
-        self.authenticated = false
-        self.sessionId = nil
-        self.sessionMode = nil
-        self:_resetLanSession()
+        self:_dropSession()
         return self:_lanError("AUTH_FAILED")
       end
       self.lanReceiveSequence = sequence
@@ -712,8 +705,9 @@ function server.new(registry, protocol, contextFactory)
   function object:_onMessage(raw, mode, http, admitted)
     mode = mode or "loopback"
     local activeHttp = http or self.http
-    if not admitted and not self:_admitInbound(activeHttp, self.authenticated) then
-      self:_clearSession()
+    local authenticatedForMode = self.authenticated and self.sessionMode == mode
+    if not admitted and not self:_admitInbound(activeHttp, authenticatedForMode) then
+      if authenticatedForMode then self:_dropSession() end
       return self:_safeError("AUTH_FAILED")
     end
     if self.authenticated and self.sessionMode ~= mode then return self:_safeError("AUTH_FAILED") end

@@ -18613,7 +18613,7 @@ function preflightJson(source, maxBytes = MAX_FRAME_BYTES) {
                 parent.state = "commaOrEnd";
             }
             else {
-                if (parent.state !== "valueOrEnd")
+                if (parent.state !== "valueOrEnd" && parent.state !== "arrayValue")
                     fail();
                 parent.state = "commaOrEnd";
                 parent.count += 1;
@@ -18646,8 +18646,8 @@ function preflightJson(source, maxBytes = MAX_FRAME_BYTES) {
         }
         const container = stack.at(-1);
         if (container.kind === "object") {
-            if (container.state === "keyOrEnd") {
-                if (source[index] === "}") {
+            if (container.state === "keyOrEnd" || container.state === "key") {
+                if (container.state === "keyOrEnd" && source[index] === "}") {
                     index += 1;
                     stack.pop();
                     if (stack.length === 0)
@@ -18674,7 +18674,7 @@ function preflightJson(source, maxBytes = MAX_FRAME_BYTES) {
             else {
                 if (source[index] === ",") {
                     index += 1;
-                    container.state = "keyOrEnd";
+                    container.state = "key";
                 }
                 else if (source[index] === "}") {
                     index += 1;
@@ -18687,21 +18687,19 @@ function preflightJson(source, maxBytes = MAX_FRAME_BYTES) {
                 }
             }
         }
-        else if (container.state === "valueOrEnd") {
-            if (source[index] === "]") {
-                index += 1;
-                stack.pop();
-                if (stack.length === 0)
-                    rootDone = true;
-            }
-            else {
-                beginValue();
-            }
+        else if (container.state === "valueOrEnd" && source[index] === "]") {
+            index += 1;
+            stack.pop();
+            if (stack.length === 0)
+                rootDone = true;
+        }
+        else if (container.state === "valueOrEnd" || container.state === "arrayValue") {
+            beginValue();
         }
         else {
             if (source[index] === ",") {
                 index += 1;
-                container.state = "valueOrEnd";
+                container.state = "arrayValue";
             }
             else if (source[index] === "]") {
                 index += 1;

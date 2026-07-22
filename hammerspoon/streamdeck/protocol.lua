@@ -13,74 +13,177 @@ function protocol.preflight(raw, maxBytes)
     return false
   end
 
-  local depth = 0
+  local index = 1
   local totalItems = 0
+  local rootDone = false
   local stack = {}
-  local inString = false
-  local escaped = false
-  local unicodeDigits = 0
-  local rootStarted = false
-  local rootComplete = false
 
-  for index = 1, #raw do
-    local character = raw:sub(index, index)
-    if rootComplete and character ~= " " and character ~= "\t" and character ~= "\r" and character ~= "\n" then
-      return false
-    end
-    if inString then
-      if unicodeDigits > 0 then
-        if not character:match("^[0-9A-Fa-f]$") then return false end
-        unicodeDigits = unicodeDigits - 1
-      elseif escaped then
-        if character == "u" then
-          unicodeDigits = 4
-        elseif not character:match('^[\\/bfnrt"]$') then
-          return false
-        end
-        escaped = false
-      elseif character == "\\" then
-        escaped = true
-      elseif character == '"' then
-        inString = false
-      elseif string.byte(character) < 32 then
-        return false
-      end
-    elseif character == '"' then
-      inString = true
-      rootStarted = true
-    elseif character == "{" or character == "[" then
-      rootStarted = true
-      if depth > 0 then stack[depth].saw = true end
-      depth = depth + 1
-      if depth > protocol.MAX_JSON_DEPTH then return false end
-      stack[depth] = { closing = character == "{" and "}" or "]", commas = 0, saw = false }
-    elseif character == "}" or character == "]" then
-      local container = stack[depth]
-      if not container or container.closing ~= character then return false end
-      local itemCount = container.saw and container.commas + 1 or 0
-      if itemCount > protocol.MAX_JSON_CONTAINER_ITEMS then return false end
-      totalItems = totalItems + itemCount
-      if totalItems > protocol.MAX_JSON_TOTAL_ITEMS then return false end
-      stack[depth] = nil
-      depth = depth - 1
-      if depth == 0 then rootComplete = true end
-    elseif character == "," then
-      local container = stack[depth]
-      if not container then return false end
-      container.saw = true
-      container.commas = container.commas + 1
-      if container.commas + 1 > protocol.MAX_JSON_CONTAINER_ITEMS then return false end
-    elseif character == ":" then
-      local container = stack[depth]
-      if not container or container.closing ~= "}" then return false end
-      container.saw = true
-    elseif character ~= " " and character ~= "\t" and character ~= "\r" and character ~= "\n" then
-      rootStarted = true
-      if depth > 0 then stack[depth].saw = true end
+  local function skipWhitespace()
+    while index <= #raw do
+      local character = raw:sub(index, index)
+      if character ~= " " and character ~= "\t" and character ~= "\r" and character ~= "\n" then return end
+      index = index + 1
     end
   end
 
-  return rootStarted and rootComplete and not inString and not escaped and unicodeDigits == 0 and depth == 0
+  local function isDelimiter(character)
+    return character == "" or character == " " or character == "\t" or character == "\r"
+      or character == "\n" or character == "," or character == "]" or character == "}"
+  end
+
+  local function parseString()
+    if raw:sub(index, index) ~= '"' then return false end
+    index = index + 1
+    while index <= #raw do
+      local character = raw:sub(index, index)
+      index = index + 1
+      if character == '"' then return true end
+      if string.byte(character) < 32 then return false end
+      if character == "\\" then
+        local escaped = raw:sub(index, index)
+        index = index + 1
+        if escaped == "u" then
+          for _ = 1, 4 do
+            local digit = raw:sub(index, index)
+            if not digit:match("^[0-9A-Fa-f]$") then return false end
+            index = index + 1
+          end
+        elseif escaped ~= '"' and escaped ~= "\\" and escaped ~= "/" and escaped ~= "b"
+            and escaped ~= "f" and escaped ~= "n" and escaped ~= "r" and escaped ~= "t" then
+          return false
+        end
+      end
+    end
+    return false
+  end
+
+  local function parsePrimitive()
+    local character = raw:sub(index, index)
+    if character == '"' then return parseString() end
+    if raw:sub(index, index + 3) == "true" then
+      index = index + 4
+    elseif raw:sub(index, index + 4) == "false" then
+      index = index + 5
+    elseif raw:sub(index, index + 3) == "null" then
+      index = index + 4
+    else
+      local start = index
+      if character == "-" then index = index + 1 end
+      character = raw:sub(index, index)
+      if character == "0" then
+        index = index + 1
+      elseif character:match("^[1-9]$") then
+        index = index + 1
+        while raw:sub(index, index):match("^%d$") do index = index + 1 end
+      else
+        return false
+      end
+      if raw:sub(index, index) == "." then
+        index = index + 1
+        local fractionStart = index
+        while raw:sub(index, index):match("^%d$") do index = index + 1 end
+        if index == fractionStart then return false end
+      end
+      character = raw:sub(index, index)
+      if character == "e" or character == "E" then
+        index = index + 1
+        character = raw:sub(index, index)
+        if character == "+" or character == "-" then index = index + 1 end
+        local exponentStart = index
+        while raw:sub(index, index):match("^%d$") do index = index + 1 end
+        if index == exponentStart then return false end
+      end
+      if index == start then return false end
+    end
+    return isDelimiter(raw:sub(index, index))
+  end
+
+  local function countItem(container)
+    container.count = container.count + 1
+    totalItems = totalItems + 1
+    return container.count <= protocol.MAX_JSON_CONTAINER_ITEMS and totalItems <= protocol.MAX_JSON_TOTAL_ITEMS
+  end
+
+  local function beginValue()
+    local parent = stack[#stack]
+    if parent then
+      if parent.kind == "object" then
+        if parent.state ~= "value" then return false end
+        parent.state = "commaOrEnd"
+      else
+        if (parent.state ~= "valueOrEnd" and parent.state ~= "arrayValue") or not countItem(parent) then return false end
+        parent.state = "commaOrEnd"
+      end
+    end
+    local character = raw:sub(index, index)
+    if character == "{" or character == "[" then
+      if #stack >= protocol.MAX_JSON_DEPTH then return false end
+      index = index + 1
+      stack[#stack + 1] = {
+        kind = character == "{" and "object" or "array",
+        state = character == "{" and "keyOrEnd" or "valueOrEnd",
+        count = 0,
+      }
+      return true
+    end
+    if not parsePrimitive() then return false end
+    if #stack == 0 then rootDone = true end
+    return true
+  end
+
+  while not rootDone do
+    skipWhitespace()
+    if #stack == 0 then
+      if not beginValue() then return false end
+    else
+      local container = stack[#stack]
+      if container.kind == "object" then
+        if container.state == "keyOrEnd" or container.state == "key" then
+          if container.state == "keyOrEnd" and raw:sub(index, index) == "}" then
+            index = index + 1
+            table.remove(stack)
+            if #stack == 0 then rootDone = true end
+          else
+            if not parseString() or not countItem(container) then return false end
+            container.state = "colon"
+          end
+        elseif container.state == "colon" then
+          if raw:sub(index, index) ~= ":" then return false end
+          index = index + 1
+          container.state = "value"
+        elseif container.state == "value" then
+          if not beginValue() then return false end
+        elseif raw:sub(index, index) == "," then
+          index = index + 1
+          container.state = "key"
+        elseif raw:sub(index, index) == "}" then
+          index = index + 1
+          table.remove(stack)
+          if #stack == 0 then rootDone = true end
+        else
+          return false
+        end
+      elseif container.state == "valueOrEnd" and raw:sub(index, index) == "]" then
+        index = index + 1
+        table.remove(stack)
+        if #stack == 0 then rootDone = true end
+      elseif container.state == "valueOrEnd" or container.state == "arrayValue" then
+        if not beginValue() then return false end
+      elseif raw:sub(index, index) == "," then
+        index = index + 1
+        container.state = "arrayValue"
+      elseif raw:sub(index, index) == "]" then
+        index = index + 1
+        table.remove(stack)
+        if #stack == 0 then rootDone = true end
+      else
+        return false
+      end
+    end
+  end
+
+  skipWhitespace()
+  return index > #raw
 end
 
 local messageTypes = {
