@@ -2,6 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BridgeClient } from "../src/bridge";
+import {
+  deriveLanFrameKey,
+  doubleHmacEqual,
+  encodeHex,
+  lanFrameMac,
+  lanProof,
+} from "../src/lan-crypto";
 
 type Listener = (event?: unknown) => void;
 
@@ -157,6 +164,29 @@ function frames(socket: FakeSocket): Array<Record<string, unknown>> {
   return socket.sent.map((frame) => JSON.parse(frame) as Record<string, unknown>);
 }
 
+function makeLanClient(
+  sockets: FakeSocket[],
+  timers = new ManualTimers(),
+  key = Buffer.alloc(32, 0x4b),
+) {
+  const client = new BridgeClient({
+    url: "ws://192.168.1.20:17322/streamdeck",
+    lan: { clientId: "remote", keyPath: "/tmp/streamdeck-client-key" },
+    pluginVersion: "1.0.0",
+    createSocket: () => {
+      const socket = new FakeSocket();
+      sockets.push(socket);
+      return socket;
+    },
+    readKey: async () => key,
+    randomBytes: () => Buffer.alloc(32, 1),
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
+    random: () => 0.5,
+  });
+  return { client, timers, key };
+}
+
 
 let nextSessionId = 1;
 
@@ -208,6 +238,95 @@ describe("BridgeClient authentication and transport", () => {
     expect(registries).toEqual([[{ actionId: "com.example.action", name: "Example action" }]]);
     expect(statuses).toContain("authenticating");
     expect(statuses).toContain("connected");
+  });
+
+  test("LAN handshake authenticates with role-separated proofs and frames", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client, timers, key } = makeLanClient(sockets);
+    const events: unknown[] = [];
+    client.on("actions", (actions) => events.push(actions));
+    client.start();
+    await flush();
+    const socket = sockets[0];
+    socket.open();
+    const hello = frames(socket).at(-1);
+    expect(hello).toMatchObject({ protocolVersion: 1, type: "lanHello", clientId: "remote" });
+    const clientNonce = Buffer.from(hello!.clientNonce as string, "hex");
+    const serverNonce = Buffer.alloc(32, 2);
+    socket.receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "lanChallenge",
+      clientId: "remote",
+      serverNonce: encodeHex(serverNonce),
+      serverProof: encodeHex(lanProof(key, "server", "remote", clientNonce, serverNonce)),
+    }));
+    const proof = frames(socket).at(-1);
+    expect(proof).toMatchObject({ protocolVersion: 1, type: "lanProof", clientId: "remote" });
+    expect(proof?.clientProof).toBe(encodeHex(lanProof(key, "client", "remote", clientNonce, serverNonce)));
+    socket.receive(JSON.stringify({ protocolVersion: 1, type: "lanReady", sessionId: "opaque-session" }));
+    expect(client.status).toBe("connected");
+    const listFrame = frames(socket).at(-1)!;
+    expect(listFrame.type).toBe("lanFrame");
+    const sendKey = deriveLanFrameKey(key, "remote", clientNonce, serverNonce, "client-to-server");
+    expect(doubleHmacEqual(
+      lanFrameMac(sendKey, "client-to-server", listFrame.sequence as number, listFrame.payload as string),
+      Buffer.from(listFrame.mac as string, "hex"),
+    )).toBe(true);
+    const actionsPayload = JSON.stringify({
+      protocolVersion: 1,
+      type: "actions",
+      requestId: JSON.parse(listFrame.payload as string).requestId,
+      actions: [{ actionId: "com.example.action", name: "Example action" }],
+    });
+    const receiveKey = deriveLanFrameKey(key, "remote", clientNonce, serverNonce, "server-to-client");
+    socket.receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "lanFrame",
+      sequence: 1,
+      payload: actionsPayload,
+      mac: encodeHex(lanFrameMac(receiveKey, "server-to-client", 1, actionsPayload)),
+    }));
+    expect(events).toEqual([[{ actionId: "com.example.action", name: "Example action" }]]);
+    expect(timers.delays()).toEqual([]);
+    client.stop();
+  });
+  test("LAN rejects reflected or tampered handshake proof and wrong-key peers", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeLanClient(sockets);
+    client.start();
+    await flush();
+    const socket = sockets[0];
+    socket.open();
+    const hello = frames(socket).at(-1)!;
+    const clientNonce = Buffer.from(hello.clientNonce as string, "hex");
+    const serverNonce = Buffer.alloc(32, 2);
+    socket.receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "lanChallenge",
+      clientId: "remote",
+      serverNonce: encodeHex(serverNonce),
+      serverProof: encodeHex(lanProof(Buffer.alloc(32, 0x4b), "client", "remote", clientNonce, serverNonce)),
+    }));
+    expect(socket.closeCalls).toBe(1);
+    client.stop();
+
+    const wrongSockets: FakeSocket[] = [];
+    const wrong = makeLanClient(wrongSockets, new ManualTimers(), Buffer.alloc(32, 0x57)).client;
+    wrong.start();
+    await flush();
+    const wrongSocket = wrongSockets[0];
+    wrongSocket.open();
+    const wrongHello = frames(wrongSocket).at(-1)!;
+    const wrongNonce = Buffer.from(wrongHello.clientNonce as string, "hex");
+    wrongSocket.receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "lanChallenge",
+      clientId: "remote",
+      serverNonce: encodeHex(serverNonce),
+      serverProof: encodeHex(lanProof(Buffer.alloc(32, 0x4b), "server", "remote", wrongNonce, serverNonce)),
+    }));
+    expect(wrongSocket.closeCalls).toBe(1);
+    wrong.stop();
   });
 
   test("rejects non-literal loopback legacy bridge URLs before token authentication", () => {

@@ -11,6 +11,8 @@ This bridge is a local, authenticated control channel between the official Strea
 | Hammerspoon process and `hammerspoon/streamdeck/` Lua module | The Lua module owns the server, token file, connection authentication, action registry, and callback dispatch. Registered callbacks are trusted code running in the user's Hammerspoon process. |
 | Token file (`~/.hammerspoon/streamdeck-token`) | This is the bearer credential shared by the plugin and Lua bridge. Its confidentiality depends on the local operating system and file permissions. |
 | Loopback WebSocket at the default URL `ws://localhost:17321/streamdeck` | The legacy token transport accepts only literal `localhost`, `127.0.0.1`, or `[::1]` `ws://` endpoints. It is not a remote service and does not provide encryption. |
+| LAN WebSocket (explicit `start({ lan = ... })` only) | A second `hs.httpserver` binds the named interface and separate port only when configured. It uses the LAN PSK handshake and authenticated frames; it is never enabled by default. |
+| Per-client LAN key file | A manually provisioned 32-byte CSPRNG key, stored at a configured path with mode `0600`; the server maps a safe client ID to that path and never sends the key. |
 | Protocol schema and validators | The JSON Schema is the protocol source of truth. TypeScript uses Ajv; Lua mirrors the required and type checks. |
 
 The trust boundary is crossed only after a valid `hello` message authenticates the WebSocket. Before that point, the peer is untrusted input. The Stream Deck app, property inspector, plugin UI, local filesystem, and any other process on the host are not automatically trusted merely because they are local. Hammerspoon callbacks and the explicitly registered action definitions are trusted application code; message data is not code.
@@ -18,15 +20,33 @@ The trust boundary is crossed only after a valid `hello` message authenticates t
 ## Threat model and limits
 
 The v1 design addresses accidental exposure beyond the host, unauthorized or malformed local WebSocket clients, invalid protocol data, and accidental disclosure through diagnostics. It assumes the user's account, Hammerspoon process, plugin installation, and operating-system file permissions have not already been compromised.
+A process that can read `~/.hammerspoon/streamdeck-token`, a configured LAN key, impersonate the user, inject into Hammerspoon or the plugin, or otherwise control the host can use or replace the bridge. Token/PSK authentication cannot defend against that process. Loopback is a reachability restriction, **not authentication**: another local process may still connect to the port and attempt to authenticate. The bridge does not claim to protect against a compromised host, root, a malicious process with equivalent file access, or a stolen credential.
 
-A process that can read `~/.hammerspoon/streamdeck-token`, impersonate the user, inject into Hammerspoon or the plugin, or otherwise control the host can use or replace the bridge. Token authentication cannot defend against that process. Loopback is a reachability restriction, **not authentication**: another local process may still connect to the port and attempt to authenticate. The bridge does not claim to protect against a compromised host, root, a malicious process with equivalent file access, or a stolen token.
+The token is a bearer credential. Anyone who obtains it can authenticate until it is rotated or revoked. The WebSocket is not configured as a general remote endpoint. LAN operation is a separate, explicit opt-in PSK profile; it does not reuse the v1 token transport and does not provide traffic confidentiality.
 
-The token is a bearer credential. Anyone who obtains it can authenticate until it is rotated or revoked. The WebSocket is not configured as a general remote endpoint, and v1 does not add TLS, remote access, or multi-user authorization.
-
-## Binding and connection authentication
 
 Hammerspoon starts `hs.httpserver` at the default URL `ws://localhost:17321/streamdeck`, on localhost/loopback only, with Bonjour disabled. Binding failure is a startup failure; the bridge does not retry by opening a non-loopback listener and does not fall back to an unauthenticated server.
-The plugin rejects any other legacy endpoint before opening a socket or reading the token, so its v1 `hello` can never disclose the token to a remote host. A later remote profile must use the explicit mutual-TLS companion contract; it must not repurpose this token transport.
+
+The opt-in LAN profile is configured on the Lua side with:
+
+```lua
+streamdeck.start({
+  lan = {
+    interface = "en0",
+    port = 17322,
+    clients = { ["remote-deck"] = "/Users/me/.hammerspoon/streamdeck-remote.key" },
+  },
+})
+```
+
+The plugin LAN profile is constructed explicitly with `url = "ws://<address>:17322/streamdeck"` and `lan = { clientId = "remote-deck", keyPath = "/path/to/streamdeck-remote.key" }`. A non-loopback URL without `lan` is rejected before opening a socket or reading the v1 token. The LAN listener rejects v1 `hello`/token messages; it accepts only the PSK handshake and authenticated frames. Loopback remains the default.
+The plugin rejects any other legacy endpoint before opening a socket or reading the token, so its v1 `hello` can never disclose the token to a remote host. The LAN profile reads only its configured per-client key and never reads or sends the v1 token.
+
+### LAN PSK handshake and frames
+
+The LAN handshake sends a safe client ID and 32-byte client nonce, receives a 32-byte server nonce plus a server-role HMAC proof, and returns a client-role HMAC proof. Both proofs MAC the same length-delimited binary transcript: protocol label, role, client ID, client nonce, and server nonce. Session frame keys use HKDF-SHA256 with separate `client-to-server` and `server-to-client` info labels. Every frame MAC covers length-delimited protocol label, frame label, direction, an unsigned big-endian 64-bit sequence, and the exact UTF-8 application payload bytes; each direction starts at 1 and must increment by exactly one. Double-HMAC comparison rejects tampering, reflection, replay, and sequence gaps before protocol decode or callback dispatch.
+
+This profile authenticates and integrity-protects bridge messages but intentionally does not encrypt them. **LAN peers able to observe the connection can read traffic content by design**, including action names, settings, titles, and callback results. Do not use the LAN profile for sensitive payloads; use loopback for the default trust boundary.
 
 `hs.httpserver:websocket` exposes message callbacks, but **websocket upgrade headers are unavailable to the Lua callback**. Consequently, the token cannot be placed in or checked from an HTTP upgrade header in v1. Authentication is a protocol-level first message followed by an in-memory session binding:
 
@@ -64,6 +84,11 @@ The file must be owned and readable only by the user running Hammerspoon, with U
 To rotate or revoke a token, stop the bridge, remove `~/.hammerspoon/streamdeck-token`, and restart/reload the Lua bridge so Lua generates a new token from two UUIDs. Restart or reconnect the plugin after rotation so it rereads the runtime token. The old token is then rejected, and existing authenticated sessions and their contexts must not be treated as authorized after the bridge restart. A normal reconnect or plugin restart also rotates the in-memory session ID even when the token file is unchanged. Verify that the replacement file is again mode `0600`.
 
 Deletion/restart is the v1 token revocation procedure; session rotation is the v1 reconnect procedure. There is no unauthenticated recovery mode and no token in settings to edit. Rotation cannot help if an attacker still has equivalent access to the host or can read the replacement file.
+For a LAN client, revoke by deleting that client's server-side key file from the `lan.clients` map and reloading Hammerspoon; the active session is dropped on its next frame check and the old key cannot reconnect. Rotate by generating a new 32-byte value from `/dev/urandom`, replacing the server file and the manually copied client file (both `0600`), then reconnecting the plugin. A missing, malformed, or permission-weakened LAN key fails closed; it never falls back to the v1 token or unauthenticated traffic.
+
+## Hammerspoon compatibility
+
+The minimum supported Hammerspoon version for the LAN profile is **1.1.1**. This project requires the documented `hs.httpserver` interface binding/WebSocket API and `hs.hash.hmacSHA256`; 1.1.1 is the repository's current tested release baseline (the upstream release is tagged [1.1.1](https://github.com/Hammerspoon/hammerspoon/releases/tag/1.1.1)). Older versions are not supported or probed at runtime.
 
 ## Startup and failure behavior
 
@@ -71,6 +96,7 @@ Startup must fail closed in each of these cases:
 
 - the token cannot be created, opened, or read;
 - the token file cannot be kept at the required `0600` permissions;
+- any configured LAN key cannot be opened, is not exactly 32 bytes, or is not mode `0600`;
 - the token is unavailable to the plugin runtime; or
 - the loopback server cannot bind its configured port.
 
@@ -91,8 +117,8 @@ Protocol errors contain only safe error codes/messages and optional `requestId`/
 
 Loopback does not prevent a local process from connecting, sending invalid data, or occupying the one available WebSocket client slot. JSON parsing, validation, callback execution, reconnect churn, and oversized frames therefore remain denial-of-service concerns. v1 traffic is intentionally small and structured, but implementations must impose a finite message/frame size limit and reject oversized input before dispatch; they must also avoid unbounded buffering and avoid logging rejected bodies. Invalid clients must not receive action execution, and callback failures must be contained.
 
-`hs.httpserver` is effectively single-client for this bridge. One local Stream Deck plugin process is the supported client; this is not a multi-client authorization or isolation mechanism. A second client, or a client that holds the connection without authenticating, can reduce availability. The bridge must report loss of the authenticated client as disconnected, clear the current session and contexts when it detects close/stop/failure, and require a fresh token-bearing hello plus a new session ID before authorizing another peer. It must never silently authorize a tokenless next client because a prior process-global hello flag remained set.
+`hs.httpserver` is effectively single-client per listener. B3 still permits only one authenticated session globally across the loopback and opt-in LAN listeners; concurrent client isolation belongs to B4. A client or peer that holds a connection without authenticating can reduce availability. The bridge clears the current session and contexts on failure and requires a fresh authenticated handshake before authorizing another peer.
 
 ## Future hardening
 
-Potential later hardening includes an OS-backed credential or peer-identity check, a transport/API that supports authenticated upgrade headers, stronger rate and connection limits, explicit protocol size/depth limits, and clearer multi-client isolation. These are not v1 behavior. They must not be approximated by logging secrets, weakening file permissions, binding beyond loopback, accepting messages before `helloAck`, or adding an unauthenticated fallback.
+Potential later hardening includes an OS-backed credential or peer-identity check, authenticated upgrade headers, stronger rate and connection limits, explicit protocol size/depth limits, traffic confidentiality for deployments that need it, and clearer multi-client isolation. These are not approximated by logging secrets, weakening file permissions, accepting messages before authentication, or adding an unauthenticated fallback.

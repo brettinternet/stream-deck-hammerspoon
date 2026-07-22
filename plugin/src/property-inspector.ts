@@ -61,7 +61,7 @@ type StreamDeckMessage = {
 };
 
 type BridgeStatus = "disconnected" | "connecting" | "authenticating" | "connected";
-type BridgeDiagnosticCode = "AUTH_REQUIRED" | "AUTH_FAILED" | "VERSION_MISMATCH" | "MALFORMED_MESSAGE" | "UNKNOWN_TYPE" | "INVALID_FIELD" | "INVALID_STATE" | "UNKNOWN_ACTION" | "STALE_INSTANCE" | "CALLBACK_FAILED" | "INTERNAL" | "TOKEN_UNAVAILABLE" | "SOCKET_FAILED" | "DISCONNECTED" | "RECONNECTING";
+type BridgeDiagnosticCode = "AUTH_REQUIRED" | "AUTH_FAILED" | "VERSION_MISMATCH" | "MALFORMED_MESSAGE" | "UNKNOWN_TYPE" | "INVALID_FIELD" | "INVALID_STATE" | "UNKNOWN_ACTION" | "STALE_INSTANCE" | "CALLBACK_FAILED" | "INTERNAL" | "TOKEN_UNAVAILABLE" | "LAN_KEY_UNAVAILABLE" | "SOCKET_FAILED" | "DISCONNECTED" | "RECONNECTING";
 type BridgeDiagnostics = {
   port: number;
   retryInMs?: number;
@@ -80,6 +80,7 @@ const BRIDGE_DIAGNOSTIC_CODES: readonly BridgeDiagnosticCode[] = [
   "CALLBACK_FAILED",
   "INTERNAL",
   "TOKEN_UNAVAILABLE",
+  "LAN_KEY_UNAVAILABLE",
   "SOCKET_FAILED",
   "DISCONNECTED",
   "RECONNECTING",
@@ -189,6 +190,8 @@ function diagnosticDetails(): string {
   switch (code) {
     case "TOKEN_UNAVAILABLE":
       return "The Hammerspoon token is unavailable. Check ~/.hammerspoon/streamdeck-token, then reload Hammerspoon.";
+    case "LAN_KEY_UNAVAILABLE":
+      return "The LAN credential is unavailable or invalid. Check the configured 32-byte key file and its 0600 permissions.";
     case "AUTH_REQUIRED":
       return "Hammerspoon requested authentication. Reload Hammerspoon so the bridge can reconnect.";
     case "AUTH_FAILED":

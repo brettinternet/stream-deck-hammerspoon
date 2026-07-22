@@ -2,7 +2,19 @@ import { EventEmitter } from "node:events";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFile as nodeReadFile } from "node:fs/promises";
+import { randomBytes as nodeRandomBytes } from "node:crypto";
 import WebSocket from "ws";
+
+import {
+  decodeHex,
+  deriveLanFrameKey,
+  doubleHmacEqual,
+  encodeHex,
+  lanFrameMac,
+  lanProof,
+  LAN_NONCE_BYTES,
+  readLanKey,
+} from "./lan-crypto.js";
 
 import {
   PROTOCOL_VERSION,
@@ -23,7 +35,7 @@ import {
 
 export type BridgeStatus = "disconnected" | "connecting" | "authenticating" | "connected";
 export type BridgeDiagnosticArea = "auth" | "schema" | "reconnect" | "registry" | "callback";
-export type BridgeDiagnosticCode = ProtocolErrorCode | "TOKEN_UNAVAILABLE" | "SOCKET_FAILED" | "DISCONNECTED" | "RECONNECTING";
+export type BridgeDiagnosticCode = ProtocolErrorCode | "TOKEN_UNAVAILABLE" | "LAN_KEY_UNAVAILABLE" | "SOCKET_FAILED" | "DISCONNECTED" | "RECONNECTING";
 export interface BridgeDiagnosticLatest {
   area: BridgeDiagnosticArea;
   code: BridgeDiagnosticCode;
@@ -71,6 +83,13 @@ export interface BridgeProtocolError {
   instanceId?: string;
 }
 
+export interface BridgeLanOptions {
+  clientId: string;
+  keyPath: string;
+}
+
+type LanHandshakePhase = "hello" | "challenge" | "ready";
+
 export interface BridgeInstanceInput {
   instanceId: string;
   actionId?: string;
@@ -81,9 +100,12 @@ export interface BridgeInstanceInput {
 export interface BridgeClientOptions {
   url?: string;
   tokenPath?: string;
+  lan?: BridgeLanOptions;
   pluginVersion: string;
   createSocket?: (url: string) => BridgeSocket;
   readToken?: (tokenPath: string) => Promise<string | Buffer>;
+  readKey?: (keyPath: string) => Promise<string | Buffer>;
+  randomBytes?: (size: number) => Buffer;
   setTimeout?: (callback: () => void, delay: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
   random?: () => number;
@@ -131,6 +153,23 @@ type BridgeMessage =
       Extract<ClientMessage, { type: "touchTap" }>,
       "protocolVersion" | "type" | "instanceId" | "actionId" | "hold" | "tapPos"
     >;
+const LAN_FRAME_TYPE = "lanFrame";
+const LAN_HELLO_TYPE = "lanHello";
+const LAN_CHALLENGE_TYPE = "lanChallenge";
+const LAN_PROOF_TYPE = "lanProof";
+const LAN_READY_TYPE = "lanReady";
+const LAN_CLIENT_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+
+function isLanUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "ws:" && parsed.hostname !== "localhost"
+      && parsed.hostname !== "127.0.0.1" && parsed.hostname !== "[::1]"
+      && parsed.pathname === "/streamdeck";
+  } catch {
+    return false;
+  }
+}
 
 
 const DEFAULT_URL = "ws://localhost:17321/streamdeck";
@@ -215,7 +254,7 @@ function safeProtocolCode(value: unknown): ProtocolErrorCode {
 }
 
 function diagnosticCategory(code: BridgeDiagnosticCode, hasInstance = false): BridgeDiagnosticArea {
-  if (code === "AUTH_REQUIRED" || code === "AUTH_FAILED" || code === "TOKEN_UNAVAILABLE") return "auth";
+  if (code === "AUTH_REQUIRED" || code === "AUTH_FAILED" || code === "TOKEN_UNAVAILABLE" || code === "LAN_KEY_UNAVAILABLE") return "auth";
   if (code === "UNKNOWN_ACTION" || code === "STALE_INSTANCE" || code === "INVALID_STATE") return "registry";
   if (code === "CALLBACK_FAILED" || (code === "INTERNAL" && hasInstance)) return "callback";
   if (code === "SOCKET_FAILED" || code === "DISCONNECTED" || code === "RECONNECTING") return "reconnect";
@@ -262,12 +301,15 @@ export class BridgeClient extends EventEmitter {
   readonly url: string;
   readonly tokenPath: string;
   readonly pluginVersion: string;
+  readonly lan: BridgeLanOptions | undefined;
 
   private _status: BridgeStatus = "disconnected";
   private _actions: readonly BridgeAction[] = [];
   private readonly instances = new Map<string, InstanceSnapshot>();
   private readonly createSocket: (url: string) => BridgeSocket;
   private readonly readToken: (tokenPath: string) => Promise<string | Buffer>;
+  private readonly readKey: (keyPath: string) => Promise<string | Buffer>;
+  private readonly randomBytes: (size: number) => Buffer;
   private readonly scheduleTimeout: (callback: () => void, delay: number) => unknown;
   private readonly cancelTimeout: (handle: unknown) => void;
   private readonly random: () => number;
@@ -289,11 +331,24 @@ export class BridgeClient extends EventEmitter {
   private retryInMs: number | undefined;
   private readonly loggedDiagnosticKeys = new Set<string>();
   private preserveFailureCause = false;
+  private lanPhase: LanHandshakePhase | undefined;
+  private lanKey: Buffer | undefined;
+  private lanClientNonce: Buffer | undefined;
+  private lanServerNonce: Buffer | undefined;
+  private lanSendKey: Buffer | undefined;
+  private lanReceiveKey: Buffer | undefined;
+  private lanSendSequence = 0;
+  private lanReceiveSequence = 0;
 
   constructor(options: BridgeClientOptions) {
     super();
     this.url = options.url ?? DEFAULT_URL;
-    if (!isLegacyLoopbackUrl(this.url)) {
+    this.lan = options.lan;
+    if (this.lan) {
+      if (!isLanUrl(this.url)) throw new Error("LAN bridge URL must use ws://<host>/streamdeck.");
+      if (!LAN_CLIENT_ID_PATTERN.test(this.lan.clientId)) throw new Error("LAN clientId must use 1-64 safe characters.");
+      if (!isNonEmptyString(this.lan.keyPath)) throw new Error("LAN keyPath must be a non-empty string.");
+    } else if (!isLegacyLoopbackUrl(this.url)) {
       throw new Error("Legacy bridge URL must target loopback.");
     }
     this.tokenPath = options.tokenPath ?? DEFAULT_TOKEN_PATH;
@@ -304,10 +359,13 @@ export class BridgeClient extends EventEmitter {
     this.logger = options.logger ?? (() => {});
     this.createSocket = options.createSocket ?? ((url) => new WebSocket(url) as unknown as BridgeSocket);
     this.readToken = options.readToken ?? ((tokenPath) => nodeReadFile(tokenPath, "utf8"));
+    this.readKey = options.readKey ?? ((keyPath) => nodeReadFile(keyPath));
+    this.randomBytes = options.randomBytes ?? nodeRandomBytes;
     this.scheduleTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
     this.cancelTimeout = options.clearTimeout ?? ((handle) => clearTimeout(handle as NodeJS.Timeout));
     this.random = options.random ?? Math.random;
   }
+
 
   get status(): BridgeStatus {
     return this._status;
@@ -339,6 +397,7 @@ export class BridgeClient extends EventEmitter {
     this.started = false;
     this.authenticated = false;
     this.sessionId = undefined;
+    this.resetLanState();
     this.pendingActions.clear();
     this.clearReconnectTimer();
     this.clearHandshakeTimer();
@@ -516,23 +575,38 @@ export class BridgeClient extends EventEmitter {
     this.retryInMs = undefined;
     this.authenticated = false;
     this.sessionId = undefined;
+    this.resetLanState();
     this.setStatus("connecting");
     const generation = ++this.socketGeneration;
     void this.openSocket(generation);
   }
-
   private async openSocket(generation: number): Promise<void> {
-    let token: string;
-    try {
-      const value = await this.readToken(this.tokenPath);
-      token = (Buffer.isBuffer(value) ? value.toString("utf8") : value).trim();
-      if (!token) throw new Error("Token unavailable.");
-    } catch {
-      if (this.isCurrent(generation)) {
-        this.emitDiagnostic("auth", "TOKEN_UNAVAILABLE", undefined, true);
-        this.connectionFailed(generation);
+    let token: string | undefined;
+    if (!this.lan) {
+      try {
+        const value = await this.readToken(this.tokenPath);
+        token = (Buffer.isBuffer(value) ? value.toString("utf8") : value).trim();
+        if (!token) throw new Error("Token unavailable.");
+      } catch {
+        if (this.isCurrent(generation)) {
+          this.emitDiagnostic("auth", "TOKEN_UNAVAILABLE", undefined, true);
+          this.connectionFailed(generation);
+        }
+        return;
       }
-      return;
+    } else {
+      try {
+        this.lanKey = readLanKey(await this.readKey(this.lan.keyPath));
+        this.lanClientNonce = this.randomBytes(LAN_NONCE_BYTES);
+        if (this.lanClientNonce.length !== LAN_NONCE_BYTES) throw new Error("Invalid LAN nonce.");
+        this.lanPhase = "hello";
+      } catch {
+        if (this.isCurrent(generation)) {
+          this.emitDiagnostic("auth", "LAN_KEY_UNAVAILABLE", undefined, true);
+          this.connectionFailed(generation);
+        }
+        return;
+      }
     }
 
     if (!this.isCurrent(generation)) return;
@@ -557,12 +631,26 @@ export class BridgeClient extends EventEmitter {
     const onOpen = () => {
       if (!this.isCurrent(generation)) return;
       this.setStatus("authenticating");
-      this.send({
-        protocolVersion: PROTOCOL_VERSION,
-        type: "hello",
-        token,
-        pluginVersion: this.pluginVersion,
-      });
+      if (this.lan) {
+        const clientNonce = this.lanClientNonce;
+        if (!clientNonce) {
+          this.closeCurrentSocket(generation);
+          return;
+        }
+        this.sendLanHandshake({
+          protocolVersion: PROTOCOL_VERSION,
+          type: LAN_HELLO_TYPE,
+          clientId: this.lan.clientId,
+          clientNonce: encodeHex(clientNonce),
+        });
+      } else {
+        this.send({
+          protocolVersion: PROTOCOL_VERSION,
+          type: "hello",
+          token: token!,
+          pluginVersion: this.pluginVersion,
+        });
+      }
     };
     const onMessage = (data: unknown) => this.handleMessage(generation, data);
     const onClose = () => {
@@ -594,10 +682,145 @@ export class BridgeClient extends EventEmitter {
     }, SOCKET_HANDSHAKE_TIMEOUT_MS);
   }
 
+  private sendLanHandshake(message: Record<string, unknown>): boolean {
+    if (!this.socket) return false;
+    try {
+      this.socket.send(JSON.stringify(message));
+      return true;
+    } catch {
+      this.emitDiagnostic("reconnect", "SOCKET_FAILED");
+      this.connectionFailed(this.socketGeneration);
+      return false;
+    }
+  }
+
+  private failLanAuthentication(generation: number): void {
+    if (!this.isCurrent(generation)) return;
+    this.emitDiagnostic("auth", "AUTH_FAILED", undefined, true);
+    this.closeCurrentSocket(generation);
+  }
+
+  private handleLanMessage(generation: number, frame: string): void {
+    let value: unknown;
+    try {
+      value = JSON.parse(frame) as unknown;
+    } catch {
+      this.failLanAuthentication(generation);
+      return;
+    }
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      this.failLanAuthentication(generation);
+      return;
+    }
+    const message = value as Record<string, unknown>;
+    if (message.protocolVersion !== PROTOCOL_VERSION) {
+      this.emitDiagnostic("auth", "VERSION_MISMATCH", undefined, true);
+      this.closeCurrentSocket(generation);
+      return;
+    }
+    if (!this.authenticated && this.lanPhase === "hello" && message.type === LAN_CHALLENGE_TYPE) {
+      const clientNonce = this.lanClientNonce;
+      const key = this.lanKey;
+      const serverNonce = typeof message.serverNonce === "string"
+        ? decodeHex(message.serverNonce, LAN_NONCE_BYTES)
+        : undefined;
+      const proof = typeof message.serverProof === "string"
+        ? decodeHex(message.serverProof, 32)
+        : undefined;
+      if (!clientNonce || !key || !serverNonce || !proof || message.clientId !== this.lan?.clientId) {
+        this.failLanAuthentication(generation);
+        return;
+      }
+      const expected = lanProof(key, "server", this.lan!.clientId, clientNonce, serverNonce);
+      if (!doubleHmacEqual(expected, proof)) {
+        this.failLanAuthentication(generation);
+        return;
+      }
+      this.lanServerNonce = serverNonce;
+      this.lanSendKey = deriveLanFrameKey(key, this.lan!.clientId, clientNonce, serverNonce, "client-to-server");
+      this.lanReceiveKey = deriveLanFrameKey(key, this.lan!.clientId, clientNonce, serverNonce, "server-to-client");
+      this.lanPhase = "challenge";
+      this.sendLanHandshake({
+        protocolVersion: PROTOCOL_VERSION,
+        type: LAN_PROOF_TYPE,
+        clientId: this.lan!.clientId,
+        clientProof: encodeHex(lanProof(key, "client", this.lan!.clientId, clientNonce, serverNonce)),
+      });
+      return;
+    }
+    if (!this.authenticated && this.lanPhase === "challenge" && message.type === LAN_READY_TYPE) {
+      if (typeof message.sessionId !== "string" || message.sessionId.length === 0) {
+        this.failLanAuthentication(generation);
+        return;
+      }
+      this.sessionId = message.sessionId;
+      this.authenticated = true;
+      this.lanPhase = "ready";
+      this.lanSendSequence = 0;
+      this.lanReceiveSequence = 0;
+      this.reconnectAttempt = 0;
+      this.setStatus("connected");
+      this.clearHandshakeTimer();
+      this.requestActions();
+      return;
+    }
+    if (this.authenticated && this.lanPhase === "ready" && message.type === LAN_FRAME_TYPE) {
+      const sequence = message.sequence;
+      const payload = message.payload;
+      const mac = typeof message.mac === "string" ? decodeHex(message.mac, 32) : undefined;
+      if (!Number.isSafeInteger(sequence) || sequence !== this.lanReceiveSequence + 1
+        || typeof payload !== "string" || !mac || !this.lanReceiveKey) {
+        this.failLanAuthentication(generation);
+        return;
+      }
+      const expected = lanFrameMac(this.lanReceiveKey, "server-to-client", sequence, payload);
+      if (!doubleHmacEqual(expected, mac)) {
+        this.failLanAuthentication(generation);
+        return;
+      }
+      this.lanReceiveSequence = sequence;
+      let parsed: ServerMessage;
+      try {
+        parsed = parseServerMessage(payload);
+      } catch {
+        this.failLanAuthentication(generation);
+        return;
+      }
+      switch (parsed.type) {
+        case "actions":
+          this.handleActions(parsed);
+          break;
+        case "appearance":
+          this.handleAppearance(parsed);
+          break;
+        case "feedback":
+          this.handleFeedback(parsed);
+          break;
+        case "error":
+          this.handleRemoteError(parsed);
+          break;
+      }
+      return;
+    }
+    if (message.type === "error") {
+      try {
+        this.handleRemoteError(parseServerMessage(frame) as ServerErrorMessage);
+      } catch {
+        this.failLanAuthentication(generation);
+      }
+      return;
+    }
+    this.failLanAuthentication(generation);
+  }
+
   private handleMessage(generation: number, data: unknown): void {
     if (!this.isCurrent(generation)) return;
     const frame = frameToString(data);
     if (frame.length === 0) return;
+    if (this.lan) {
+      this.handleLanMessage(generation, frame);
+      return;
+    }
 
     let message: ServerMessage;
     try {
@@ -757,11 +980,21 @@ export class BridgeClient extends EventEmitter {
 
   private send(message: BridgeMessage): boolean {
     if (!this.socket) return false;
+    const sessionId = this.sessionId;
+    if (this.lan) {
+      if (!isNonEmptyString(sessionId)) return false;
+      let payload: string;
+      try {
+        payload = serializeClientMessage({ ...message, sessionId } as ClientMessage);
+      } catch {
+        return false;
+      }
+      return this.sendLanPayload(payload);
+    }
     let outbound: ClientMessage;
     if (message.type === "hello") {
       outbound = message;
     } else {
-      const sessionId = this.sessionId;
       if (!isNonEmptyString(sessionId)) return false;
       outbound = { ...message, sessionId } as ClientMessage;
     }
@@ -775,10 +1008,41 @@ export class BridgeClient extends EventEmitter {
     }
   }
 
+  private sendLanPayload(payload: string): boolean {
+    const key = this.lanSendKey;
+    if (!this.socket || !key) return false;
+    const sequence = this.lanSendSequence + 1;
+    try {
+      this.socket.send(JSON.stringify({
+        protocolVersion: PROTOCOL_VERSION,
+        type: LAN_FRAME_TYPE,
+        sequence,
+        payload,
+        mac: encodeHex(lanFrameMac(key, "client-to-server", sequence, payload)),
+      }));
+      this.lanSendSequence = sequence;
+      return true;
+    } catch {
+      this.emitDiagnostic("reconnect", "SOCKET_FAILED");
+      this.connectionFailed(this.socketGeneration);
+      return false;
+    }
+  }
+
   private clearHandshakeTimer(): void {
     if (this.handshakeTimer === undefined) return;
     this.cancelTimeout(this.handshakeTimer);
     this.handshakeTimer = undefined;
+  }
+  private resetLanState(): void {
+    this.lanPhase = undefined;
+    this.lanKey = undefined;
+    this.lanClientNonce = undefined;
+    this.lanServerNonce = undefined;
+    this.lanSendKey = undefined;
+    this.lanReceiveKey = undefined;
+    this.lanSendSequence = 0;
+    this.lanReceiveSequence = 0;
   }
 
   private connectionFailed(generation: number): void {
@@ -786,6 +1050,7 @@ export class BridgeClient extends EventEmitter {
     if (this.socket === undefined && this._status === "disconnected") return;
     this.authenticated = false;
     this.sessionId = undefined;
+    this.resetLanState();
     this.pendingActions.clear();
     this.clearHandshakeTimer();
     this.setStatus("disconnected");

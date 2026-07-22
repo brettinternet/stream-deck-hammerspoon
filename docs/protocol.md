@@ -12,6 +12,8 @@ This document is the wire contract for the first bridge slice. It describes JSON
 - Because `hs.httpserver` does not provide reliable close identity, Lua cannot bind authorization to a transport-close callback. The rotating `sessionId` binds every application message instead: closing/reconnecting clears contexts, and an old ID is rejected even if a stale client can still write.
 - The token is read by the plugin from `~/.hammerspoon/streamdeck-token` by default and is created by Lua from two UUIDs with mode `0600`. It is an opaque shared value on the wire. It is never logged, put in Stream Deck settings, or included in an error.
 
+The B3 LAN profile is an opt-in transport extension around these same v1 application messages. It uses a second `hs.httpserver` listener and never sends the v1 token: the handshake and `lanFrame` envelopes are specified in `docs/security.md`, while the JSON payload inside each authenticated frame remains subject to this v1 schema. The v1 loopback endpoint and wire messages are unchanged.
+
 The Stream Deck manifest exposes the generic button UUID `com.brettinternet.hammerspoon.button`, toggle UUID `com.brettinternet.hammerspoon.action`, and keypad-only multi-state UUID `com.brettinternet.hammerspoon.multistate`. All three can select any registered Hammerspoon action, and all use the same property-inspector settings identity. Protocol `actionId` values identify those Lua registrations and are separate from either Stream Deck UUID.
 
 ## Envelope and common constraints

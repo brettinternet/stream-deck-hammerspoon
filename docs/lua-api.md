@@ -1,8 +1,8 @@
 # Stream Deck bridge Lua API
 
-This module is the Hammerspoon side of the local Stream Deck bridge. It is a normal Lua module loaded by the Hammerspoon configuration. It does not evaluate Lua received from the plugin, and it does not expose a direct hardware API.
+This module is the Hammerspoon side of the authenticated Stream Deck bridge. It is a normal Lua module loaded by the Hammerspoon configuration. It does not evaluate Lua received from the plugin, and it does not expose a direct hardware API.
 
-The bridge protocol is authenticated and loopback-only. The Stream Deck plugin is the client; Hammerspoon accepts one local plugin connection. The shared token authenticates `hello`, then each accepted hello creates a fresh opaque in-memory `sessionId`. The plugin must echo that exact ID on every later application message.
+The default protocol is authenticated loopback. An explicit LAN profile can add a second listener with per-client PSK authentication; loopback remains the default and B3 supports one authenticated session globally until multi-client isolation is implemented.
 
 ## Installation and loading
 
@@ -64,16 +64,31 @@ These actions call only the fixed Hammerspoon APIs documented above. They do not
 
 ### `streamdeck.start(options)`
 
-Starts the authenticated loopback WebSocket server and publishes the registered action list to the plugin after a valid hello establishes a fresh session. With no options it uses the protocol defaults: loopback binding, Bonjour disabled, port `17321`, and token path `~/.hammerspoon/streamdeck-token`.
+Starts the authenticated loopback WebSocket server and, only when `lan` is supplied, a second authenticated LAN WebSocket server. It publishes the registered action list after authentication. With no options it uses loopback binding, Bonjour disabled, port `17321`, and token path `~/.hammerspoon/streamdeck-token`.
 
 The supported options are:
 
 | Option      | Type    | Default                           | Meaning                        |
 | ----------- | ------- | --------------------------------- | ------------------------------ |
-| `port`      | integer | `17321`                           | Local TCP port for the bridge. |
-| `tokenPath` | string  | `~/.hammerspoon/streamdeck-token` | Shared-token file path.        |
+| `port`      | integer | `17321`                           | Loopback TCP port for the bridge. |
+| `tokenPath` | string  | `~/.hammerspoon/streamdeck-token` | Legacy loopback shared-token file path. |
+| `lan`       | table   | disabled                          | Explicit LAN listener and per-client key map. |
 
-The server is never exposed on a non-loopback interface. `start` validates its options and raises a Lua error for an invalid value or a server/token startup failure. Use one `start` call per Hammerspoon load.
+The `lan` table requires `interface` (a specific interface name such as `en0`), an optional distinct `port` (default `17322`), and a non-empty `clients` map. Each `clients[clientId]` value is a manually provisioned 32-byte key file with mode `0600`:
+
+```lua
+streamdeck.start({
+  lan = {
+    interface = "en0",
+    port = 17322,
+    clients = {
+      ["remote-deck"] = "/Users/me/.hammerspoon/streamdeck-remote.key",
+    },
+  },
+})
+```
+
+The remote plugin uses `ws://<address>:17322/streamdeck` with `lan = { clientId = "remote-deck", keyPath = "/path/to/streamdeck-remote.key" }`. The LAN listener rejects v1 `hello`/token messages and has no unauthenticated fallback. `start` validates all options and key files and raises a Lua error for an invalid value or startup failure. Use one `start` call per Hammerspoon load.
 
 ### `streamdeck.stop()`
 

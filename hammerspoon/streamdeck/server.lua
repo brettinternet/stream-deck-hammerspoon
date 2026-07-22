@@ -1,8 +1,11 @@
+local Crypto = require("streamdeck.crypto")
 local server = {}
 
 local DEFAULT_PORT = 17321
+local DEFAULT_LAN_PORT = 17322
 local DEFAULT_TOKEN_SUFFIX = "/.hammerspoon/streamdeck-token"
 local SOCKET_PATH = "/streamdeck"
+local LAN_CLIENT_ID_PATTERN = "^[A-Za-z0-9%._%-]+$"
 
 local function isInteger(value)
   return type(value) == "number"
@@ -69,7 +72,7 @@ local function validateOptions(options)
   end
   options = options or {}
   for key in pairs(options) do
-    if key ~= "port" and key ~= "tokenPath" then
+    if key ~= "port" and key ~= "tokenPath" and key ~= "lan" then
       error("Unknown Stream Deck start option: " .. tostring(key), 3)
     end
   end
@@ -85,22 +88,63 @@ local function validateOptions(options)
   if type(tokenPath) ~= "string" or tokenPath == "" then
     error("Stream Deck tokenPath must be a non-empty string", 3)
   end
-  return port, tokenPath
+
+  local lan = options.lan
+  if lan == nil then return port, tokenPath, nil end
+  if type(lan) ~= "table" then error("Stream Deck lan option must be a table", 3) end
+  for key in pairs(lan) do
+    if key ~= "interface" and key ~= "port" and key ~= "clients" then
+      error("Unknown Stream Deck LAN option: " .. tostring(key), 3)
+    end
+  end
+  local interface = lan.interface
+  if type(interface) ~= "string" or interface == "" or interface == "0.0.0.0" or interface == "::" then
+    error("Stream Deck LAN interface must name a specific interface", 3)
+  end
+  local lanPort = lan.port or DEFAULT_LAN_PORT
+  if not isInteger(lanPort) or lanPort < 1 or lanPort > 65535 or lanPort == port then
+    error("Stream Deck LAN port must be distinct integer from 1 to 65535", 3)
+  end
+  if type(lan.clients) ~= "table" then error("Stream Deck LAN clients must be a table", 3) end
+  local clients = {}
+  local count = 0
+  for clientId, keyPath in pairs(lan.clients) do
+    if type(clientId) ~= "string" or #clientId < 1 or #clientId > 64 or clientId:match(LAN_CLIENT_ID_PATTERN) == nil then
+      error("Stream Deck LAN client IDs must use 1-64 safe characters", 3)
+    end
+    if type(keyPath) ~= "string" or keyPath == "" then
+      error("Stream Deck LAN credential paths must be non-empty strings", 3)
+    end
+    clients[clientId] = keyPath
+    count = count + 1
+  end
+  if count == 0 then error("Stream Deck LAN clients must not be empty", 3) end
+  return port, tokenPath, { interface = interface, port = lanPort, clients = clients }
 end
 
 function server.new(registry, protocol, contextFactory)
-  if type(registry) ~= "table" or type(protocol) ~= "table" or type(contextFactory) ~= "table" then
-    error("Invalid Stream Deck server dependencies", 2)
-  end
-
   local object = {
     registry = registry,
     protocol = protocol,
     contextFactory = contextFactory,
     instances = {},
     http = nil,
+    lanHttp = nil,
+    activeHttp = nil,
+    activeMode = "loopback",
+    lanConfig = nil,
+    lanClientId = nil,
+    lanKeyPath = nil,
+    lanKey = nil,
+    lanClientNonce = nil,
+    lanServerNonce = nil,
+    lanSendKey = nil,
+    lanReceiveKey = nil,
+    lanSendSequence = 0,
+    lanReceiveSequence = 0,
     token = nil,
     sessionId = nil,
+    sessionMode = nil,
     sessionGeneration = 0,
     started = false,
     authenticated = false,
@@ -108,10 +152,31 @@ function server.new(registry, protocol, contextFactory)
     responseQueue = nil,
   }
 
+  function object:_lanFrame(payload)
+    local hsapi = rawget(_G, "hs")
+    local key = self.lanSendKey
+    if not key then return nil end
+    local sequence = self.lanSendSequence + 1
+    local mac = Crypto.frameMac(hsapi, key, "server-to-client", sequence, payload)
+    if not mac then return nil end
+    local encoded = hsapi.json.encode({
+      protocolVersion = self.protocol.VERSION,
+      type = "lanFrame",
+      sequence = sequence,
+      payload = payload,
+      mac = Crypto.hexEncode(mac),
+    })
+    if not encoded then return nil end
+    self.lanSendSequence = sequence
+    return encoded
+  end
+
   function object:_queue(message)
     local encoded = self.protocol.encode(message)
-    if not encoded then
-      return false
+    if not encoded then return false end
+    if self.activeMode == "lan" then
+      encoded = self:_lanFrame(encoded)
+      if not encoded then return false end
     end
     if self.responseQueue then
       self.responseQueue[#self.responseQueue + 1] = encoded
@@ -125,10 +190,11 @@ function server.new(registry, protocol, contextFactory)
   end
 
   function object:_sendRaw(encoded)
-    if not self.started or not self.http or type(self.http.send) ~= "function" then
+    local http = self.activeHttp or self.http
+    if not self.started or not http or type(http.send) ~= "function" then
       return false
     end
-    local ok = pcall(self.http.send, self.http, encoded)
+    local ok = pcall(http.send, http, encoded)
     return ok
   end
 
@@ -303,6 +369,10 @@ function server.new(registry, protocol, contextFactory)
 
 
   function object:_handle(message)
+    if message.type == "hello" and self.authenticated and self.sessionMode ~= self.activeMode then
+      self:_queueError("AUTH_FAILED")
+      return
+    end
     if message.type == "hello" then
       if message.token ~= self.token then
         self:_queueError("AUTH_FAILED")
@@ -317,6 +387,7 @@ function server.new(registry, protocol, contextFactory)
       self.responseQueue = {}
       self.sessionId = sessionId
       self.authenticated = true
+      self.sessionMode = self.activeMode
       self:_queue({
         protocolVersion = self.protocol.VERSION,
         type = "helloAck",
@@ -433,7 +504,142 @@ function server.new(registry, protocol, contextFactory)
     self:_queueError("INVALID_STATE")
   end
 
-  function object:_onMessage(raw)
+  function object:_resetLanSession()
+    self.lanClientId = nil
+    self.lanKeyPath = nil
+    self.lanKey = nil
+    self.lanClientNonce = nil
+    self.lanServerNonce = nil
+    self.lanSendKey = nil
+    self.lanReceiveKey = nil
+    self.lanSendSequence = 0
+    self.lanReceiveSequence = 0
+  end
+
+  function object:_lanError(code)
+    local encoded = self.protocol.encode(self.protocol.error(code))
+    return encoded or ""
+  end
+
+  function object:_onLanMessage(raw, http)
+    self.activeMode = "lan"
+    self.activeHttp = http
+    local hsapi = rawget(_G, "hs")
+    local ok, value = pcall(hsapi.json.decode, raw)
+    if not ok or type(value) ~= "table" then return self:_lanError("MALFORMED_MESSAGE") end
+    if value.protocolVersion ~= self.protocol.VERSION then return self:_lanError("VERSION_MISMATCH") end
+
+    if value.type == "lanHello" then
+      if self.authenticated and self.sessionMode ~= "lan" then return self:_lanError("AUTH_FAILED") end
+      if self.authenticated then
+        self:_clearInstances()
+        self.authenticated = false
+        self.sessionId = nil
+        self.sessionMode = nil
+      end
+      if type(value.clientId) ~= "string" or #value.clientId < 1 or #value.clientId > 64
+          or value.clientId:match(LAN_CLIENT_ID_PATTERN) == nil then
+        return self:_lanError("AUTH_FAILED")
+      end
+      local clientNonce = Crypto.hexDecode(value.clientNonce, Crypto.NONCE_BYTES)
+      local keyPath = self.lanConfig and self.lanConfig.clients[value.clientId]
+      if not clientNonce or not keyPath then return self:_lanError("AUTH_FAILED") end
+      local key = Crypto.readKey(hsapi, keyPath)
+      local serverNonce = Crypto.randomBytes(Crypto.NONCE_BYTES)
+      if not key or not serverNonce then return self:_lanError("AUTH_FAILED") end
+      local serverProof = Crypto.proof(hsapi, key, "server", value.clientId, clientNonce, serverNonce)
+      if not serverProof then return self:_lanError("AUTH_FAILED") end
+      self:_resetLanSession()
+      self.lanClientId = value.clientId
+      self.lanKeyPath = keyPath
+      self.lanKey = key
+      self.lanClientNonce = clientNonce
+      self.lanServerNonce = serverNonce
+      return hsapi.json.encode({
+        protocolVersion = self.protocol.VERSION,
+        type = "lanChallenge",
+        clientId = value.clientId,
+        serverNonce = Crypto.hexEncode(serverNonce),
+        serverProof = Crypto.hexEncode(serverProof),
+      }) or ""
+    end
+
+    if value.type == "lanProof" then
+      if self.authenticated or not self.lanKey or value.clientId ~= self.lanClientId then return self:_lanError("AUTH_FAILED") end
+      local clientProof = Crypto.hexDecode(value.clientProof, 32)
+      local expected = Crypto.proof(hsapi, self.lanKey, "client", self.lanClientId, self.lanClientNonce, self.lanServerNonce)
+      if not clientProof or not expected or not Crypto.doubleHmacEqual(hsapi, expected, clientProof) then
+        return self:_lanError("AUTH_FAILED")
+      end
+      local sessionId = self:_newSessionId()
+      if not sessionId then return self:_lanError("INTERNAL") end
+      self:_clearInstances()
+      self.sessionId = sessionId
+      self.sessionMode = "lan"
+      self.authenticated = true
+      self.lanSendKey = Crypto.hkdf(
+        hsapi,
+        self.lanKey,
+        Crypto.kdfSalt(self.lanClientId, self.lanClientNonce, self.lanServerNonce),
+        Crypto.frameInfo("server-to-client"),
+        32
+      )
+      self.lanReceiveKey = Crypto.hkdf(
+        hsapi,
+        self.lanKey,
+        Crypto.kdfSalt(self.lanClientId, self.lanClientNonce, self.lanServerNonce),
+        Crypto.frameInfo("client-to-server"),
+        32
+      )
+      if not self.lanSendKey or not self.lanReceiveKey then
+        self.authenticated = false
+        self.sessionId = nil
+        return self:_lanError("INTERNAL")
+      end
+      self.lanSendSequence = 0
+      self.lanReceiveSequence = 0
+      return hsapi.json.encode({
+        protocolVersion = self.protocol.VERSION,
+        type = "lanReady",
+        sessionId = sessionId,
+      }) or ""
+    end
+
+    if value.type == "lanFrame" then
+      if not self.authenticated or self.sessionMode ~= "lan" or not self.lanReceiveKey then
+        return self:_lanError("AUTH_REQUIRED")
+      end
+      local sequence = value.sequence
+      local payload = value.payload
+      local mac = Crypto.hexDecode(value.mac, 32)
+      local currentKey = self.lanKeyPath and Crypto.readKey(hsapi, self.lanKeyPath)
+      if not currentKey or not Crypto.doubleHmacEqual(hsapi, self.lanKey, currentKey) then
+        self:_clearInstances()
+        self.authenticated = false
+        self.sessionId = nil
+        self.sessionMode = nil
+        return self:_lanError("AUTH_FAILED")
+      end
+      local expected = type(sequence) == "number" and type(payload) == "string"
+        and Crypto.frameMac(hsapi, self.lanReceiveKey, "client-to-server", sequence, payload)
+      if type(sequence) ~= "number" or sequence ~= self.lanReceiveSequence + 1
+          or not mac or not expected or not Crypto.doubleHmacEqual(hsapi, expected, mac) then
+        self:_clearInstances()
+        self.authenticated = false
+        self.sessionId = nil
+        self.sessionMode = nil
+        return self:_lanError("AUTH_FAILED")
+      end
+      self.lanReceiveSequence = sequence
+      return self:_onMessage(payload, "lan", http)
+    end
+
+    return self:_lanError("AUTH_REQUIRED")
+  end
+
+  function object:_onMessage(raw, mode, http)
+    self.activeMode = mode or "loopback"
+    self.activeHttp = http or self.http
     self.responseQueue = {}
     self.dispatching = true
     local ok, codeOrNil = xpcall(function()
@@ -464,7 +670,7 @@ function server.new(registry, protocol, contextFactory)
     if self.started then
       error("Stream Deck server is already started", 2)
     end
-    local port, tokenPath = validateOptions(options)
+    local port, tokenPath, lanConfig = validateOptions(options)
     local hsapi = rawget(_G, "hs")
     if not hsapi or not hsapi.httpserver then
       error("Hammerspoon HTTP server is unavailable", 2)
@@ -473,6 +679,12 @@ function server.new(registry, protocol, contextFactory)
     local token, tokenError = ensureToken(hsapi, tokenPath)
     if not token then
       error("Stream Deck token startup failed", 2)
+    end
+    if lanConfig then
+      for _, keyPath in pairs(lanConfig.clients) do
+        local key = Crypto.readKey(hsapi, keyPath)
+        if not key then error("Stream Deck LAN credential startup failed", 2) end
+      end
     end
 
     local ok, httpOrError = pcall(hsapi.httpserver.new, false, false)
@@ -483,7 +695,7 @@ function server.new(registry, protocol, contextFactory)
     local configured = pcall(http.setInterface, http, "localhost")
       and pcall(http.setPort, http, port)
       and pcall(http.websocket, http, SOCKET_PATH, function(raw)
-        return self:_onMessage(raw)
+        return self:_onMessage(raw, "loopback", http)
       end)
     if type(http.maxBodySize) == "function" then
       pcall(http.maxBodySize, http, self.protocol.MAX_FRAME_BYTES)
@@ -498,10 +710,46 @@ function server.new(registry, protocol, contextFactory)
       pcall(http.stop, http)
       error("Stream Deck server startup failed", 2)
     end
+
+    local lanHttp
+    if lanConfig then
+      local lanOk, lanOrError = pcall(hsapi.httpserver.new, false, false)
+      if not lanOk or not lanOrError then
+        pcall(http.stop, http)
+        error("Stream Deck LAN server startup failed", 2)
+      end
+      lanHttp = lanOrError
+      local lanConfigured = pcall(lanHttp.setInterface, lanHttp, lanConfig.interface)
+        and pcall(lanHttp.setPort, lanHttp, lanConfig.port)
+        and pcall(lanHttp.websocket, lanHttp, SOCKET_PATH, function(raw)
+          return self:_onLanMessage(raw, lanHttp)
+        end)
+      if type(lanHttp.maxBodySize) == "function" then
+        pcall(lanHttp.maxBodySize, lanHttp, self.protocol.MAX_FRAME_BYTES)
+      end
+      if not lanConfigured then
+        pcall(lanHttp.stop, lanHttp)
+        pcall(http.stop, http)
+        error("Stream Deck LAN server startup failed", 2)
+      end
+      local lanStarted = pcall(lanHttp.start, lanHttp)
+      if not lanStarted then
+        pcall(lanHttp.stop, lanHttp)
+        pcall(http.stop, http)
+        error("Stream Deck LAN server startup failed", 2)
+      end
+    end
+
     self.http = http
+    self.lanHttp = lanHttp
+    self.activeHttp = http
+    self.activeMode = "loopback"
+    self.lanConfig = lanConfig
     self.token = token
     self.authenticated = false
     self.sessionId = nil
+    self.sessionMode = nil
+    self:_resetLanSession()
     self.started = true
     return self
   end
@@ -512,11 +760,19 @@ function server.new(registry, protocol, contextFactory)
     if self.http and type(self.http.stop) == "function" then
       pcall(self.http.stop, self.http)
     end
+    if self.lanHttp and type(self.lanHttp.stop) == "function" then
+      pcall(self.lanHttp.stop, self.lanHttp)
+    end
     self.http = nil
+    self.lanHttp = nil
+    self.activeHttp = nil
+    self.lanConfig = nil
     self.token = nil
     self.sessionId = nil
+    self.sessionMode = nil
     self.authenticated = false
     self.responseQueue = nil
+    self:_resetLanSession()
     return self
   end
 

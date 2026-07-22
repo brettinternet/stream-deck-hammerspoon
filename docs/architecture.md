@@ -2,7 +2,7 @@
 
 ## Purpose and scope
 
-This repository defines an official Elgato Stream Deck plugin that bridges configured Stream Deck keys to reusable Hammerspoon Lua actions over an authenticated loopback WebSocket. The bridge keeps Stream Deck presentation and device lifecycle on the plugin side, and keeps action registration, callbacks, and action-specific behavior on the Hammerspoon side.
+This repository defines an official Elgato Stream Deck plugin that bridges configured Stream Deck keys to reusable Hammerspoon Lua actions over an authenticated loopback WebSocket by default, with an explicit per-client PSK LAN profile. The bridge keeps Stream Deck presentation and device lifecycle on the plugin side, and keeps action registration, callbacks, and action-specific behavior on the Hammerspoon side.
 
 This document is the architecture contract for protocol v1 and the first vertical slice. It describes process boundaries and locked decisions; it is not a promise of features outside that slice.
 
@@ -78,16 +78,16 @@ The property inspector is a separate official Stream Deck UI surface. It communi
 
 The runtime flow is:
 
-1. Hammerspoon starts the `hs.httpserver` WebSocket endpoint at the default URL `ws://localhost:17321/streamdeck`; it binds loopback (`localhost`) and disables Bonjour.
-2. The plugin reads the runtime token file and opens one WebSocket connection.
-3. The plugin's first protocol message is `hello`, containing the shared token and `pluginVersion`.
-4. Hammerspoon validates the hello and, even when an earlier session was marked authenticated, accepts it by clearing prior instance contexts, generates a fresh non-empty in-memory opaque `sessionId`, and returns it in the required `helloAck.sessionId`.
-5. The plugin sends that exact `sessionId` on every subsequent application message: `listActions`, `instanceAppeared`, `instanceDisappeared`, `keyDown`, `keyUp`, `dialDown`, `dialRotate`, `dialUp`, `touchTap`, and `requestAppearance`. Missing or stale IDs are rejected before any action or callback is invoked.
+1. Hammerspoon starts the `hs.httpserver` WebSocket endpoint at the default URL `ws://localhost:17321/streamdeck`; it binds loopback (`localhost`) and disables Bonjour. An optional second listener is started only for an explicit `lan = { interface, port, clients }` configuration.
+2. The plugin opens the loopback v1 connection and reads the token, or opens the configured LAN URL and reads only the selected 32-byte client key.
+3. The loopback plugin's first protocol message is v1 `hello`, containing the shared token and `pluginVersion`; the LAN plugin performs the separate nonce/HMAC handshake and never sends the token.
+4. Hammerspoon validates the selected handshake, clears prior instance contexts, generates a fresh in-memory opaque `sessionId`, and returns it in `helloAck` or `lanReady`.
+5. The plugin sends that exact `sessionId` on every subsequent application message inside the selected transport. Loopback messages are plain v1 JSON frames; LAN messages are authenticated `lanFrame` envelopes with strict per-direction sequences and exact-payload MACs.
 6. Stream Deck instance lifecycle events become `instanceAppeared` and `instanceDisappeared`; key presses and releases become `keyDown` and `keyUp`; encoder pushes, rotations, and touchscreen taps become `dialDown`, `dialRotate`, `dialUp`, and `touchTap`; appearance refreshes become `requestAppearance`. A repeated `instanceAppeared` for the same instance/action is a settings refresh and does not run `appear` again.
 7. Lua computes presentation and sends `appearance`, or sends an asynchronous `error` with a safe code/message. Callback code may also emit validated, instance/action-correlated `feedback` with a bounded safe message and duration.
 8. The plugin applies the v1 `title` and `state` to the Stream Deck key. Feedback temporarily sets the safe message as the title and calls `showOk` or `showAlert`, then restores the previous appearance after expiry.
 
-Every protocol message has `protocolVersion: 1` and a `type`. After `helloAck`, every plugin-to-Lua application message carries the current `sessionId`; `hello` carries the token but no session ID, and `helloAck` returns the newly generated ID. Unknown fields are ignored. Malformed messages and unknown types are rejected. TypeScript validates against the canonical JSON Schema with Ajv; Lua mirrors strict required/type checks because it cannot execute that JSON Schema directly.
+Every application message contains `protocolVersion: 1` and a `type`. Loopback v1 uses `hello`/`helloAck` and plain JSON; the LAN profile uses its nonce/HMAC handshake and authenticated frame envelopes around the same bounded application messages. Unknown fields are ignored. Malformed messages and unknown types are rejected. TypeScript validates application messages against the canonical JSON Schema with Ajv; Lua mirrors strict required/type checks because it cannot execute the JSON Schema directly.
 
 ## Identity and state ownership
 
@@ -148,14 +148,14 @@ The default token path is `~/.hammerspoon/streamdeck-token`. Lua creates it from
 
 Current v1 limitations are intentional:
 
-- one local plugin client, the fixed default URL `ws://localhost:17321/streamdeck`, and first-message authentication;
-- loopback transport only; no remote clients, Bonjour discovery, or unauthenticated mode;
-- raw token file permissions may interact with Stream Deck plugin sandbox/file-permission behavior;
+- one plugin client per `hs.httpserver` listener and one authenticated session globally in B3; concurrent client isolation is deferred to B4;
+- loopback is the default fixed URL and v1 uses first-message token authentication; the LAN profile is explicit opt-in and uses PSK nonce/HMAC frames;
+- LAN traffic is authenticated but intentionally observable to peers that can capture it; it is not a confidentiality boundary;
 - title and binary state are always supported; versioned appearance fields add bounded colors, progress, badges, and validated icons;
 - custom icon bytes are bounded and constrained to supported PNG dimensions or a safe SVG profile; arbitrary paths, URLs, MIME parameters, executable SVG, and raw Lua input are rejected;
 - hardware/property-inspector completion cannot be automated without a connected Stream Deck and active inspector; fake transports and official CLI validation cover core bridge behavior, with manual end-to-end verification required.
 
-The roadmap boundary is the protocol-v1 contract above. Remaining appearance fields, arbitrary or unbounded property-inspector forms, more clients, richer connection authentication, or other phase-3-and-later behavior require a new contract and decision; they must not be inferred from this architecture document. The bounded version-1 settings descriptors are already part of the current contract. No implementation claim is made for those later possibilities.
+The roadmap boundary is the protocol-v1 application contract plus the B3 LAN transport profile. Remaining appearance fields, arbitrary or unbounded property-inspector forms, more clients, traffic confidentiality, or other phase-3-and-later behavior require a new contract and decision; they must not be inferred from this architecture document. The bounded version-1 settings descriptors remain part of the current contract.
 
 ## Decision records
 

@@ -34,6 +34,7 @@
         "CALLBACK_FAILED",
         "INTERNAL",
         "TOKEN_UNAVAILABLE",
+        "LAN_KEY_UNAVAILABLE",
         "SOCKET_FAILED",
         "DISCONNECTED",
         "RECONNECTING",
@@ -93,6 +94,8 @@
         switch (code) {
             case "TOKEN_UNAVAILABLE":
                 return "The Hammerspoon token is unavailable. Check ~/.hammerspoon/streamdeck-token, then reload Hammerspoon.";
+            case "LAN_KEY_UNAVAILABLE":
+                return "The LAN credential is unavailable or invalid. Check the configured 32-byte key file and its 0600 permissions.";
             case "AUTH_REQUIRED":
                 return "Hammerspoon requested authentication. Reload Hammerspoon so the bridge can reconnect.";
             case "AUTH_FAILED":

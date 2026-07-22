@@ -186,6 +186,7 @@ _G.hs = {
         started = false,
         stopped = false,
       }
+      _G.fakeHttp = fakeHttp
 
       function fakeHttp:setInterface(interface)
         self.interface = interface
@@ -2208,4 +2209,6 @@ test("server emits feedback without breaking callback loop", function()
 end)
 
 passed = passed + dofile("hammerspoon/tests/examples.lua")
+passed = passed + dofile("hammerspoon/tests/crypto.test.lua")
+passed = passed + dofile("hammerspoon/tests/lan.test.lua")
 io.write("Lua bridge tests passed: " .. passed .. "\n")

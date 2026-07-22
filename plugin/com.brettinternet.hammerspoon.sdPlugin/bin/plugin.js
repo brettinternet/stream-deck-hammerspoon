@@ -11,7 +11,7 @@ import require$$0$2 from 'buffer';
 import fs, { existsSync, readFileSync } from 'node:fs';
 import path, { join } from 'node:path';
 import { cwd } from 'node:process';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual, hkdfSync, createHmac, randomBytes } from 'node:crypto';
 import { EventEmitter as EventEmitter$1 } from 'node:events';
 import { homedir } from 'node:os';
 import { readFile } from 'node:fs/promises';
@@ -9030,6 +9030,78 @@ const streamDeck = {
         return connection.connect();
     },
 };
+
+const LAN_PROTOCOL_LABEL = "streamdeck-lan-v1";
+const LAN_KEY_BYTES = 32;
+const LAN_NONCE_BYTES = 32;
+const COMPARISON_KEY = Buffer.from("streamdeck-lan-double-hmac-v1", "utf8");
+function bytes(value) {
+    return typeof value === "string" ? Buffer.from(value, "utf8") : Buffer.from(value);
+}
+function u32be(value) {
+    if (!Number.isInteger(value) || value < 0 || value > 0xffffffff)
+        throw new Error("LAN field is too large.");
+    const result = Buffer.allocUnsafe(4);
+    result.writeUInt32BE(value, 0);
+    return result;
+}
+function u64be(value) {
+    if (!Number.isSafeInteger(value) || value < 0)
+        throw new Error("LAN sequence is invalid.");
+    const result = Buffer.alloc(8);
+    result.writeBigUInt64BE(BigInt(value), 0);
+    return result;
+}
+function encodeLanFields(fields) {
+    const encoded = [];
+    for (const field of fields) {
+        const value = bytes(field);
+        encoded.push(u32be(value.length), value);
+    }
+    return Buffer.concat(encoded);
+}
+function decodeHex(value, expectedBytes) {
+    if (typeof value !== "string" || value.length === 0 || value.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(value))
+        return undefined;
+    const decoded = Buffer.from(value, "hex");
+    return decoded.length !== expectedBytes ? undefined : decoded;
+}
+function encodeHex(value) {
+    return Buffer.from(value).toString("hex");
+}
+function hmacSha256(key, data) {
+    return createHmac("sha256", bytes(key)).update(bytes(data)).digest();
+}
+function doubleHmacEqual(expected, actual) {
+    const left = hmacSha256(COMPARISON_KEY, hmacSha256(COMPARISON_KEY, expected));
+    const right = hmacSha256(COMPARISON_KEY, hmacSha256(COMPARISON_KEY, actual));
+    return left.length === right.length && timingSafeEqual(left, right);
+}
+function lanTranscript(role, clientId, clientNonce, serverNonce) {
+    return encodeLanFields([LAN_PROTOCOL_LABEL, role, clientId, clientNonce, serverNonce]);
+}
+function lanProof(key, role, clientId, clientNonce, serverNonce) {
+    return hmacSha256(key, lanTranscript(role, clientId, clientNonce, serverNonce));
+}
+function lanKdfSalt(clientId, clientNonce, serverNonce) {
+    return encodeLanFields([LAN_PROTOCOL_LABEL, "salt", clientId, clientNonce, serverNonce]);
+}
+function lanFrameInfo(direction) {
+    return encodeLanFields([LAN_PROTOCOL_LABEL, "frame", direction]);
+}
+function deriveLanFrameKey(key, clientId, clientNonce, serverNonce, direction) {
+    const derived = hkdfSync("sha256", bytes(key), lanKdfSalt(clientId, clientNonce, serverNonce), lanFrameInfo(direction), 32);
+    return Buffer.from(derived);
+}
+function lanFrameMac(frameKey, direction, sequence, payload) {
+    return hmacSha256(frameKey, encodeLanFields([LAN_PROTOCOL_LABEL, "frame", direction, u64be(sequence), bytes(payload)]));
+}
+function readLanKey(value) {
+    const key = bytes(value);
+    if (key.length !== LAN_KEY_BYTES)
+        throw new Error("LAN credential must be exactly 32 bytes.");
+    return key;
+}
 
 var _2020 = {exports: {}};
 
@@ -19033,6 +19105,23 @@ function serializeClientMessage(message) {
     }
 }
 
+const LAN_FRAME_TYPE = "lanFrame";
+const LAN_HELLO_TYPE = "lanHello";
+const LAN_CHALLENGE_TYPE = "lanChallenge";
+const LAN_PROOF_TYPE = "lanProof";
+const LAN_READY_TYPE = "lanReady";
+const LAN_CLIENT_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+function isLanUrl(value) {
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === "ws:" && parsed.hostname !== "localhost"
+            && parsed.hostname !== "127.0.0.1" && parsed.hostname !== "[::1]"
+            && parsed.pathname === "/streamdeck";
+    }
+    catch {
+        return false;
+    }
+}
 const DEFAULT_URL = "ws://localhost:17321/streamdeck";
 const DEFAULT_TOKEN_PATH = join(homedir(), ".hammerspoon", "streamdeck-token");
 const INITIAL_RECONNECT_MS = 250;
@@ -19111,7 +19200,7 @@ function safeProtocolCode(value) {
         : "MALFORMED_MESSAGE";
 }
 function diagnosticCategory(code, hasInstance = false) {
-    if (code === "AUTH_REQUIRED" || code === "AUTH_FAILED" || code === "TOKEN_UNAVAILABLE")
+    if (code === "AUTH_REQUIRED" || code === "AUTH_FAILED" || code === "TOKEN_UNAVAILABLE" || code === "LAN_KEY_UNAVAILABLE")
         return "auth";
     if (code === "UNKNOWN_ACTION" || code === "STALE_INSTANCE" || code === "INVALID_STATE")
         return "registry";
@@ -19159,11 +19248,14 @@ class BridgeClient extends EventEmitter$1 {
     url;
     tokenPath;
     pluginVersion;
+    lan;
     _status = "disconnected";
     _actions = [];
     instances = new Map();
     createSocket;
     readToken;
+    readKey;
+    randomBytes;
     scheduleTimeout;
     cancelTimeout;
     random;
@@ -19185,10 +19277,27 @@ class BridgeClient extends EventEmitter$1 {
     retryInMs;
     loggedDiagnosticKeys = new Set();
     preserveFailureCause = false;
+    lanPhase;
+    lanKey;
+    lanClientNonce;
+    lanServerNonce;
+    lanSendKey;
+    lanReceiveKey;
+    lanSendSequence = 0;
+    lanReceiveSequence = 0;
     constructor(options) {
         super();
         this.url = options.url ?? DEFAULT_URL;
-        if (!isLegacyLoopbackUrl(this.url)) {
+        this.lan = options.lan;
+        if (this.lan) {
+            if (!isLanUrl(this.url))
+                throw new Error("LAN bridge URL must use ws://<host>/streamdeck.");
+            if (!LAN_CLIENT_ID_PATTERN.test(this.lan.clientId))
+                throw new Error("LAN clientId must use 1-64 safe characters.");
+            if (!isNonEmptyString(this.lan.keyPath))
+                throw new Error("LAN keyPath must be a non-empty string.");
+        }
+        else if (!isLegacyLoopbackUrl(this.url)) {
             throw new Error("Legacy bridge URL must target loopback.");
         }
         this.tokenPath = options.tokenPath ?? DEFAULT_TOKEN_PATH;
@@ -19199,6 +19308,8 @@ class BridgeClient extends EventEmitter$1 {
         this.logger = options.logger ?? (() => { });
         this.createSocket = options.createSocket ?? ((url) => new WebSocket(url));
         this.readToken = options.readToken ?? ((tokenPath) => readFile(tokenPath, "utf8"));
+        this.readKey = options.readKey ?? ((keyPath) => readFile(keyPath));
+        this.randomBytes = options.randomBytes ?? randomBytes;
         this.scheduleTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
         this.cancelTimeout = options.clearTimeout ?? ((handle) => clearTimeout(handle));
         this.random = options.random ?? Math.random;
@@ -19231,6 +19342,7 @@ class BridgeClient extends EventEmitter$1 {
         this.started = false;
         this.authenticated = false;
         this.sessionId = undefined;
+        this.resetLanState();
         this.pendingActions.clear();
         this.clearReconnectTimer();
         this.clearHandshakeTimer();
@@ -19397,24 +19509,43 @@ class BridgeClient extends EventEmitter$1 {
         this.retryInMs = undefined;
         this.authenticated = false;
         this.sessionId = undefined;
+        this.resetLanState();
         this.setStatus("connecting");
         const generation = ++this.socketGeneration;
         void this.openSocket(generation);
     }
     async openSocket(generation) {
         let token;
-        try {
-            const value = await this.readToken(this.tokenPath);
-            token = (Buffer.isBuffer(value) ? value.toString("utf8") : value).trim();
-            if (!token)
-                throw new Error("Token unavailable.");
-        }
-        catch {
-            if (this.isCurrent(generation)) {
-                this.emitDiagnostic("auth", "TOKEN_UNAVAILABLE", undefined, true);
-                this.connectionFailed(generation);
+        if (!this.lan) {
+            try {
+                const value = await this.readToken(this.tokenPath);
+                token = (Buffer.isBuffer(value) ? value.toString("utf8") : value).trim();
+                if (!token)
+                    throw new Error("Token unavailable.");
             }
-            return;
+            catch {
+                if (this.isCurrent(generation)) {
+                    this.emitDiagnostic("auth", "TOKEN_UNAVAILABLE", undefined, true);
+                    this.connectionFailed(generation);
+                }
+                return;
+            }
+        }
+        else {
+            try {
+                this.lanKey = readLanKey(await this.readKey(this.lan.keyPath));
+                this.lanClientNonce = this.randomBytes(LAN_NONCE_BYTES);
+                if (this.lanClientNonce.length !== LAN_NONCE_BYTES)
+                    throw new Error("Invalid LAN nonce.");
+                this.lanPhase = "hello";
+            }
+            catch {
+                if (this.isCurrent(generation)) {
+                    this.emitDiagnostic("auth", "LAN_KEY_UNAVAILABLE", undefined, true);
+                    this.connectionFailed(generation);
+                }
+                return;
+            }
         }
         if (!this.isCurrent(generation))
             return;
@@ -19441,12 +19572,27 @@ class BridgeClient extends EventEmitter$1 {
             if (!this.isCurrent(generation))
                 return;
             this.setStatus("authenticating");
-            this.send({
-                protocolVersion: PROTOCOL_VERSION,
-                type: "hello",
-                token,
-                pluginVersion: this.pluginVersion,
-            });
+            if (this.lan) {
+                const clientNonce = this.lanClientNonce;
+                if (!clientNonce) {
+                    this.closeCurrentSocket(generation);
+                    return;
+                }
+                this.sendLanHandshake({
+                    protocolVersion: PROTOCOL_VERSION,
+                    type: LAN_HELLO_TYPE,
+                    clientId: this.lan.clientId,
+                    clientNonce: encodeHex(clientNonce),
+                });
+            }
+            else {
+                this.send({
+                    protocolVersion: PROTOCOL_VERSION,
+                    type: "hello",
+                    token: token,
+                    pluginVersion: this.pluginVersion,
+                });
+            }
         };
         const onMessage = (data) => this.handleMessage(generation, data);
         const onClose = () => {
@@ -19481,12 +19627,150 @@ class BridgeClient extends EventEmitter$1 {
             this.connectionFailed(generation);
         }, SOCKET_HANDSHAKE_TIMEOUT_MS);
     }
+    sendLanHandshake(message) {
+        if (!this.socket)
+            return false;
+        try {
+            this.socket.send(JSON.stringify(message));
+            return true;
+        }
+        catch {
+            this.emitDiagnostic("reconnect", "SOCKET_FAILED");
+            this.connectionFailed(this.socketGeneration);
+            return false;
+        }
+    }
+    failLanAuthentication(generation) {
+        if (!this.isCurrent(generation))
+            return;
+        this.emitDiagnostic("auth", "AUTH_FAILED", undefined, true);
+        this.closeCurrentSocket(generation);
+    }
+    handleLanMessage(generation, frame) {
+        let value;
+        try {
+            value = JSON.parse(frame);
+        }
+        catch {
+            this.failLanAuthentication(generation);
+            return;
+        }
+        if (value === null || typeof value !== "object" || Array.isArray(value)) {
+            this.failLanAuthentication(generation);
+            return;
+        }
+        const message = value;
+        if (message.protocolVersion !== PROTOCOL_VERSION) {
+            this.emitDiagnostic("auth", "VERSION_MISMATCH", undefined, true);
+            this.closeCurrentSocket(generation);
+            return;
+        }
+        if (!this.authenticated && this.lanPhase === "hello" && message.type === LAN_CHALLENGE_TYPE) {
+            const clientNonce = this.lanClientNonce;
+            const key = this.lanKey;
+            const serverNonce = typeof message.serverNonce === "string"
+                ? decodeHex(message.serverNonce, LAN_NONCE_BYTES)
+                : undefined;
+            const proof = typeof message.serverProof === "string"
+                ? decodeHex(message.serverProof, 32)
+                : undefined;
+            if (!clientNonce || !key || !serverNonce || !proof || message.clientId !== this.lan?.clientId) {
+                this.failLanAuthentication(generation);
+                return;
+            }
+            const expected = lanProof(key, "server", this.lan.clientId, clientNonce, serverNonce);
+            if (!doubleHmacEqual(expected, proof)) {
+                this.failLanAuthentication(generation);
+                return;
+            }
+            this.lanServerNonce = serverNonce;
+            this.lanSendKey = deriveLanFrameKey(key, this.lan.clientId, clientNonce, serverNonce, "client-to-server");
+            this.lanReceiveKey = deriveLanFrameKey(key, this.lan.clientId, clientNonce, serverNonce, "server-to-client");
+            this.lanPhase = "challenge";
+            this.sendLanHandshake({
+                protocolVersion: PROTOCOL_VERSION,
+                type: LAN_PROOF_TYPE,
+                clientId: this.lan.clientId,
+                clientProof: encodeHex(lanProof(key, "client", this.lan.clientId, clientNonce, serverNonce)),
+            });
+            return;
+        }
+        if (!this.authenticated && this.lanPhase === "challenge" && message.type === LAN_READY_TYPE) {
+            if (typeof message.sessionId !== "string" || message.sessionId.length === 0) {
+                this.failLanAuthentication(generation);
+                return;
+            }
+            this.sessionId = message.sessionId;
+            this.authenticated = true;
+            this.lanPhase = "ready";
+            this.lanSendSequence = 0;
+            this.lanReceiveSequence = 0;
+            this.reconnectAttempt = 0;
+            this.setStatus("connected");
+            this.clearHandshakeTimer();
+            this.requestActions();
+            return;
+        }
+        if (this.authenticated && this.lanPhase === "ready" && message.type === LAN_FRAME_TYPE) {
+            const sequence = message.sequence;
+            const payload = message.payload;
+            const mac = typeof message.mac === "string" ? decodeHex(message.mac, 32) : undefined;
+            if (!Number.isSafeInteger(sequence) || sequence !== this.lanReceiveSequence + 1
+                || typeof payload !== "string" || !mac || !this.lanReceiveKey) {
+                this.failLanAuthentication(generation);
+                return;
+            }
+            const expected = lanFrameMac(this.lanReceiveKey, "server-to-client", sequence, payload);
+            if (!doubleHmacEqual(expected, mac)) {
+                this.failLanAuthentication(generation);
+                return;
+            }
+            this.lanReceiveSequence = sequence;
+            let parsed;
+            try {
+                parsed = parseServerMessage(payload);
+            }
+            catch {
+                this.failLanAuthentication(generation);
+                return;
+            }
+            switch (parsed.type) {
+                case "actions":
+                    this.handleActions(parsed);
+                    break;
+                case "appearance":
+                    this.handleAppearance(parsed);
+                    break;
+                case "feedback":
+                    this.handleFeedback(parsed);
+                    break;
+                case "error":
+                    this.handleRemoteError(parsed);
+                    break;
+            }
+            return;
+        }
+        if (message.type === "error") {
+            try {
+                this.handleRemoteError(parseServerMessage(frame));
+            }
+            catch {
+                this.failLanAuthentication(generation);
+            }
+            return;
+        }
+        this.failLanAuthentication(generation);
+    }
     handleMessage(generation, data) {
         if (!this.isCurrent(generation))
             return;
         const frame = frameToString(data);
         if (frame.length === 0)
             return;
+        if (this.lan) {
+            this.handleLanMessage(generation, frame);
+            return;
+        }
         let message;
         try {
             message = parseServerMessage(frame);
@@ -19646,12 +19930,24 @@ class BridgeClient extends EventEmitter$1 {
     send(message) {
         if (!this.socket)
             return false;
+        const sessionId = this.sessionId;
+        if (this.lan) {
+            if (!isNonEmptyString(sessionId))
+                return false;
+            let payload;
+            try {
+                payload = serializeClientMessage({ ...message, sessionId });
+            }
+            catch {
+                return false;
+            }
+            return this.sendLanPayload(payload);
+        }
         let outbound;
         if (message.type === "hello") {
             outbound = message;
         }
         else {
-            const sessionId = this.sessionId;
             if (!isNonEmptyString(sessionId))
                 return false;
             outbound = { ...message, sessionId };
@@ -19666,11 +19962,43 @@ class BridgeClient extends EventEmitter$1 {
             return false;
         }
     }
+    sendLanPayload(payload) {
+        const key = this.lanSendKey;
+        if (!this.socket || !key)
+            return false;
+        const sequence = this.lanSendSequence + 1;
+        try {
+            this.socket.send(JSON.stringify({
+                protocolVersion: PROTOCOL_VERSION,
+                type: LAN_FRAME_TYPE,
+                sequence,
+                payload,
+                mac: encodeHex(lanFrameMac(key, "client-to-server", sequence, payload)),
+            }));
+            this.lanSendSequence = sequence;
+            return true;
+        }
+        catch {
+            this.emitDiagnostic("reconnect", "SOCKET_FAILED");
+            this.connectionFailed(this.socketGeneration);
+            return false;
+        }
+    }
     clearHandshakeTimer() {
         if (this.handshakeTimer === undefined)
             return;
         this.cancelTimeout(this.handshakeTimer);
         this.handshakeTimer = undefined;
+    }
+    resetLanState() {
+        this.lanPhase = undefined;
+        this.lanKey = undefined;
+        this.lanClientNonce = undefined;
+        this.lanServerNonce = undefined;
+        this.lanSendKey = undefined;
+        this.lanReceiveKey = undefined;
+        this.lanSendSequence = 0;
+        this.lanReceiveSequence = 0;
     }
     connectionFailed(generation) {
         if (!this.isCurrent(generation))
@@ -19679,6 +20007,7 @@ class BridgeClient extends EventEmitter$1 {
             return;
         this.authenticated = false;
         this.sessionId = undefined;
+        this.resetLanState();
         this.pendingActions.clear();
         this.clearHandshakeTimer();
         this.setStatus("disconnected");
