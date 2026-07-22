@@ -68,10 +68,10 @@ Starts the authenticated loopback WebSocket server and, only when `lan` is suppl
 
 The supported options are:
 
-| Option      | Type    | Default                           | Meaning                                      |
-| ----------- | ------- | --------------------------------- | -------------------------------------------- |
-| `port`      | integer | `17321`                           | Loopback TCP port for the bridge.            |
-| `tokenPath` | string  | `~/.hammerspoon/streamdeck-token` | Loopback shared-token file path.             |
+| Option      | Type    | Default                           | Meaning                                       |
+| ----------- | ------- | --------------------------------- | --------------------------------------------- |
+| `port`      | integer | `17321`                           | Loopback TCP port for the bridge.             |
+| `tokenPath` | string  | `~/.hammerspoon/streamdeck-token` | Loopback shared-token file path.              |
 | `lan`       | table   | disabled                          | Explicit LAN listener and per-client key map. |
 
 The canonical multi-client form gives each client its own specific interface, unique port, and manually provisioned 32-byte key file with mode `0600`:
@@ -235,7 +235,6 @@ settingsSchema = {
 ```
 
 `docs/protocol.md` is the normative field specification; the validated rendering and persistence behavior is covered by `plugin/tests/property-inspector.test.ts`.
-
 
 The callbacks receive the current context. `press` and other callback return values are preserved by the bridge; the sound policy consumes only its documented `sound.ON`/`sound.OFF` sentinels and otherwise leaves callback values unchanged. `rotate` additionally receives integer `ticks` and boolean `pressed`; positive ticks are clockwise and negative ticks are counter-clockwise. `appearance` must return:
 
