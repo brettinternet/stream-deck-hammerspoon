@@ -1976,10 +1976,17 @@ test("area chart helper clamps and bounds safe SVG geometry", function()
     size = 144,
     backgroundColor = "#123456",
     fillColor = "#abcdef",
+    strokeColor = "#0f4c75",
+    strokeWidth = 3,
   }))
   assertTrue(chart144Svg:find('viewBox="0 0 144 144"', 1, true) ~= nil)
   assertTrue(chart144Svg:find('<rect width="144" height="144" fill="#123456"/>', 1, true) ~= nil)
   assertTrue(chart144Svg:find('<path fill="#abcdef"', 1, true) ~= nil)
+  assertTrue(chart144Svg:find(
+    '<path fill="none" stroke="#0f4c75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M0 144 L143 0"/>',
+    1,
+    true
+  ) ~= nil, "the trace must remain open instead of outlining the baseline")
 
   local valid, code = Protocol.validate(message("appearance", {
     instanceId = "chart",
@@ -1987,7 +1994,10 @@ test("area chart helper clamps and bounds safe SVG geometry", function()
     title = "Chart",
     state = 0,
     appearanceVersion = 1,
-    icon = Helpers.areaChart({ 25, 75 }),
+    icon = Helpers.areaChart({ 25, 75 }, {
+      strokeColor = "#1B5E8A",
+      strokeWidth = 2,
+    }),
   }))
   assertTrue(valid, code or "area chart SVG must pass the safe icon validator")
 
@@ -2004,6 +2014,10 @@ test("area chart helper clamps and bounds safe SVG geometry", function()
     { { 1 }, { min = 10, max = 10 } },
     { { 1 }, { backgroundColor = "#fff" } },
     { { 1 }, { fillColor = "red" } },
+    { { 1 }, { strokeColor = "#123" } },
+    { { 1 }, { strokeWidth = 0 } },
+    { { 1 }, { strokeWidth = 0.0004 } },
+    { { 1 }, { strokeWidth = 73 } },
     { { 1 }, { unknown = true } },
   }
   for _, arguments in ipairs(invalidArguments) do

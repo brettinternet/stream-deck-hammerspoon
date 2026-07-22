@@ -103,7 +103,8 @@ function helpers.areaChart(values, options)
   local settings = options or {}
   for key in next, settings do
     if key ~= "size" and key ~= "min" and key ~= "max"
-        and key ~= "backgroundColor" and key ~= "fillColor" then
+        and key ~= "backgroundColor" and key ~= "fillColor"
+        and key ~= "strokeColor" and key ~= "strokeWidth" then
       areaChartError("option '" .. tostring(key) .. "' is not supported")
     end
   end
@@ -144,8 +145,20 @@ function helpers.areaChart(values, options)
     areaChartError("fillColor must be a six-digit #RRGGBB color")
   end
 
+  local strokeColor = rawget(settings, "strokeColor")
+  if strokeColor ~= nil and not isHexColor(strokeColor) then
+    areaChartError("strokeColor must be a six-digit #RRGGBB color")
+  end
+  local strokeWidth = rawget(settings, "strokeWidth")
+  if strokeWidth == nil then
+    strokeWidth = 2
+  elseif not isFiniteNumber(strokeWidth) or strokeWidth < 0.001 or strokeWidth > size then
+    areaChartError("strokeWidth must be a finite number from 0.001 through size")
+  end
+
   local sampleCount = math.min(count, size)
-  local path = { "M0 ", tostring(size) }
+  local areaPath = { "M0 ", tostring(size) }
+  local tracePath = {}
   local width = size - 1
   for sampleIndex = 1, sampleCount do
     local sourceIndex
@@ -163,20 +176,28 @@ function helpers.areaChart(values, options)
     local x = sampleCount == 1 and 0
       or math.floor((sampleIndex - 1) * width / (sampleCount - 1) + 0.5)
     local y = size - chartValueRatio(value, minimum, maximum) * size
-    path[#path + 1] = " L" .. formatChartNumber(x) .. " " .. formatChartNumber(y)
+    local point = formatChartNumber(x) .. " " .. formatChartNumber(y)
+    areaPath[#areaPath + 1] = " L" .. point
+    tracePath[#tracePath + 1] = (sampleIndex == 1 and "M" or " L") .. point
   end
   if sampleCount > 0 then
     local lastX = sampleCount == 1 and 0 or width
-    path[#path + 1] = " L" .. formatChartNumber(lastX) .. " " .. tostring(size)
+    areaPath[#areaPath + 1] = " L" .. formatChartNumber(lastX) .. " " .. tostring(size)
   end
-  path[#path + 1] = " Z"
+  areaPath[#areaPath + 1] = " Z"
 
   local svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '
     .. tostring(size) .. " " .. tostring(size) .. '"><rect width="'
     .. tostring(size) .. '" height="' .. tostring(size) .. '" fill="'
     .. backgroundColor .. '"/><path fill="' .. fillColor .. '" d="'
-    .. table.concat(path) .. '"/></svg>'
-  return helpers.svg(svg)
+    .. table.concat(areaPath) .. '"/>'
+  if strokeColor ~= nil and sampleCount > 0 then
+    svg = svg .. '<path fill="none" stroke="' .. strokeColor
+      .. '" stroke-width="' .. formatChartNumber(strokeWidth)
+      .. '" stroke-linecap="round" stroke-linejoin="round" d="'
+      .. table.concat(tracePath) .. '"/>'
+  end
+  return helpers.svg(svg .. "</svg>")
 end
 
 local function validateContext(context)

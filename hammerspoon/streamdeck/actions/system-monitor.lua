@@ -5,9 +5,13 @@ local helpers = require("streamdeck.helpers")
 local action_id = "com.brettinternet.hammerspoon.system-monitor"
 local sample_interval = 1
 local history_limit = 120
-local cpu_color = "#2196F3"
-local ram_color = "#FF9800"
-local background_color = "#111827"
+local warning_threshold = 80
+local healthy_background_color = "#0D2818"
+local healthy_fill_color = "#34C759"
+local healthy_stroke_color = "#1B7F3A"
+local warning_background_color = "#2B1114"
+local warning_fill_color = "#FF453A"
+local warning_stroke_color = "#A61B1B"
 
 local visible_contexts = {}
 local metric_by_instance = {}
@@ -237,6 +241,10 @@ local function appearance_for(context)
     is_cpu and "CPU" or "RAM",
     rounded_percentage(value)
   )
+  local warning = value > warning_threshold
+  local background_color = warning and warning_background_color or healthy_background_color
+  local fill_color = warning and warning_fill_color or healthy_fill_color
+  local stroke_color = warning and warning_stroke_color or healthy_stroke_color
 
   return {
     title = title,
@@ -249,7 +257,9 @@ local function appearance_for(context)
         min = 0,
         max = 100,
         backgroundColor = background_color,
-        fillColor = is_cpu and cpu_color or ram_color,
+        fillColor = fill_color,
+        strokeColor = stroke_color,
+        strokeWidth = 2,
       }
     ),
   }

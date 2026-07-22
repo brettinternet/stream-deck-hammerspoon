@@ -165,12 +165,14 @@ Returns a custom SVG icon table with canonical padded base64 in `dataBase64`. Th
 
 ### `helpers.areaChart(values, options)`
 
-Returns a custom SVG icon containing a bounded square area chart. `values` must be a dense array of finite numbers; values outside the chart range are clamped. The optional `options` table accepts only `size` (`72` or `144`, default `72`), finite `min`/`max` bounds (defaults `0` and `100`, with `max > min`), and six-digit `#RRGGBB` `backgroundColor` (default `#000000`) and `fillColor` (default `#FFFFFF`). When there are more samples than pixels, points are deterministically downsampled in chronological order while retaining the newest value.
+Returns a custom SVG icon containing a bounded square area chart. `values` must be a dense array of finite numbers; values outside the chart range are clamped. The optional `options` table accepts only `size` (`72` or `144`, default `72`), finite `min`/`max` bounds (defaults `0` and `100`, with `max > min`), six-digit `#RRGGBB` `backgroundColor` (default `#000000`) and `fillColor` (default `#FFFFFF`), and an optional `strokeColor` plus finite `strokeWidth` from `0.001` through the chart size (default `2`). The stroke is an open trace across the samples; it does not outline the chart baseline or sides. When there are more samples than pixels, points are deterministically downsampled in chronological order while retaining the newest value.
 
 ```lua
 local icon = helpers.areaChart({ 18, 27, 34 }, {
   fillColor = "#2E86DE",
   backgroundColor = "#101820",
+  strokeColor = "#1B5E8A",
+  strokeWidth = 2,
 })
 ```
 
@@ -354,7 +356,7 @@ When the plugin is not connected, refresh requests cannot be delivered. The plug
 
 ## Installed action library
 
-The Lua release includes twenty optional action definitions under `streamdeck.actions`. Installation places them beside the bridge in the managed `~/.hammerspoon/streamdeck` directory, but `require("streamdeck")` does not register them automatically.
+The Lua release includes twenty-one optional action definitions under `streamdeck.actions`. Installation places them beside the bridge in the managed `~/.hammerspoon/streamdeck` directory, but `require("streamdeck")` does not register them automatically.
 
 Register the complete catalog with one bridge:
 

@@ -661,22 +661,29 @@ test("system monitor samples bounded shared CPU/RAM history and isolates toggles
   local scheduled = {}
   local timer_count = 0
   local tick_count = 0
+  local active_ticks = 0
+  local idle_ticks = 0
+  local active_delta = 10
+  local idle_delta = 90
+  local ram_active_pages = 2
   local fake_hs = {
     host = {
       cpuUsageTicks = function()
         tick_count = tick_count + 1
+        active_ticks = active_ticks + active_delta
+        idle_ticks = idle_ticks + idle_delta
         return {
           overall = {
-            user = tick_count * 10,
+            user = active_ticks,
             system = 0,
             nice = 0,
-            idle = tick_count * 90,
+            idle = idle_ticks,
           },
         }
       end,
       vmStat = function()
         return {
-          pagesActive = 2,
+          pagesActive = ram_active_pages,
           pagesWiredDown = 1,
           pagesUsedByVMCompressor = 1,
           pageSize = 10,
@@ -704,8 +711,10 @@ test("system monitor samples bounded shared CPU/RAM history and isolates toggles
   local helpers = require("streamdeck.helpers")
   local original_area_chart = helpers.areaChart
   local chart_lengths = {}
+  local chart_options = {}
   helpers.areaChart = function(values, options)
     chart_lengths[#chart_lengths + 1] = #values
+    chart_options[#chart_options + 1] = options
     return original_area_chart(values, options)
   end
 
@@ -742,9 +751,43 @@ test("system monitor samples bounded shared CPU/RAM history and isolates toggles
   tick()
   assertEqual(action.appearance(first).title, "CPU 10%", "CPU must use tick deltas")
   assertEqual(action.appearance(first).icon.kind, "custom")
+  local healthy_options = chart_options[#chart_options]
+  assertEqual(healthy_options.backgroundColor, "#0D2818")
+  assertEqual(healthy_options.fillColor, "#34C759")
+  assertEqual(healthy_options.strokeColor, "#1B7F3A")
+  assertEqual(healthy_options.strokeWidth, 2)
+
+  active_delta = 80
+  idle_delta = 20
+  tick()
+  assertEqual(action.appearance(second).title, "CPU 80%")
+  local threshold_options = chart_options[#chart_options]
+  assertEqual(threshold_options.fillColor, "#34C759", "the threshold itself must remain healthy")
+  assertEqual(threshold_options.strokeColor, "#1B7F3A")
+
+  active_delta = 81
+  idle_delta = 19
+  tick()
+  assertEqual(action.appearance(second).title, "CPU 81%")
+  local warning_options = chart_options[#chart_options]
+  assertEqual(warning_options.backgroundColor, "#2B1114")
+  assertEqual(warning_options.fillColor, "#FF453A")
+  assertEqual(warning_options.strokeColor, "#A61B1B")
+  active_delta = 10
+  idle_delta = 90
+  tick()
   action.press(first)
   assertEqual(action.appearance(first).title, "RAM 4%", "press must toggle only this key")
   assertEqual(action.appearance(second).title, "CPU 10%", "another key must keep its metric")
+  ram_active_pages = 90
+  tick()
+  assertEqual(action.appearance(first).title, "RAM 92%")
+  local ram_warning_options = chart_options[#chart_options]
+  assertEqual(ram_warning_options.backgroundColor, "#2B1114")
+  assertEqual(ram_warning_options.fillColor, "#FF453A")
+  assertEqual(ram_warning_options.strokeColor, "#A61B1B")
+  ram_active_pages = 2
+  tick()
 
   for _ = 1, 119 do
     tick()
