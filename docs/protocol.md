@@ -65,27 +65,24 @@ There are exactly sixteen v1 message types:
 | Lua → Plugin | `error` | asynchronous error | optional `requestId` and/or `instanceId` |
 No other message type is part of v1. In particular, there is no wire-level settings-change, ping, pong, or plugin-to-Lua error message.
 
-The state is per WebSocket connection, and the active session ID is per accepted `hello`:
+The state is per listener slot, not per WebSocket connection. `hs.httpserver` exposes neither per-WebSocket identity nor a close callback, so every WebSocket attached to a listener shares that slot's one active application session and listener-wide broadcast output. The loopback state machine is:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Disconnected
-    Disconnected --> ConnectedUnauthenticated: WebSocket opens
-    ConnectedUnauthenticated --> Authenticated: valid hello / helloAck(sessionId)
+    [*] --> SlotIdle
+    SlotIdle --> Authenticated: valid hello / helloAck(sessionId)
     Authenticated --> Authenticated: valid v1 message with current sessionId
-    Authenticated --> ConnectedUnauthenticated: valid reconnect hello / rotated helloAck
-    ConnectedUnauthenticated --> Closed: invalid hello, wrong version, malformed first frame
-    Authenticated --> Closed: version mismatch or transport close
-    Closed --> Disconnected
+    Authenticated --> Authenticated: valid reconnect hello / rotated helloAck
 ```
 
 1. On open, the plugin sends `hello` with the shared token as its first protocol message and sends no application message before `helloAck`.
-2. Before successful authentication, Lua accepts only a valid `hello`. Any other message is rejected with `AUTH_REQUIRED`; the connection is then closed. A malformed first frame cannot authenticate and is closed after the safe error when one can be sent.
-3. Lua verifies `protocolVersion`, `type`, `token`, and `pluginVersion`. A wrong token produces `AUTH_FAILED`; a non-v1 version produces `VERSION_MISMATCH`. Neither enters the authenticated state; the server closes the connection after the error.
-4. Each valid `hello`, including one received while already authenticated, is accepted after token/version checks. Lua safely clears all prior instance contexts, generates a fresh non-empty opaque `sessionId` with `hs.host.uuid()`, and returns it in `helloAck.sessionId`.
-5. Only after receiving that acknowledgement does the plugin send `listActions` or lifecycle/input messages. Every such message includes the exact current `sessionId`.
+2. Before successful authentication, Lua accepts only a valid `hello`. Any other message receives a safe `AUTH_REQUIRED` response when one can be sent; it cannot dispatch an application callback. A malformed first frame cannot authenticate.
+3. Lua verifies `protocolVersion`, `type`, `token`, and `pluginVersion`. A wrong token produces `AUTH_FAILED`; a non-v1 version produces `VERSION_MISMATCH`. Neither enters the authenticated state. Lua cannot close or identify one WebSocket from this callback.
+4. Each valid `hello`, including one received while already authenticated, is accepted after token/version checks. Lua safely clears only that slot's prior instance contexts, generates a fresh non-empty opaque `sessionId` with `hs.host.uuid()`, and returns it in `helloAck.sessionId`.
+5. Only after receiving that acknowledgement does the plugin send `listActions` or lifecycle/input messages. Every such message includes the exact current slot session ID.
 6. A missing `sessionId` is rejected as `INVALID_FIELD`; a stale or wrong-session value is rejected as `AUTH_REQUIRED`. Both are rejected before dispatch: no callback, appearance, context mutation, or acknowledgement is produced.
-7. Authentication failure never falls back to unauthenticated mode. If the token file cannot be read, the plugin remains disconnected/offline and reports an actionable local status; it does not send an empty token or disable authentication.
+7. The plugin clears its local session ID when its socket closes, stops, or fails. Lua retains slot state until a valid replacement handshake, listener stop, or an authenticated safety failure that explicitly resets that slot; a disconnected peer cannot use an old session ID after replacement.
+8. Authentication failure never falls back to unauthenticated mode. If the token file cannot be read, the plugin remains disconnected/offline and reports an actionable local status; it does not send an empty token or disable authentication.
 
 `hello` and `helloAck` have no `requestId`. A reconnecting `hello` rotates the session ID, so abandoned clients holding an old ID cannot send authenticated commands. The token and every session ID are never logged.
 
