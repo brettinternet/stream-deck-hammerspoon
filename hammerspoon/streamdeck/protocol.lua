@@ -1,7 +1,190 @@
 local protocol = {
   VERSION = 1,
   MAX_FRAME_BYTES = 65536,
+  MAX_LAN_CONTROL_BYTES = 4096,
+  MAX_LAN_PAYLOAD_BYTES = 49152,
+  MAX_JSON_DEPTH = 16,
+  MAX_JSON_CONTAINER_ITEMS = 128,
+  MAX_JSON_TOTAL_ITEMS = 2048,
 }
+
+function protocol.preflight(raw, maxBytes)
+  if type(raw) ~= "string" or raw == "" or #raw > (maxBytes or protocol.MAX_FRAME_BYTES) then
+    return false
+  end
+
+  local index = 1
+  local totalItems = 0
+  local rootDone = false
+  local stack = {}
+
+  local function skipWhitespace()
+    while index <= #raw do
+      local character = raw:sub(index, index)
+      if character ~= " " and character ~= "\t" and character ~= "\r" and character ~= "\n" then return end
+      index = index + 1
+    end
+  end
+
+  local function isDelimiter(character)
+    return character == "" or character == " " or character == "\t" or character == "\r"
+      or character == "\n" or character == "," or character == "]" or character == "}"
+  end
+
+  local function parseString()
+    if raw:sub(index, index) ~= '"' then return false end
+    index = index + 1
+    while index <= #raw do
+      local character = raw:sub(index, index)
+      index = index + 1
+      if character == '"' then return true end
+      if string.byte(character) < 32 then return false end
+      if character == "\\" then
+        local escaped = raw:sub(index, index)
+        index = index + 1
+        if escaped == "u" then
+          for _ = 1, 4 do
+            local digit = raw:sub(index, index)
+            if not digit:match("^[0-9A-Fa-f]$") then return false end
+            index = index + 1
+          end
+        elseif escaped ~= '"' and escaped ~= "\\" and escaped ~= "/" and escaped ~= "b"
+            and escaped ~= "f" and escaped ~= "n" and escaped ~= "r" and escaped ~= "t" then
+          return false
+        end
+      end
+    end
+    return false
+  end
+
+  local function parsePrimitive()
+    local character = raw:sub(index, index)
+    if character == '"' then return parseString() end
+    if raw:sub(index, index + 3) == "true" then
+      index = index + 4
+    elseif raw:sub(index, index + 4) == "false" then
+      index = index + 5
+    elseif raw:sub(index, index + 3) == "null" then
+      index = index + 4
+    else
+      local start = index
+      if character == "-" then index = index + 1 end
+      character = raw:sub(index, index)
+      if character == "0" then
+        index = index + 1
+      elseif character:match("^[1-9]$") then
+        index = index + 1
+        while raw:sub(index, index):match("^%d$") do index = index + 1 end
+      else
+        return false
+      end
+      if raw:sub(index, index) == "." then
+        index = index + 1
+        local fractionStart = index
+        while raw:sub(index, index):match("^%d$") do index = index + 1 end
+        if index == fractionStart then return false end
+      end
+      character = raw:sub(index, index)
+      if character == "e" or character == "E" then
+        index = index + 1
+        character = raw:sub(index, index)
+        if character == "+" or character == "-" then index = index + 1 end
+        local exponentStart = index
+        while raw:sub(index, index):match("^%d$") do index = index + 1 end
+        if index == exponentStart then return false end
+      end
+      if index == start then return false end
+    end
+    return isDelimiter(raw:sub(index, index))
+  end
+
+  local function countItem(container)
+    container.count = container.count + 1
+    totalItems = totalItems + 1
+    return container.count <= protocol.MAX_JSON_CONTAINER_ITEMS and totalItems <= protocol.MAX_JSON_TOTAL_ITEMS
+  end
+
+  local function beginValue()
+    local parent = stack[#stack]
+    if parent then
+      if parent.kind == "object" then
+        if parent.state ~= "value" then return false end
+        parent.state = "commaOrEnd"
+      else
+        if (parent.state ~= "valueOrEnd" and parent.state ~= "arrayValue") or not countItem(parent) then return false end
+        parent.state = "commaOrEnd"
+      end
+    end
+    local character = raw:sub(index, index)
+    if character == "{" or character == "[" then
+      if #stack >= protocol.MAX_JSON_DEPTH then return false end
+      index = index + 1
+      stack[#stack + 1] = {
+        kind = character == "{" and "object" or "array",
+        state = character == "{" and "keyOrEnd" or "valueOrEnd",
+        count = 0,
+      }
+      return true
+    end
+    if not parsePrimitive() then return false end
+    if #stack == 0 then rootDone = true end
+    return true
+  end
+
+  while not rootDone do
+    skipWhitespace()
+    if #stack == 0 then
+      if not beginValue() then return false end
+    else
+      local container = stack[#stack]
+      if container.kind == "object" then
+        if container.state == "keyOrEnd" or container.state == "key" then
+          if container.state == "keyOrEnd" and raw:sub(index, index) == "}" then
+            index = index + 1
+            table.remove(stack)
+            if #stack == 0 then rootDone = true end
+          else
+            if not parseString() or not countItem(container) then return false end
+            container.state = "colon"
+          end
+        elseif container.state == "colon" then
+          if raw:sub(index, index) ~= ":" then return false end
+          index = index + 1
+          container.state = "value"
+        elseif container.state == "value" then
+          if not beginValue() then return false end
+        elseif raw:sub(index, index) == "," then
+          index = index + 1
+          container.state = "key"
+        elseif raw:sub(index, index) == "}" then
+          index = index + 1
+          table.remove(stack)
+          if #stack == 0 then rootDone = true end
+        else
+          return false
+        end
+      elseif container.state == "valueOrEnd" and raw:sub(index, index) == "]" then
+        index = index + 1
+        table.remove(stack)
+        if #stack == 0 then rootDone = true end
+      elseif container.state == "valueOrEnd" or container.state == "arrayValue" then
+        if not beginValue() then return false end
+      elseif raw:sub(index, index) == "," then
+        index = index + 1
+        container.state = "arrayValue"
+      elseif raw:sub(index, index) == "]" then
+        index = index + 1
+        table.remove(stack)
+        if #stack == 0 then rootDone = true end
+      else
+        return false
+      end
+    end
+  end
+
+  skipWhitespace()
+  return index > #raw
+end
 
 local messageTypes = {
   hello = true,
@@ -927,7 +1110,7 @@ function protocol.validateDeviceMetadata(value)
 end
 
 function protocol.decode(raw)
-  if type(raw) ~= "string" or #raw > protocol.MAX_FRAME_BYTES then
+  if not protocol.preflight(raw, protocol.MAX_FRAME_BYTES) then
     return nil, "MALFORMED_MESSAGE"
   end
   local hsapi = rawget(_G, "hs")

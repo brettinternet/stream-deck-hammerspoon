@@ -41,6 +41,8 @@ assert(server:start({
 }))
 local http = _G.fakeHttp
 assert(http and http.interface == "en0" and http.port == 17322)
+local now = 0
+server._now = function() return now end
 
 local clientNonce = string.rep("\1", 32)
 local challenge = decode(http.websocketCallback(hello("remote", clientNonce)))
@@ -108,6 +110,8 @@ writeFile(keyPath, string.rep("R", 32))
 local revoked = decode(http.websocketCallback(frame(reconnectAppeared, reconnectClientToServer, 2, "client-to-server")))
 assert(revoked.type == "error" and revoked.code == "AUTH_FAILED", "revocation must drop the active LAN session")
 assert(pressed == 1, "revoked LAN session must not dispatch")
+
+now = now + 60
 
 local rotatedKey = string.rep("N", 32)
 writeFile(keyPath, rotatedKey)
@@ -200,6 +204,8 @@ local reflectedAppeared = assert(Protocol.encode({
 http.websocketCallback(frame(reflectedAppeared, reflectedClientToServer, 1, "client-to-server"))
 local reflectedFrame = decode(http.websocketCallback(frame(reflectedAppeared, reflectedServerToClient, 2, "server-to-client")))
 assert(reflectedFrame.type == "error" and reflectedFrame.code == "AUTH_FAILED", "reflected LAN frame must fail closed")
+
+now = now + 60
 
 local wrongNonce = string.rep("\2", 32)
 local wrongChallenge = decode(http.websocketCallback(hello("remote", wrongNonce)))

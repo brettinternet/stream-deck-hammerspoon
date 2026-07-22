@@ -388,6 +388,217 @@ const SERVER_MESSAGE_TYPES: Record<ServerMessageType, true> = {
   error: true,
 };
 
+export const MAX_FRAME_BYTES = 64 * 1024;
+export const MAX_LAN_CONTROL_BYTES = 4 * 1024;
+export const MAX_LAN_PAYLOAD_BYTES = 48 * 1024;
+export const MAX_JSON_DEPTH = 16;
+export const MAX_JSON_CONTAINER_ITEMS = 128;
+export const MAX_JSON_TOTAL_ITEMS = 2048;
+
+type JsonFrameContainer = {
+  kind: "object" | "array";
+  state: "keyOrEnd" | "key" | "colon" | "value" | "valueOrEnd" | "arrayValue" | "commaOrEnd";
+  count: number;
+};
+
+function malformedJson(message = "Malformed protocol message."): Error {
+  const error = new Error(message) as Error & { code?: string };
+  error.code = "MALFORMED_MESSAGE";
+  return error;
+}
+
+export function jsonByteLength(value: string): number {
+  return Buffer.byteLength(value, "utf8");
+}
+
+/**
+ * Scan JSON syntax and collection structure without constructing a value.
+ * This is intentionally iterative: JSON.parse is called only after this
+ * bounded scan accepts the frame.
+ */
+export function preflightJson(
+  source: string,
+  maxBytes = MAX_FRAME_BYTES,
+): void {
+  if (typeof source !== "string" || source.length === 0 || jsonByteLength(source) > maxBytes) {
+    throw malformedJson();
+  }
+
+  let index = 0;
+  let totalItems = 0;
+  let rootDone = false;
+  const stack: JsonFrameContainer[] = [];
+  const fail = (): never => {
+    throw malformedJson();
+  };
+  const skipWhitespace = (): void => {
+    while (index < source.length) {
+      const character = source[index];
+      if (character !== " " && character !== "\t" && character !== "\r" && character !== "\n") break;
+      index += 1;
+    }
+  };
+  const isDelimiter = (character: string | undefined): boolean =>
+    character === undefined || character === " " || character === "\t" || character === "\r"
+    || character === "\n" || character === "," || character === "]" || character === "}";
+  const parseString = (): void => {
+    if (source[index] !== '"') fail();
+    index += 1;
+    while (index < source.length) {
+      const character = source[index];
+      index += 1;
+      if (character === '"') return;
+      if (character === undefined || character.charCodeAt(0) < 0x20) fail();
+      if (character !== "\\") continue;
+      const escape = source[index];
+      index += 1;
+      if (escape === "u") {
+        for (let digit = 0; digit < 4; digit += 1) {
+          const code = source[index]?.charCodeAt(0);
+          if (code === undefined || !(
+            (code >= 0x30 && code <= 0x39)
+            || (code >= 0x41 && code <= 0x46)
+            || (code >= 0x61 && code <= 0x66)
+          )) fail();
+          index += 1;
+        }
+      } else if (escape !== '"' && escape !== "\\" && escape !== "/" && escape !== "b"
+        && escape !== "f" && escape !== "n" && escape !== "r" && escape !== "t") {
+        fail();
+      }
+    }
+    fail();
+  };
+  const parsePrimitive = (): void => {
+    const character = source[index];
+    if (character === '"') {
+      parseString();
+      return;
+    }
+    if (character === "t" && source.startsWith("true", index)) {
+      index += 4;
+    } else if (character === "f" && source.startsWith("false", index)) {
+      index += 5;
+    } else if (character === "n" && source.startsWith("null", index)) {
+      index += 4;
+    } else {
+      const start = index;
+      if (source[index] === "-") index += 1;
+      if (source[index] === "0") {
+        index += 1;
+      } else if (source[index] !== undefined && source[index]! >= "1" && source[index]! <= "9") {
+        index += 1;
+        while (source[index] !== undefined && source[index]! >= "0" && source[index]! <= "9") index += 1;
+      } else {
+        fail();
+      }
+      if (source[index] === ".") {
+        index += 1;
+        const fractionStart = index;
+        while (source[index] !== undefined && source[index]! >= "0" && source[index]! <= "9") index += 1;
+        if (index === fractionStart) fail();
+      }
+      if (source[index] === "e" || source[index] === "E") {
+        index += 1;
+        if (source[index] === "+" || source[index] === "-") index += 1;
+        const exponentStart = index;
+        while (source[index] !== undefined && source[index]! >= "0" && source[index]! <= "9") index += 1;
+        if (index === exponentStart) fail();
+      }
+      if (index === start) fail();
+    }
+    if (!isDelimiter(source[index])) fail();
+  };
+  const beginValue = (): void => {
+    const parent = stack.at(-1);
+    if (parent) {
+      if (parent.kind === "object") {
+        if (parent.state !== "value") fail();
+        parent.state = "commaOrEnd";
+      } else {
+        if (parent.state !== "valueOrEnd" && parent.state !== "arrayValue") fail();
+        parent.state = "commaOrEnd";
+        parent.count += 1;
+        totalItems += 1;
+      }
+      if (parent.count > MAX_JSON_CONTAINER_ITEMS || totalItems > MAX_JSON_TOTAL_ITEMS) fail();
+    }
+    const character = source[index];
+    if (character === "{" || character === "[") {
+      if (stack.length >= MAX_JSON_DEPTH) fail();
+      index += 1;
+      stack.push({
+        kind: character === "{" ? "object" : "array",
+        state: character === "{" ? "keyOrEnd" : "valueOrEnd",
+        count: 0,
+      });
+      return;
+    }
+    parsePrimitive();
+    if (stack.length === 0) rootDone = true;
+  };
+
+  while (!rootDone) {
+    skipWhitespace();
+    if (stack.length === 0) {
+      beginValue();
+      continue;
+    }
+    const container = stack.at(-1)!;
+    if (container.kind === "object") {
+      if (container.state === "keyOrEnd" || container.state === "key") {
+        if (container.state === "keyOrEnd" && source[index] === "}") {
+          index += 1;
+          stack.pop();
+          if (stack.length === 0) rootDone = true;
+        } else {
+          parseString();
+          container.count += 1;
+          totalItems += 1;
+          if (container.count > MAX_JSON_CONTAINER_ITEMS || totalItems > MAX_JSON_TOTAL_ITEMS) fail();
+          container.state = "colon";
+        }
+      } else if (container.state === "colon") {
+        if (source[index] !== ":") fail();
+        index += 1;
+        container.state = "value";
+      } else if (container.state === "value") {
+        beginValue();
+      } else {
+        if (source[index] === ",") {
+          index += 1;
+          container.state = "key";
+        } else if (source[index] === "}") {
+          index += 1;
+          stack.pop();
+          if (stack.length === 0) rootDone = true;
+        } else {
+          fail();
+        }
+      }
+    } else if (container.state === "valueOrEnd" && source[index] === "]") {
+      index += 1;
+      stack.pop();
+      if (stack.length === 0) rootDone = true;
+    } else if (container.state === "valueOrEnd" || container.state === "arrayValue") {
+      beginValue();
+    } else {
+      if (source[index] === ",") {
+        index += 1;
+        container.state = "arrayValue";
+      } else if (source[index] === "]") {
+        index += 1;
+        stack.pop();
+        if (stack.length === 0) rootDone = true;
+      } else {
+        fail();
+      }
+    }
+  }
+  skipWhitespace();
+  if (index !== source.length) fail();
+}
+
 const ajv = new Ajv2020({ allErrors: true });
 const validateProtocolMessage = ajv.compile(protocolSchema);
 
@@ -954,13 +1165,13 @@ export function parseServerMessage(data: string): ServerMessage {
     throw new Error("Cannot parse server message: empty frame.");
   }
 
+  preflightJson(data);
   let parsed: unknown;
   try {
     parsed = JSON.parse(data);
   } catch {
-    throw new Error("Cannot parse server message: invalid JSON.");
+    throw malformedJson("Cannot parse server message: invalid JSON.");
   }
-
   if (!isObject(parsed)) {
     throw new Error("Invalid server message: expected a JSON object.");
   }
@@ -1061,8 +1272,12 @@ export function serializeClientMessage(message: ClientMessage): string {
     if (encoded === undefined) {
       throw new Error("not JSON");
     }
+    if (jsonByteLength(encoded) > MAX_FRAME_BYTES) {
+      throw malformedJson("Invalid client message: frame exceeds 65536 UTF-8 bytes.");
+    }
     return encoded;
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("frame exceeds")) throw error;
     throw new Error("Invalid client message: value is not JSON-serializable.");
   }
 }

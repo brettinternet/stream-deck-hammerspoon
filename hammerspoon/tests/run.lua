@@ -5,20 +5,49 @@
 package.path = "hammerspoon/?.lua;hammerspoon/?/init.lua;" .. package.path
 
 local frames = {}
-local frameNumber = 0
 local fakeHttp
 
+local function fakeJsonString(value)
+  local valueType = type(value)
+  if value == nil then return "null" end
+  if valueType == "boolean" or valueType == "number" then return tostring(value) end
+  if valueType == "string" then
+    local escaped = value:gsub("\\", "\\\\"):gsub('"', '\\"')
+    escaped = escaped:gsub("\b", "\\b"):gsub("\t", "\\t"):gsub("\n", "\\n")
+    escaped = escaped:gsub("\f", "\\f"):gsub("\r", "\\r")
+    escaped = escaped:gsub("[%z\1-\31]", function(character)
+      return string.format("\\u%04x", string.byte(character))
+    end)
+    return '"' .. escaped .. '"'
+  end
+  if valueType ~= "table" then error("unsupported fake JSON value") end
+  local numeric = true
+  local maxIndex = 0
+  for key in pairs(value) do
+    if type(key) ~= "number" or key < 1 or math.floor(key) ~= key then numeric = false break end
+    maxIndex = math.max(maxIndex, key)
+  end
+  if numeric then
+    local items = {}
+    for index = 1, maxIndex do items[#items + 1] = fakeJsonString(value[index]) end
+    return "[" .. table.concat(items, ",") .. "]"
+  end
+  local keys = {}
+  for key in pairs(value) do keys[#keys + 1] = tostring(key) end
+  table.sort(keys)
+  local fields = {}
+  for _, key in ipairs(keys) do fields[#fields + 1] = fakeJsonString(key) .. ":" .. fakeJsonString(value[key]) end
+  return "{" .. table.concat(fields, ",") .. "}"
+end
+
 local function fakeEncode(value)
-  frameNumber = frameNumber + 1
-  local key = "fake-frame-" .. frameNumber
-  frames[key] = value
-  return key
+  local encoded = fakeJsonString(value)
+  frames[encoded] = value
+  return encoded
 end
 
 local function fakeDecode(raw)
-  if type(raw) ~= "string" or frames[raw] == nil then
-    error("invalid fake JSON frame")
-  end
+  if type(raw) ~= "string" or frames[raw] == nil then error("invalid fake JSON frame") end
   return frames[raw]
 end
 
@@ -768,6 +797,80 @@ test("versioned schema bounds use UTF-8 characters", function()
   }), "invalid UTF-8 must be rejected")
 end)
 
+test("protocol preflight bounds JSON structure before decoding", function()
+  assertTrue(Protocol.preflight(string.rep("[", 16) .. "0" .. string.rep("]", 16)))
+  assertTrue(Protocol.preflight('{"value":"\\"[{\\u0041]"}'))
+  assertTrue(Protocol.preflight("[1,2]"))
+  assertFalse(Protocol.preflight(string.rep("[", 17) .. "0" .. string.rep("]", 17)))
+  assertFalse(Protocol.preflight("[" .. string.rep("0,", 128) .. "0]"))
+  assertFalse(Protocol.preflight('{"value":"\\u12x4"}'))
+  assertFalse(Protocol.preflight('{"protocolVersion":1} {"type":"helloAck"}'))
+  for _, malformed in ipairs({ '{"a":tru}', "[1 2]", '{"a":1,}', "undefined", "01", "1." }) do
+    assertFalse(Protocol.preflight(malformed))
+  end
+end)
+
+test("server admission limits are bounded and refill deterministically", function()
+  local server = Server.new(Registry.new(), Protocol, Context)
+  local now = 0
+  local listener = {}
+  server._now = function() return now end
+
+  for _ = 1, 6 do assertTrue(server:_admitInbound(listener, false)) end
+  assertFalse(server:_admitInbound(listener, false))
+  now = now + 5
+  assertTrue(server:_admitInbound(listener, false))
+
+  for _ = 1, 240 do assertTrue(server:_admitInbound(listener, true)) end
+  assertFalse(server:_admitInbound(listener, true))
+  now = now + (1 / 120)
+  assertTrue(server:_admitInbound(listener, true))
+end)
+
+test("rate exhaustion never invokes lifecycle callbacks or evicts another listener", function()
+  withTokenPath(function(path)
+    local disappeared = 0
+    local registry = Registry.new()
+    registry:register({
+      id = "com.test.rate",
+      name = "Rate",
+      appearance = function() return { title = "Rate", state = 0 } end,
+      press = function() end,
+      longPress = function() end,
+      disappear = function() disappeared = disappeared + 1 end,
+    })
+    clearPendingTimers()
+    local server = newServer(registry, path)
+    local now = 0
+    server._now = function() return now end
+    authenticate(server, path)
+    exchange(server, message("instanceAppeared", {
+      instanceId = "rate-instance",
+      actionId = "com.test.rate",
+      settings = {},
+    }))
+    exchange(server, message("keyDown", {
+      instanceId = "rate-instance",
+      actionId = "com.test.rate",
+    }))
+    assertTrue(lastScheduledTimer ~= nil and not lastScheduledTimer.stopped)
+    for index = 1, 238 do
+      exchange(server, message("listActions", { requestId = "rate-" .. tostring(index) }))
+    end
+    assertError("AUTH_FAILED", exchange(server, message("listActions", { requestId = "rate-limit" })))
+    assertEqual(disappeared, 0, "rate rejection must not invoke disappear")
+    assertTrue(lastScheduledTimer.stopped, "rate rejection must cancel pending long-press work")
+
+    server.authenticated = true
+    server.sessionMode = "lan"
+    for _ = 1, 7 do
+      server:_onMessage('{"protocolVersion":1,"type":"listActions","requestId":"other-listener"}', "loopback", fakeHttp)
+    end
+    assertTrue(server.authenticated and server.sessionMode == "lan", "one listener must not evict another")
+    server:stop()
+  end)
+end)
+
 test("protocol codec rejects defensive frame and JSON failures", function()
   local originalJson = _G.hs.json
   local validMessage = message("helloAck", { sessionId = "session" })
@@ -784,7 +887,7 @@ test("protocol codec rejects defensive frame and JSON failures", function()
   end)
 
   withJson({}, function()
-    local value, code = Protocol.decode("frame")
+    local value, code = Protocol.decode("{}")
     assertEqual(value, nil)
     assertEqual(code, "INTERNAL")
   end)
@@ -792,7 +895,7 @@ test("protocol codec rejects defensive frame and JSON failures", function()
   withJson({ decode = function()
     error("decoder failure")
   end }, function()
-    local value, code = Protocol.decode("frame")
+    local value, code = Protocol.decode("{}")
     assertEqual(value, nil)
     assertEqual(code, "MALFORMED_MESSAGE")
   end)
