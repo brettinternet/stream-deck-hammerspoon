@@ -366,6 +366,8 @@ The v1 error code set is closed:
 
 For a malformed frame that cannot be parsed as JSON, Lua may be unable to attach correlation fields; when it can send a valid error envelope, it uses `MALFORMED_MESSAGE` with no correlation. The plugin applies the same safe rule to malformed Lua messages locally; no undocumented error type is emitted.
 
+Where this table says a connection closes, the plugin performs the close: `hs.httpserver` gives Lua no way to close a WebSocket, so a Lua-side rejection retires the affected slot's session state and returns only the safe error, after which every message on that connection fails closed until a new handshake succeeds. The plugin closes its own socket on these failures.
+
 The plugin's local `BridgeClient.diagnostics` snapshot and `diagnostics` event are not wire messages. They expose only bounded status metadata (`version`, connection `status`, `protocolVersion`, sanitized `pluginVersion`, loopback `port`, bounded `retryInMs`, and latest `area`/`code`/UTC timestamp); they never expose error text, payloads, URLs, tokens, paths, or session/correlation IDs.
 
 ## Ordering, acknowledgements, and correlation
