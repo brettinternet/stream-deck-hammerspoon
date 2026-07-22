@@ -805,7 +805,11 @@ dofile("hammerspoon/tests/last-application-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/app-launcher-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
+dofile("hammerspoon/tests/audio-output-router-example.lua")(
+  test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/clipboard-stash-example.lua")(
+  test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
+dofile("hammerspoon/tests/desktop-space-cycler-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/window-center-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
