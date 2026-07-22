@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/brettinternet/stream-deck-hammerspoon/actions/workflows/ci.yml/badge.svg)](https://github.com/brettinternet/stream-deck-hammerspoon/actions/workflows/ci.yml)
 
-An Elgato Stream Deck plugin bridge for Hammerspoon. The plugin uses an authenticated loopback WebSocket by default to send key and lifecycle events to a Hammerspoon Lua module; Hammerspoon returns registered actions and appearance updates.
+An Elgato Stream Deck plugin bridge for Hammerspoon. The plugin uses an authenticated loopback WebSocket by default to send key and lifecycle events to a Hammerspoon Lua module; Hammerspoon returns registered actions and appearance updates. An explicit LAN profile can add up to four isolated per-client PSK listeners without changing the loopback default.
 Browse the [Hammerspoon examples](hammerspoon/examples/) for ready-to-copy configurations.
 
 The official Stream Deck application remains the owner of plugin lifecycle, property inspectors, rendering, and hardware access. Keep it running during development and manual checks. Direct USB/HID or other hardware control is forbidden. This project does **not** replace the official application.
@@ -19,7 +19,7 @@ The official Stream Deck application remains the owner of plugin lifecycle, prop
 
 This is not Hammerspoon's `hs.streamdeck` extension. It is a separate `streamdeck` Lua module and does not depend on or modify `hs.streamdeck`.
 
-Non-goals are direct hardware access, an unauthenticated mode, Bonjour/discovery, multiple simultaneous plugin clients, arbitrary or unbounded property-inspector forms, and arbitrary plugin-to-Lua configuration messages. Protocol v1 supports bounded `settingsSchemaVersion: 1` descriptors with `text`, `number`, `boolean`, and `select` fields; [the protocol guide](docs/protocol.md) defines their normative contract. This is distinct from [Hammerspoon's streamdeck extension](https://github.com/Hammerspoon/hammerspoon/tree/master/extensions/streamdeck) which requires circumventing the Stream Deck software.
+Non-goals are direct hardware access, an unauthenticated mode, Bonjour/discovery, arbitrary or unbounded property-inspector forms, and arbitrary plugin-to-Lua configuration messages. Protocol v1 supports bounded `settingsSchemaVersion: 1` descriptors with `text`, `number`, `boolean`, and `select` fields; [the protocol guide](docs/protocol.md) defines their normative contract. LAN clients are not discovered automatically and require deliberate per-client configuration.
 
 ## Quick start
 
@@ -64,11 +64,29 @@ streamdeck.start()
 
 The bridge creates `~/.hammerspoon/streamdeck-token` on its first successful start. It contains two UUIDs and must remain mode `0600`. Never commit or log it. Start with the registration and context example in [the Lua API guide](docs/lua-api.md), or browse the [Hammerspoon examples](hammerspoon/examples/) for ready-to-copy configurations.
 
+LAN operation is an explicit opt-in. Configure one listener per remote client with a specific interface, unique port, and manually provisioned 32-byte key file (`0600`); the default `streamdeck.start()` above still creates only the legacy loopback listener:
+
+```lua
+streamdeck.start({
+  lan = {
+    clients = {
+      ["remote-deck"] = {
+        interface = "en0",
+        port = 17322,
+        keyPath = "/Users/me/.hammerspoon/streamdeck-remote.key",
+      },
+    },
+  },
+})
+```
+
+The bridge accepts at most four LAN client entries (five listeners including loopback). Client IDs, listener ports, and credential paths must be unique. The remote plugin must explicitly use `ws://<address>:17322/streamdeck` with `lan = { clientId = "remote-deck", keyPath = "/path/to/streamdeck-remote.key" }`; there is no token or unauthenticated fallback on a LAN listener. See the [Lua API guide](docs/lua-api.md) for the shorthand single-client form and validation rules.
+
 In the Stream Deck application, add a Hammerspoon action and select its registered action ID in the property inspector. Use Button for one image, Toggle for inactive and active images, and keypad-only Multi-State when `presentationState` should choose one of four static images. See the [setup guide](docs/setup.md) for complete release installation details.
 
 ## Architecture and protocol
 
-The TypeScript plugin authenticates with a first-message `hello`, receives the registered action list, reports visible instances and key events, and requests appearance. The Lua server validates protocol-v1 messages, invokes protected registered callbacks, and computes title/state appearance. The loopback server uses default port `17321`, binds to localhost, disables Bonjour, and supports one plugin WebSocket client.
+The TypeScript plugin authenticates with a first-message `hello`, receives the registered action list, reports visible instances and key events, and requests appearance. The Lua server validates protocol-v1 messages, invokes protected registered callbacks, and computes title/state appearance. The fixed loopback listener uses default port `17321` and binds to localhost; explicitly configured LAN client slots use separate interfaces and ports with per-slot state and PSK frames.
 
 Read the design records before changing a boundary:
 

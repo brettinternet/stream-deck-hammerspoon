@@ -2,7 +2,7 @@
 
 This module is the Hammerspoon side of the authenticated Stream Deck bridge. It is a normal Lua module loaded by the Hammerspoon configuration. It does not evaluate Lua received from the plugin, and it does not expose a direct hardware API.
 
-The default protocol is authenticated loopback. An explicit LAN profile can add a second listener with per-client PSK authentication; loopback remains the default and B3 supports one authenticated session globally until multi-client isolation is implemented.
+The default protocol is authenticated loopback. An explicit LAN profile can add up to four isolated per-client PSK listeners; loopback remains the default and each listener owns one authenticated application session.
 
 ## Installation and loading
 
@@ -64,41 +64,60 @@ These actions call only the fixed Hammerspoon APIs documented above. They do not
 
 ### `streamdeck.start(options)`
 
-Starts the authenticated loopback WebSocket server and, only when `lan` is supplied, a second authenticated LAN WebSocket server. It publishes the registered action list after authentication. With no options it uses loopback binding, Bonjour disabled, port `17321`, and token path `~/.hammerspoon/streamdeck-token`.
+Starts the authenticated loopback WebSocket server and, only when `lan` is supplied, one authenticated LAN WebSocket server per configured client. It publishes the registered action list after authentication. With no options it creates only the loopback listener, disables Bonjour, uses port `17321`, and uses token path `~/.hammerspoon/streamdeck-token`.
 
 The supported options are:
 
-| Option      | Type    | Default                           | Meaning                        |
-| ----------- | ------- | --------------------------------- | ------------------------------ |
-| `port`      | integer | `17321`                           | Loopback TCP port for the bridge. |
-| `tokenPath` | string  | `~/.hammerspoon/streamdeck-token` | Legacy loopback shared-token file path. |
+| Option      | Type    | Default                           | Meaning                                      |
+| ----------- | ------- | --------------------------------- | -------------------------------------------- |
+| `port`      | integer | `17321`                           | Loopback TCP port for the bridge.            |
+| `tokenPath` | string  | `~/.hammerspoon/streamdeck-token` | Loopback shared-token file path.             |
 | `lan`       | table   | disabled                          | Explicit LAN listener and per-client key map. |
 
-The `lan` table requires `interface` (a specific interface name such as `en0`), an optional distinct `port` (default `17322`), and a non-empty `clients` map. Each `clients[clientId]` value is a manually provisioned 32-byte key file with mode `0600`:
+The canonical multi-client form gives each client its own specific interface, unique port, and manually provisioned 32-byte key file with mode `0600`:
+
+```lua
+streamdeck.start({
+  lan = {
+    clients = {
+      ["remote-deck"] = {
+        interface = "en0",
+        port = 17322,
+        keyPath = "/Users/me/.hammerspoon/streamdeck-remote.key",
+      },
+      ["studio-deck"] = {
+        interface = "en1",
+        port = 17323,
+        keyPath = "/Users/me/.hammerspoon/streamdeck-studio.key",
+      },
+    },
+  },
+})
+```
+
+At most four LAN clients may be configured. Client IDs, listener ports (including the loopback port), and key paths must be unique. A single-client shorthand remains supported:
 
 ```lua
 streamdeck.start({
   lan = {
     interface = "en0",
     port = 17322,
-    clients = {
-      ["remote-deck"] = "/Users/me/.hammerspoon/streamdeck-remote.key",
-    },
+    clients = { ["remote-deck"] = "/Users/me/.hammerspoon/streamdeck-remote.key" },
   },
 })
 ```
 
-The remote plugin uses `ws://<address>:17322/streamdeck` with `lan = { clientId = "remote-deck", keyPath = "/path/to/streamdeck-remote.key" }`. The LAN listener rejects v1 `hello`/token messages and has no unauthenticated fallback. `start` validates all options and key files and raises a Lua error for an invalid value or startup failure. Use one `start` call per Hammerspoon load.
+The remote plugin uses `ws://<address>:<port>/streamdeck` with `lan = { clientId = "remote-deck", keyPath = "/path/to/streamdeck-remote.key" }`. A LAN listener rejects v1 `hello`/token messages and has no unauthenticated fallback. `start` validates all options and key files and raises a Lua error for an invalid value or startup failure. Use one `start` call per Hammerspoon load.
 
 ### `streamdeck.stop()`
 
-Stops the server, closes the plugin connection, clears the current in-memory session ID, and discards active instance contexts. It does not delete the token file or the registered definitions. After `stop`, call `start` to open a new bridge using the same in-memory registry; the next hello creates a new session ID.
+Stops every listener, closes the plugin connections, clears each current in-memory session ID, and discards active instance contexts. It does not delete credential files or registered definitions. After `stop`, call `start` to open a new bridge using the same in-memory registry; the next loopback hello or LAN proof creates a new session ID in its selected slot.
 
 ### Authentication session lifecycle
 
-The shared token is accepted only in `hello`. A valid hello is accepted even if a prior session was still marked authenticated: the bridge safely clears prior instance contexts, generates a fresh non-empty opaque `sessionId` with `hs.host.uuid()`, and returns it in the required `helloAck.sessionId`. This session ID is an in-memory capability, not a replacement for the token.
+The shared token is accepted only by the fixed loopback slot in `hello`. A valid hello is accepted even if that slot's prior session was still marked authenticated: the bridge safely clears only that slot's contexts, generates a fresh non-empty opaque `sessionId` with `hs.host.uuid()`, and returns it in the required `helloAck.sessionId`. The LAN slot uses its configured client ID and key for the nonce/HMAC handshake and returns its session ID in `lanReady`; it never reads or accepts the loopback token.
 
-After `helloAck`, every plugin-to-Lua application message (`listActions`, lifecycle, `keyDown`, `keyUp`, `dialDown`, `dialRotate`, `dialUp`, `touchTap`, and `requestAppearance`) must include the exact current `sessionId`. Missing, stale, or invalid IDs are rejected before action dispatch and invoke no callback. The bridge clears the ID and contexts on close, `stop()`, or failure. Because `hs.httpserver` does not provide a reliable connection-close callback, this explicit ID check prevents an old authenticated state from becoming tokenless authorization.
+After `helloAck` or `lanReady`, every plugin-to-Lua application message (`listActions`, lifecycle, `keyDown`, `keyUp`, `dialDown`, `dialRotate`, `dialUp`, `touchTap`, and `requestAppearance`) must include the exact current `sessionId` for that slot. Missing, stale, or invalid IDs are rejected before action dispatch and invoke no callback. Session rotation, stop, malformed authenticated traffic, rate exhaustion, and resource exhaustion clear only the affected slot's authentication, contexts, timers, and pending responses. Because `hs.httpserver` does not provide reliable connection-close identity, each listener is a broadcast domain rather than a per-WebSocket channel; no slot state is shared across listeners.
 
 ### `streamdeck.refresh(actionId)`
 
@@ -425,7 +444,7 @@ The lifecycle is intentionally explicit:
 
 A reload does not preserve the Lua registry, session ID, or contexts. Register definitions on every reload before starting. The plugin reconnects after a reload, re-authenticates, receives a fresh session ID, receives the action list, and restores visible instances and appearances. Stream Deck's initial settings arrive to the plugin under `actionInfo.payload.settings`; the plugin forwards the decoded settings in `instanceAppeared`. Repeated `instanceAppeared` for the same instance/action is a settings refresh, not a second `appear` lifecycle. The token file is retained across reloads unless an administrator intentionally rotates it; changing or removing it requires restarting both sides so they read the same token.
 
-The bridge accepts one WebSocket client because of the Hammerspoon HTTP server limitation. Because `hs.httpserver` lacks a reliable close callback, a client is never authorized merely because a process-global hello flag remains true: the next valid hello must carry the token, rotates the session ID, and clears prior contexts. This is sufficient for the one local Stream Deck plugin process; a second client is not a supported multi-user or multi-plugin deployment.
+The fixed loopback listener and each explicit LAN client listener own independent sessions and context registries. Because `hs.httpserver` lacks a reliable close callback and per-WebSocket identity, a listener is a broadcast domain, not a per-peer channel: a new valid handshake rotates only that listener's session, while stale or malformed messages cannot dispatch against another listener. This supports one local plugin by default and deliberate concurrent LAN clients without adding a second Hammerspoon daemon.
 
 ## Excluded APIs in v1
 
@@ -436,7 +455,7 @@ The following are intentionally outside this contract:
 - unversioned or arbitrary appearance fields; v1 permits only the closed bundled `hammerspoon` icon or bounded canonical-base64 PNG/SVG values validated at the protocol boundary;
 - callback return values that mutate settings or presentation implicitly;
 - a Lua settings-write API;
-- multiple simultaneous plugin clients, Bonjour discovery, or non-loopback binding;
+- Bonjour discovery; non-loopback binding is supported only through the explicit LAN client slots documented above;
 - arbitrary or unbounded property-inspector forms and arbitrary plugin-to-Lua configuration messages; bounded `settingsSchemaVersion = 1` descriptors are supported as documented above;
 - polling or a background watcher for appearance changes; use an explicit `refresh` call from a Hammerspoon event source instead.
 

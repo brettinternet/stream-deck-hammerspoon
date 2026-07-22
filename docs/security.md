@@ -11,7 +11,7 @@ This bridge is a local, authenticated control channel between the official Strea
 | Hammerspoon process and `hammerspoon/streamdeck/` Lua module | The Lua module owns the server, token file, connection authentication, action registry, and callback dispatch. Registered callbacks are trusted code running in the user's Hammerspoon process. |
 | Token file (`~/.hammerspoon/streamdeck-token`) | This is the bearer credential shared by the plugin and Lua bridge. Its confidentiality depends on the local operating system and file permissions. |
 | Loopback WebSocket at the default URL `ws://localhost:17321/streamdeck` | The legacy token transport accepts only literal `localhost`, `127.0.0.1`, or `[::1]` `ws://` endpoints. It is not a remote service and does not provide encryption. |
-| LAN WebSocket (explicit `start({ lan = ... })` only) | A second `hs.httpserver` binds the named interface and separate port only when configured. It uses the LAN PSK handshake and authenticated frames; it is never enabled by default. |
+| LAN WebSocket (explicit `start({ lan = ... })` only) | One `hs.httpserver` listener per configured client binds its named interface and separate port only when configured. It uses the LAN PSK handshake and authenticated frames; no LAN listener is enabled by default. |
 | Per-client LAN key file | A manually provisioned 32-byte CSPRNG key, stored at a configured path with mode `0600`; the server maps a safe client ID to that path and never sends the key. |
 | Protocol schema and validators | The JSON Schema is the protocol source of truth. TypeScript uses Ajv; Lua mirrors the required and type checks. |
 
@@ -25,21 +25,26 @@ A process that can read `~/.hammerspoon/streamdeck-token`, a configured LAN key,
 The token is a bearer credential. Anyone who obtains it can authenticate until it is rotated or revoked. The WebSocket is not configured as a general remote endpoint. LAN operation is a separate, explicit opt-in PSK profile; it does not reuse the v1 token transport and does not provide traffic confidentiality.
 
 
-Hammerspoon starts `hs.httpserver` at the default URL `ws://localhost:17321/streamdeck`, on localhost/loopback only, with Bonjour disabled. Binding failure is a startup failure; the bridge does not retry by opening a non-loopback listener and does not fall back to an unauthenticated server.
+Hammerspoon always starts the fixed `hs.httpserver` endpoint at `ws://localhost:17321/streamdeck`, on localhost/loopback only, with Bonjour disabled. Binding failure is a startup failure; the bridge does not retry by opening a non-loopback listener and does not fall back to an unauthenticated server. Explicit LAN listeners are started only from validated `lan.clients` entries.
 
 The opt-in LAN profile is configured on the Lua side with:
 
 ```lua
 streamdeck.start({
   lan = {
-    interface = "en0",
-    port = 17322,
-    clients = { ["remote-deck"] = "/Users/me/.hammerspoon/streamdeck-remote.key" },
+    clients = {
+      ["remote-deck"] = {
+        interface = "en0",
+        port = 17322,
+        keyPath = "/Users/me/.hammerspoon/streamdeck-remote.key",
+      },
+    },
   },
 })
 ```
 
-The plugin LAN profile is constructed explicitly with `url = "ws://<address>:17322/streamdeck"` and `lan = { clientId = "remote-deck", keyPath = "/path/to/streamdeck-remote.key" }`. A non-loopback URL without `lan` is rejected before opening a socket or reading the v1 token. The LAN listener rejects v1 `hello`/token messages; it accepts only the PSK handshake and authenticated frames. Loopback remains the default.
+At most four LAN clients may be configured. Client IDs, listener ports (including loopback), and credential paths must be unique. Each key is manually provisioned, exactly 32 bytes, and mode `0600`. The plugin LAN profile is constructed explicitly with `url = "ws://<address>:17322/streamdeck"` and `lan = { clientId = "remote-deck", keyPath = "/path/to/streamdeck-remote.key" }`. A non-loopback URL without `lan` is rejected before opening a socket or reading the v1 token. LAN listeners reject v1 `hello`/token messages; they accept only their assigned PSK handshake and authenticated frames. Loopback remains the default.
+
 The plugin rejects any other legacy endpoint before opening a socket or reading the token, so its v1 `hello` can never disclose the token to a remote host. The LAN profile reads only its configured per-client key and never reads or sends the v1 token.
 
 ### LAN PSK handshake and frames
@@ -98,7 +103,7 @@ Startup must fail closed in each of these cases:
 - the token file cannot be kept at the required `0600` permissions;
 - any configured LAN key cannot be opened, is not exactly 32 bytes, or is not mode `0600`;
 - the token is unavailable to the plugin runtime; or
-- the loopback server cannot bind its configured port.
+- any configured listener cannot bind its validated interface and port.
 
 Lua does not start a usable unauthenticated bridge in any of these cases. The plugin shows its actionable disconnected/offline state and follows its bounded reconnect behavior. A client with an invalid token, invalid first message, malformed JSON, unsupported protocol version, unknown message type, missing session ID, or stale session ID is rejected and never reaches action dispatch. Errors may identify a safe operational condition using a stable code/message, but must not echo secrets or raw input.
 
@@ -115,14 +120,14 @@ Protocol errors contain only safe error codes/messages and optional `requestId`/
 
 ## Denial of service and message size
 
-Loopback does not prevent a local process from connecting, sending invalid data, or occupying the one available WebSocket client slot. Each direct protocol frame is limited to **64 KiB UTF-8 bytes**. LAN handshake controls (`lanHello`, `lanChallenge`, `lanProof`, and `lanReady`) are limited to **4 KiB**; a LAN `lanFrame` wrapper remains within 64 KiB and its authenticated inner protocol payload is limited to **48 KiB**. Before either runtime decodes untrusted JSON, an iterative structural preflight bounds nesting to 16 containers, each container to 128 members/items, and a frame to 2,048 members/items total. It has no unbounded allocation or recursion and rejects malformed or over-limit input before callback dispatch.
+The fixed loopback slot does not prevent a local process from connecting, sending invalid data, or occupying that slot. Each direct protocol frame is limited to **64 KiB UTF-8 bytes**. LAN handshake controls (`lanHello`, `lanChallenge`, `lanProof`, and `lanReady`) are limited to **4 KiB**; a LAN `lanFrame` wrapper remains within 64 KiB and its authenticated inner protocol payload is limited to **48 KiB**. Before either runtime decodes untrusted JSON, an iterative structural preflight bounds nesting to 16 containers, each container to 128 members/items, and a frame to 2,048 members/items total. It has no unbounded allocation or recursion and rejects malformed or over-limit input before callback dispatch.
 
 There is no application message queue: each input is admitted, structurally checked, authenticated where required, decoded, validated, and dispatched synchronously or rejected. Existing 64 KiB output validation provides the corresponding output bound. Rejected bytes are never logged.
 
-Each `hs.httpserver` listener supports one WebSocket connection, and B3's global session rule permits only one authenticated bridge session across its loopback and opt-in LAN listeners. Before dispatch, both runtimes apply listener/socket-local inbound token buckets: unauthenticated control traffic has a burst of 6 frames and refills at 12 frames/minute; authenticated traffic has a burst of 240 frames and refills at 120 frames/second. A limit violation invokes no callback, clears authentication and contexts, and closes the plugin socket or returns only an existing safe protocol error from Lua. The plugin's 250 ms–10 s exponential reconnect policy remains below the sustained unauthenticated budget after its initial retry burst. Multi-client admission and per-client isolation remain B4 work.
+Each configured `hs.httpserver` listener is one client-identity broadcast domain with one active application session, and the fixed loopback listener plus at most four explicit LAN listeners are bounded before startup. Every slot admits at most 64 visible instances, one long-press timer per context, bounded B5 rate buckets, and no cross-slot queue. A limit violation invokes no callback, clears authentication and contexts only for the affected slot, and returns only an existing safe protocol error from Lua. The plugin's 250 ms–10 s exponential reconnect policy remains below the sustained unauthenticated budget after its initial retry burst.
 
 Protocol errors and diagnostics use only existing safe codes. They never include a token, session ID, LAN key, MAC, nonce, or rejected payload body.
 
 ## Future hardening
 
-Potential later hardening includes an OS-backed credential or peer-identity check, authenticated upgrade headers, traffic confidentiality for deployments that need it, and clearer multi-client isolation. These are not approximated by logging secrets, weakening file permissions, accepting messages before authentication, or adding an unauthenticated fallback.
+Potential later hardening includes an OS-backed credential or peer-identity check, authenticated upgrade headers, traffic confidentiality for deployments that need it, and a richer per-WebSocket lifecycle API. These are not approximated by logging secrets, weakening file permissions, accepting messages before authentication, or adding an unauthenticated fallback.

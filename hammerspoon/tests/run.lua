@@ -330,6 +330,8 @@ end
 local function newServer(registry, tokenPath)
   local server = Server.new(registry, Protocol, Context)
   server:start({ port = 17321, tokenPath = tokenPath })
+  assertEqual(#server.slots, 1, "default startup must create only the legacy loopback slot")
+  assertEqual(server.legacySlot.mode, "loopback", "default startup must retain loopback mode")
   assertEqual(fakeHttp.interface, "localhost", "server must bind loopback")
   assertEqual(fakeHttp.websocketPath, "/streamdeck", "server websocket path")
   return server
@@ -2469,6 +2471,7 @@ test("LAN slots isolate authentication, contexts, callbacks, and output", functi
 
       local malformed = alpha.http.websocketCallback("not-json")
       assertEqual(fakeDecode(malformed).code, "MALFORMED_MESSAGE")
+      assertEqual(pressed, 2, "alpha malformed input must not dispatch against another slot")
       assertTrue(beta.authenticated, "alpha malformed input must not retire beta")
 
       local oldAlphaSession = alphaSession
@@ -2549,6 +2552,106 @@ test("LAN slot bounds and startup rollback are deterministic", function()
       assertTrue(fakeHttpInstances[#fakeHttpInstances - 2].stopped, "legacy listener must be stopped")
       assertTrue(fakeHttpInstances[#fakeHttpInstances - 1].stopped, "first LAN listener must be stopped")
       assertTrue(fakeHttpInstances[#fakeHttpInstances].stopped, "failed LAN listener must be stopped")
+    end)
+  end)
+end)
+test("LAN disconnect and per-slot instance exhaustion stay isolated", function()
+  local pressed = 0
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.exhaustion",
+    name = "Exhaustion",
+    appearance = function(context)
+      return { title = context.instanceId, state = "inactive" }
+    end,
+    press = function()
+      pressed = pressed + 1
+    end,
+    disappear = function() end,
+  })
+  withTokenPath(function(tokenPath)
+    withCredentials(function(firstKeyPath, secondKeyPath)
+      local server = Server.new(registry, Protocol, Context)
+      server:start({
+        tokenPath = tokenPath,
+        lan = {
+          clients = {
+            alpha = { interface = "en0", port = 17322, keyPath = firstKeyPath },
+            beta = { interface = "en1", port = 17323, keyPath = secondKeyPath },
+          },
+        },
+      })
+      local alpha = server.slots[2]
+      local beta = server.slots[3]
+      local alphaSession, alphaReceiveKey = authenticateLan(alpha.http, "alpha", string.rep("K", 32), 5)
+      local betaSession, betaReceiveKey = authenticateLan(beta.http, "beta", string.rep("L", 32), 6)
+
+      beta.http.websocketCallback(lanFrame(fakeEncode(message("instanceAppeared", {
+        sessionId = betaSession,
+        instanceId = "beta-instance",
+        actionId = "com.test.exhaustion",
+        settings = {},
+      })), betaReceiveKey, 1))
+      for index = 1, 64 do
+        alpha.http.websocketCallback(lanFrame(fakeEncode(message("instanceAppeared", {
+          sessionId = alphaSession,
+          instanceId = "alpha-" .. tostring(index),
+          actionId = "com.test.exhaustion",
+          settings = {},
+        })), alphaReceiveKey, index))
+      end
+      local alphaInstanceCount = 0
+      for _ in pairs(alpha.instances) do alphaInstanceCount = alphaInstanceCount + 1 end
+      assertEqual(alphaInstanceCount, 64, "each slot must admit at most 64 visible instances")
+      assertTrue(beta.instances["beta-instance"] ~= nil, "beta context must survive alpha saturation")
+
+      local exhausted = fakeDecode(alpha.http.websocketCallback(lanFrame(fakeEncode(message("instanceAppeared", {
+        sessionId = alphaSession,
+        instanceId = "alpha-65",
+        actionId = "com.test.exhaustion",
+        settings = {},
+      })), alphaReceiveKey, 65)))
+      local diagnostic = fakeDecode(exhausted.payload)
+      assertError("INVALID_STATE", { diagnostic }, "instance exhaustion must use a stable safe diagnostic")
+      assertEqual(diagnostic.message, "Invalid protocol state.", "resource diagnostics must use the stable message")
+      assertFalse(tostring(exhausted):find(firstKeyPath, 1, true), "resource diagnostics must not expose credential paths")
+      local alphaAfterExhaustion = 0
+      for _ in pairs(alpha.instances) do alphaAfterExhaustion = alphaAfterExhaustion + 1 end
+      assertEqual(alphaAfterExhaustion, 64, "rejected instances must not grow the slot registry")
+      assertTrue(beta.authenticated and beta.instances["beta-instance"] ~= nil, "alpha exhaustion must not evict beta")
+
+      alpha:stop()
+      assertFalse(alpha.authenticated, "disconnect teardown must clear only the disconnected slot")
+      assertTrue(next(alpha.instances) == nil, "disconnect teardown must discard only that slot's contexts")
+      assertTrue(beta.authenticated and beta.instances["beta-instance"] ~= nil, "disconnect teardown must preserve beta")
+      beta.http.websocketCallback(lanFrame(fakeEncode(message("keyDown", {
+        sessionId = betaSession,
+        instanceId = "beta-instance",
+        actionId = "com.test.exhaustion",
+      })), betaReceiveKey, 2))
+      assertEqual(pressed, 1, "the surviving slot must continue dispatching after a peer disconnects")
+      server:stop()
+    end)
+  end)
+end)
+
+test("LAN startup diagnostics stay bounded when client admission is exceeded", function()
+  withTokenPath(function(tokenPath)
+    withCredentials(function(firstKeyPath)
+      local clients = {}
+      for index = 1, 5 do
+        clients["client-" .. tostring(index)] = {
+          interface = "en" .. tostring(index),
+          port = 17321 + index,
+          keyPath = firstKeyPath .. "-" .. tostring(index),
+        }
+      end
+      local ok, errorMessage = pcall(function()
+        Server.new({}, Protocol, Context):start({ tokenPath = tokenPath, lan = { clients = clients } })
+      end)
+      assertFalse(ok, "admission beyond four LAN slots must fail")
+      assertTrue(tostring(errorMessage):find("Stream Deck LAN client limit is 4", 1, true) ~= nil)
+      assertFalse(tostring(errorMessage):find(firstKeyPath, 1, true), "client-limit diagnostics must not expose credential paths")
     end)
   end)
 end)

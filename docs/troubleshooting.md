@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Use this guide after completing the [development guide](./development.md). Keep the official Stream Deck application running during every plugin check. The bridge is authenticated, loopback-only, and supports one plugin WebSocket client; do not substitute direct USB/HID access or a second hardware controller.
+Use this guide after completing the [development guide](./development.md). Keep the official Stream Deck application running during every plugin check. The bridge is authenticated and loopback-only by default; explicit LAN client slots are separately configured and support isolated concurrent sessions. Do not substitute direct USB/HID access or a second hardware controller.
 
 ## Quick triage
 
@@ -24,14 +24,14 @@ bunx --package @elgato/cli@1.7.4 streamdeck restart com.brettinternet.hammerspoo
 ## The plugin stays offline
 
 - Confirm Hammerspoon is running and the bridge is started.
-- Confirm both ends use the default endpoint `ws://localhost:17321/streamdeck` and that the server binds localhost/loopback only.
+- Confirm both ends use the default endpoint `ws://localhost:17321/streamdeck` when testing loopback and that the server binds localhost/loopback only. For a deliberate LAN client, verify its configured URL, client ID, interface, port, and 32-byte key path instead.
 - Check `~/.hammerspoon/streamdeck-token` exists, is readable by the relevant user, contains the current two-UUID token, and has mode `0600`.
 - Reload Hammerspoon after changing the module or token, then restart the plugin.
-- Verify the official Stream Deck application is still running; the bridge expects one local plugin client, not an independent hardware connection.
+- Verify the official Stream Deck application is still running; the default bridge expects one local plugin client, while additional clients require explicit LAN slots.
 
 ## Authentication fails
 
-The first WebSocket message must be the protocol-v1 `hello` containing the shared token and `pluginVersion`. A valid hello always establishes a fresh session ID and invalidates any old one. Every later plugin-to-Lua application message must echo the exact current ID; an unauthenticated, malformed, missing-ID, or stale-ID message is rejected. Check the token file and permissions on both sides; never turn authentication off. Do not expect a WebSocket upgrade-header token: Hammerspoon's `hs.httpserver:websocket` exposes message callbacks rather than upgrade headers.
+The first WebSocket message must be the protocol-v1 `hello` containing the shared token and `pluginVersion` on the loopback slot. A valid hello always establishes a fresh session ID and invalidates the old session for that slot. LAN slots use their client-specific nonce/HMAC handshake and never accept the loopback token. Every later plugin-to-Lua application message must echo the exact current ID for its slot; an unauthenticated, malformed, missing-ID, or stale-ID message is rejected. Check the token or client key file and permissions on both sides; never turn authentication off. Do not expect a WebSocket upgrade-header token: Hammerspoon's `hs.httpserver:websocket` exposes message callbacks rather than upgrade headers.
 
 ## Reconnect and session troubleshooting
 

@@ -1,18 +1,18 @@
 # Stream Deck–Hammerspoon protocol v1
 
-This document is the wire contract for the first bridge slice. It describes JSON text messages carried by one authenticated WebSocket connection between the Stream Deck plugin and Hammerspoon. The protocol source of truth is the JSON Schema under `protocol/schema/`. This document explains the operational state machine and examples; it does not replace schema validation.
+This document is the wire contract for the first bridge slice. It describes JSON text messages carried by authenticated application sessions on client-identity slots between the Stream Deck plugin and Hammerspoon. The protocol source of truth is the JSON Schema under `protocol/schema/`. This document explains the operational state machine and examples; it does not replace schema validation.
 
 ## Transport and framing
 
 - The plugin is the WebSocket client. Hammerspoon is the server.
-- The server binds to loopback/`localhost` only, with Bonjour disabled. The default port is `17321`.
-- Each WebSocket text frame contains exactly one JSON object (one envelope). Binary frames, concatenated objects, and arrays at the frame root are malformed messages.
-- WebSocket message ordering is preserved by the transport. The bridge supports one client; this is a limitation of the `hs.httpserver` WebSocket integration, not a multi-client protocol.
+- The server binds the fixed default listener to loopback/`localhost`, with Bonjour disabled. The default port is `17321`; explicit LAN client slots use separately configured interfaces and ports.
+- Each WebSocket text frame contains exactly one JSON object (one envelope). A listener is a client-identity broadcast domain; the bridge permits one active application session per configured slot.
+- WebSocket message ordering is preserved by the transport. The fixed loopback slot is always available, and up to four explicit LAN slots may carry the same v1 application messages concurrently.
 - Authentication is a protocol message, not an HTTP upgrade header: `hs.httpserver:websocket` exposes message callbacks but not upgrade headers or a rich connection lifecycle.
-- Because `hs.httpserver` does not provide reliable close identity, Lua cannot bind authorization to a transport-close callback. The rotating `sessionId` binds every application message instead: closing/reconnecting clears contexts, and an old ID is rejected even if a stale client can still write.
+- Because `hs.httpserver` does not provide reliable close identity, Lua cannot bind authorization to a transport-close callback. The rotating per-slot `sessionId` binds every application message instead: closing/reconnecting clears only that slot's contexts, and an old ID is rejected even if a stale client can still write.
 - The token is read by the plugin from `~/.hammerspoon/streamdeck-token` by default and is created by Lua from two UUIDs with mode `0600`. It is an opaque shared value on the wire. It is never logged, put in Stream Deck settings, or included in an error.
 
-The B3 LAN profile is an opt-in transport extension around these same v1 application messages. It uses a second `hs.httpserver` listener and never sends the v1 token: the handshake and `lanFrame` envelopes are specified in `docs/security.md`, while the JSON payload inside each authenticated frame remains subject to this v1 schema. The v1 loopback endpoint and wire messages are unchanged.
+The B3 LAN profile is an opt-in transport extension around these same v1 application messages. It uses one `hs.httpserver` listener per configured client slot, never sends the v1 token, and keeps each slot's session and context state isolated: the handshake and `lanFrame` envelopes are specified in `docs/security.md`, while the JSON payload inside each authenticated frame remains subject to this v1 schema. The v1 loopback endpoint and wire messages are unchanged.
 
 The Stream Deck manifest exposes the generic button UUID `com.brettinternet.hammerspoon.button`, toggle UUID `com.brettinternet.hammerspoon.action`, and keypad-only multi-state UUID `com.brettinternet.hammerspoon.multistate`. All three can select any registered Hammerspoon action, and all use the same property-inspector settings identity. Protocol `actionId` values identify those Lua registrations and are separate from either Stream Deck UUID.
 

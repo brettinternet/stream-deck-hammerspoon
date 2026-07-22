@@ -78,10 +78,10 @@ The property inspector is a separate official Stream Deck UI surface. It communi
 
 The runtime flow is:
 
-1. Hammerspoon starts the `hs.httpserver` WebSocket endpoint at the default URL `ws://localhost:17321/streamdeck`; it binds loopback (`localhost`) and disables Bonjour. An optional second listener is started only for an explicit `lan = { interface, port, clients }` configuration.
-2. The plugin opens the loopback v1 connection and reads the token, or opens the configured LAN URL and reads only the selected 32-byte client key.
-3. The loopback plugin's first protocol message is v1 `hello`, containing the shared token and `pluginVersion`; the LAN plugin performs the separate nonce/HMAC handshake and never sends the token.
-4. Hammerspoon validates the selected handshake, clears prior instance contexts, generates a fresh in-memory opaque `sessionId`, and returns it in `helloAck` or `lanReady`.
+1. Hammerspoon always starts the fixed `hs.httpserver` WebSocket endpoint at `ws://localhost:17321/streamdeck`; it binds loopback (`localhost`) and disables Bonjour. An explicit `lan = { clients = ... }` profile adds one listener for each configured client, up to four.
+2. The plugin opens the fixed loopback v1 connection and reads the token, or opens a selected LAN client URL and reads only that client's 32-byte key.
+3. The loopback plugin's first protocol message is v1 `hello`, containing the shared token and `pluginVersion`; the selected LAN plugin performs the separate nonce/HMAC handshake and never sends the token.
+4. Hammerspoon validates the selected slot's handshake, clears prior contexts for that slot, generates a fresh in-memory opaque `sessionId`, and returns it in `helloAck` or `lanReady`.
 5. The plugin sends that exact `sessionId` on every subsequent application message inside the selected transport. Loopback messages are plain v1 JSON frames; LAN messages are authenticated `lanFrame` envelopes with strict per-direction sequences and exact-payload MACs.
 6. Stream Deck instance lifecycle events become `instanceAppeared` and `instanceDisappeared`; key presses and releases become `keyDown` and `keyUp`; encoder pushes, rotations, and touchscreen taps become `dialDown`, `dialRotate`, `dialUp`, and `touchTap`; appearance refreshes become `requestAppearance`. A repeated `instanceAppeared` for the same instance/action is a settings refresh and does not run `appear` again.
 7. Lua computes presentation and sends `appearance`, or sends an asynchronous `error` with a safe code/message. Callback code may also emit validated, instance/action-correlated `feedback` with a bounded safe message and duration.
@@ -97,6 +97,26 @@ Every application message contains `protocolVersion: 1` and a `type`. Loopback v
 - **Instance identity:** each configured Stream Deck key is represented by its Stream Deck-provided `instanceId`. The plugin retains visible instance metadata; the Lua registry keeps independent contexts keyed by instance identity. Multiple instances may select the same or different stable Lua `actionId`s.
 - **Settings:** the property inspector stores the selected `actionId` in Stream Deck per-instance settings. For initial action events, the plugin reads real Stream Deck settings from `actionInfo.payload.settings`; it uses that setting when sending lifecycle and key events. A repeated `instanceAppeared` updates the existing context's settings instead of creating a second appearance lifecycle.
 - **Context:** a Lua action context is per instance. `context:refresh()` and `context:getSettings()` operate on that instance's state; one instance cannot silently mutate another instance's context. Contexts are discarded when the authenticated session is cleared.
+
+Each listener is a client-identity slot and owns its session, rate buckets, contexts, response state, and timers. The fixed loopback slot is always created; an explicit LAN profile creates at most four additional slots, for at most five listeners, five active application sessions, 64 visible instances per slot (320 total), and one long-press timer per context. LAN client IDs, listener ports (including loopback), and credential paths must be unique. A slot is an `hs.httpserver` broadcast domain rather than a per-WebSocket channel: a valid new handshake retires only that slot's session, and stale, malformed, disconnected, or exhausted traffic cannot dispatch through another slot. Stable protocol error codes expose bounded resource rejection without secrets, session IDs, keys, nonces, or rejected bytes.
+
+The shipped Lua configuration is:
+
+```lua
+streamdeck.start({
+  lan = {
+    clients = {
+      ["remote-deck"] = {
+        interface = "en0",
+        port = 17322,
+        keyPath = "/Users/me/.hammerspoon/streamdeck-remote.key",
+      },
+    },
+  },
+})
+```
+
+Each client table requires a specific interface, unique port, and mode-`0600` 32-byte key path. The existing top-level `lan.interface`, `lan.port`, and string-valued single-client shorthand remain supported for one client; per-client tables are required when configuring different listeners. Invalid, duplicate, or over-limit profiles fail before a usable bridge is published.
 
 Identity is explicit across the boundary: an instance identifies a configured key, while an `actionId` identifies registered Lua behavior. Reconnect resends instance identity; it does not create new action IDs or infer identity from presentation.
 
@@ -120,9 +140,9 @@ The plugin uses the SDK's 72×72 key profile for keypad actions. For a recognize
 
 ### Startup and shutdown
 
-`register(definition)` adds a stable Lua action definition and rejects duplicate IDs. `start(options)` binds the server to loopback, disables Bonjour, applies the default port when no port is supplied, and begins accepting the plugin connection. `stop()` closes the server, clears the current in-memory session ID, and discards active instance contexts. `refresh(actionId)` refreshes all relevant appearances for an action, while `context:refresh()` refreshes one instance context. Callbacks are protected with `xpcall`; callback failure becomes a safe asynchronous protocol error rather than an uncaught bridge failure.
+`register(definition)` adds a stable Lua action definition and rejects duplicate IDs. `start(options)` always creates the fixed authenticated loopback listener, disables Bonjour, and applies the default port when no port is supplied; an explicit `lan` profile adds its validated client slots. `stop()` closes every listener, clears each in-memory session ID, and discards active instance contexts. `refresh(actionId)` refreshes all relevant appearances for an action, while `context:refresh()` refreshes one instance context. Callbacks are protected with `xpcall`; callback failure becomes a safe asynchronous protocol error rather than an uncaught bridge failure.
 
-The Hammerspoon server accepts one WebSocket client because of `hs.httpserver` limitations. That is sufficient for one local Stream Deck plugin process and is an explicit v1 limit. Because `hs.httpserver:websocket` exposes message callbacks rather than HTTP upgrade headers or a connection-close callback, authentication is a first-message protocol exchange plus an in-memory session capability, not a process-global hello boolean. A valid hello is accepted again when a plugin reconnects or restarts: it safely clears any prior contexts, rotates to a fresh non-empty opaque `sessionId` generated with `hs.host.uuid()`, and returns that ID in `helloAck`. Every post-hello plugin message must echo the exact current ID; missing, stale, or invalid IDs are rejected without invoking any callback. The ID is cleared on close, stop, or failure, so a later client cannot inherit tokenless authorization merely because the prior connection was never reported closed.
+Each configured LAN client gets its own `hs.httpserver` listener and isolated application session. Because `hs.httpserver:websocket` exposes message callbacks rather than HTTP upgrade headers or a connection-close callback, a slot is a client-identity and broadcast domain, not a per-WebSocket channel. Each slot permits one active application session: a valid handshake for that slot safely clears only that slot's contexts, rotates its fresh non-empty opaque `sessionId`, and returns it in `helloAck` or `lanReady`. Every post-handshake message must echo the exact current ID; missing, stale, or invalid IDs are rejected without invoking any callback or changing another slot. Stopping a slot clears only its own authentication, contexts, timers, and listener.
 
 ### `hs.httpserver` callback transport behavior
 
@@ -148,14 +168,14 @@ The default token path is `~/.hammerspoon/streamdeck-token`. Lua creates it from
 
 Current v1 limitations are intentional:
 
-- one plugin client per `hs.httpserver` listener and one authenticated session globally in B3; concurrent client isolation is deferred to B4;
+- the fixed loopback slot is the compatible default; up to four explicit LAN client slots may be configured, each with one authenticated application session and isolated state;
 - loopback is the default fixed URL and v1 uses first-message token authentication; the LAN profile is explicit opt-in and uses PSK nonce/HMAC frames;
 - LAN traffic is authenticated but intentionally observable to peers that can capture it; it is not a confidentiality boundary;
 - title and binary state are always supported; versioned appearance fields add bounded colors, progress, badges, and validated icons;
 - custom icon bytes are bounded and constrained to supported PNG dimensions or a safe SVG profile; arbitrary paths, URLs, MIME parameters, executable SVG, and raw Lua input are rejected;
 - hardware/property-inspector completion cannot be automated without a connected Stream Deck and active inspector; fake transports and official CLI validation cover core bridge behavior, with manual end-to-end verification required.
 
-The roadmap boundary is the protocol-v1 application contract plus the B3 LAN transport profile. Remaining appearance fields, arbitrary or unbounded property-inspector forms, more clients, traffic confidentiality, or other phase-3-and-later behavior require a new contract and decision; they must not be inferred from this architecture document. The bounded version-1 settings descriptors remain part of the current contract.
+The roadmap boundary is the protocol-v1 application contract plus the B3 LAN transport profile and B4 slot-isolation contract. Traffic confidentiality, arbitrary or unbounded property-inspector forms, or other phase-3-and-later behavior require a new contract and decision; they must not be inferred from this architecture document. The bounded version-1 settings descriptors remain part of the current contract.
 
 ## Decision records
 
