@@ -240,13 +240,6 @@ function server.new(registry, protocol, contextFactory)
     return true
   end
 
-  function object:_dropSession()
-    self.instances = {}
-    self.authenticated = false
-    self.sessionId = nil
-    self.sessionMode = nil
-    self:_resetLanSession()
-  end
 
   function object:_safeError(code)
     local encoded = self.protocol.encode(self.protocol.error(code))
@@ -395,6 +388,18 @@ function server.new(registry, protocol, contextFactory)
     if instance then
       object:_cancelPress(instance)
     end
+  end
+
+  function object:_dropSession()
+    local instances = self.instances
+    self.instances = {}
+    for _, instance in pairs(instances) do
+      cancelInstancePress(instance)
+    end
+    self.authenticated = false
+    self.sessionId = nil
+    self.sessionMode = nil
+    self:_resetLanSession()
   end
 
   function object:_clearInstances()

@@ -836,8 +836,10 @@ test("rate exhaustion never invokes lifecycle callbacks or evicts another listen
       name = "Rate",
       appearance = function() return { title = "Rate", state = 0 } end,
       press = function() end,
+      longPress = function() end,
       disappear = function() disappeared = disappeared + 1 end,
     })
+    clearPendingTimers()
     local server = newServer(registry, path)
     local now = 0
     server._now = function() return now end
@@ -847,11 +849,17 @@ test("rate exhaustion never invokes lifecycle callbacks or evicts another listen
       actionId = "com.test.rate",
       settings = {},
     }))
-    for index = 1, 239 do
+    exchange(server, message("keyDown", {
+      instanceId = "rate-instance",
+      actionId = "com.test.rate",
+    }))
+    assertTrue(lastScheduledTimer ~= nil and not lastScheduledTimer.stopped)
+    for index = 1, 238 do
       exchange(server, message("listActions", { requestId = "rate-" .. tostring(index) }))
     end
     assertError("AUTH_FAILED", exchange(server, message("listActions", { requestId = "rate-limit" })))
     assertEqual(disappeared, 0, "rate rejection must not invoke disappear")
+    assertTrue(lastScheduledTimer.stopped, "rate rejection must cancel pending long-press work")
 
     server.authenticated = true
     server.sessionMode = "lan"
