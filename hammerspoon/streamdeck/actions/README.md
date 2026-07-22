@@ -32,6 +32,34 @@ streamdeck.start()
 
 Unknown or duplicate names fail before anything is registered. Action modules return plain definitions and never register or start the bridge themselves; the catalog supplies their shared post-callback refresh policy so related actions stay synchronized.
 
+### Keep local actions alongside the catalog
+
+If a local action has the same action ID as a catalog action, keep the local definition and select only non-overlapping catalog names. Do not call `registerAll`: the bridge rejects duplicate action IDs.
+
+```lua
+local streamdeck = require("streamdeck")
+local catalog = require("streamdeck.actions")
+
+local customActions = {
+  require("application"), -- Same ID as catalog "application"; retain this version.
+  require("keep-awake"), -- Same ID as catalog "keep-awake"; retain this version.
+  require("caffeine-alert"), -- Not supplied by the catalog.
+}
+
+for _, action in ipairs(customActions) do
+  streamdeck.register(action)
+end
+
+catalog.register(streamdeck, {
+  "lock-screen",
+  "window-snap",
+  -- Add any catalog names except "application" and "keep-awake".
+})
+streamdeck.start()
+```
+
+This lets an existing configuration preserve local policy or integrations while adopting catalog actions incrementally.
+
 Use **Hammerspoon Toggle** when an action reports meaningful inactive and active states, **Hammerspoon Button** for one-shot actions, and **Hammerspoon Multi-State** for the keypad actions whose `presentationState` selects one of four static images.
 
 ## Catalog
