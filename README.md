@@ -13,7 +13,7 @@ The official Stream Deck application remains the owner of plugin lifecycle, prop
 - **Hammerspoon Multi-State** is a keypad action with four static presentation images. A bounded Lua `presentationState` selects the current image.
 - Add any Hammerspoon action to a Stream Deck **Multi Action**.
 - The property inspector lists registered actions and can render bounded per-instance `text`, `number`, `boolean`, and `select` settings declared in Lua.
-- Lua actions can update their title, state, colors, progress, badge, and icon while visible, show transient success or error feedback, handle taps, long presses, and releases, and optionally play trusted Hammerspoon sounds.
+- Lua actions can update their title, state, colors, progress, badge, and icon while visible, show transient success or error feedback, handle taps, double presses, long presses, and releases, and optionally play trusted Hammerspoon sounds.
 - `require("streamdeck")` also provides **Reload Hammerspoon** and **Toggle Hammerspoon Console**. See the [Lua API guide](docs/lua-api.md).
 - The optional `streamdeck.actions` catalog ships with the Lua module and can register all actions or only selected names; no separate action installation is required.
 - `hammerspoon/streamdeck/` is the reusable Lua API. `protocol/schema/` is the canonical protocol-v1 JSON Schema. `plugin/` contains the TypeScript source and compiled official plugin layout.

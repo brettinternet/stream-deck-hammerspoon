@@ -1513,6 +1513,172 @@ test("long press configuration validates and defaults deterministically", functi
   clearPendingTimers()
 end)
 
+test("double press configuration validates and defaults deterministically", function()
+  local callback = function() end
+  local function definition(id, extra)
+    local value = {
+      id = id,
+      name = id,
+      appearance = callback,
+      press = callback,
+    }
+    for key, item in pairs(extra or {}) do
+      value[key] = item
+    end
+    return value
+  end
+  local registry = Registry.new()
+  assertFalse(pcall(registry.register, registry, definition("com.test.double-callback-not-function", {
+    doublePress = true,
+  })))
+  assertFalse(pcall(registry.register, registry, definition("com.test.double-threshold-without-callback", {
+    doublePressThresholdMs = 350,
+  })))
+  assertFalse(pcall(registry.register, registry, definition("com.test.double-threshold-too-short", {
+    doublePress = callback,
+    doublePressThresholdMs = 99,
+  })))
+  assertFalse(pcall(registry.register, registry, definition("com.test.double-threshold-fraction", {
+    doublePress = callback,
+    doublePressThresholdMs = 100.5,
+  })))
+  assertFalse(pcall(registry.register, registry, definition("com.test.double-threshold-too-long", {
+    doublePress = callback,
+    doublePressThresholdMs = 10001,
+  })))
+  registry:register(definition("com.test.double-threshold-default", { doublePress = callback }))
+  clearPendingTimers()
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    authenticate(server, path)
+    exchange(server, message("instanceAppeared", {
+      instanceId = "default-double-threshold",
+      actionId = "com.test.double-threshold-default",
+      settings = {},
+    }))
+    exchange(server, message("keyDown", {
+      instanceId = "default-double-threshold",
+      actionId = "com.test.double-threshold-default",
+    }))
+    exchange(server, message("keyUp", {
+      instanceId = "default-double-threshold",
+      actionId = "com.test.double-threshold-default",
+    }))
+    assertEqual(nextPendingDelay(), 0.35, "doublePress must use the documented default threshold")
+    server:stop()
+  end)
+  clearPendingTimers()
+end)
+
+test("double press defers taps and composes with long presses safely", function()
+  clearPendingTimers()
+  local pressed = 0
+  local doublePressed = 0
+  local longPressed = 0
+  local released = 0
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.double-press",
+    name = "Double press",
+    doublePressThresholdMs = 350,
+    longPressThresholdMs = 100,
+    appearance = function() return { title = "Ready", state = "inactive" } end,
+    press = function() pressed = pressed + 1 end,
+    doublePress = function() doublePressed = doublePressed + 1 end,
+    longPress = function() longPressed = longPressed + 1 end,
+    release = function() released = released + 1 end,
+  })
+  withTokenPath(function(path)
+    local server = newServer(registry, path)
+    authenticate(server, path)
+    exchange(server, message("instanceAppeared", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+      settings = {},
+    }))
+
+    exchange(server, message("keyDown", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    exchange(server, message("keyDown", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    exchange(server, message("keyUp", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    assertEqual(pressed, 0, "a first tap must wait for the double-press window")
+    assertEqual(released, 1, "duplicate keyDown must not duplicate release")
+    assertEqual(nextPendingDelay(), 0.35, "short tap must schedule the double-press window")
+    assertEqual(runPendingTimer(), 0.35)
+    assertEqual(pressed, 1, "expired double-press window must invoke press once")
+
+    exchange(server, message("keyDown", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    exchange(server, message("keyUp", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    local staleDoubleTimer = lastScheduledTimer
+    exchange(server, message("keyDown", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    staleDoubleTimer.callback()
+    assertEqual(pressed, 1, "cancelled single-tap timer must not invoke press")
+    exchange(server, message("keyUp", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    assertEqual(doublePressed, 1, "two short taps must invoke doublePress once")
+    assertEqual(released, 3, "release runs once for each completed physical press")
+
+    exchange(server, message("keyDown", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    exchange(server, message("keyUp", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    exchange(server, message("keyDown", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    assertEqual(runPendingTimer(), 0.1)
+    assertEqual(longPressed, 1, "long press must cancel the preceding pending tap")
+    exchange(server, message("keyUp", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    assertEqual(pressed, 1, "long press must not invoke press")
+    assertEqual(doublePressed, 1, "long press must not invoke doublePress")
+    assertEqual(released, 5, "release remains available after longPress")
+
+    exchange(server, message("keyDown", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    exchange(server, message("keyUp", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+    }))
+    exchange(server, message("instanceAppeared", {
+      instanceId = "double-instance",
+      actionId = "com.test.double-press",
+      settings = {},
+    }))
+    assertEqual(runPendingTimer(), nil, "settings replacement must cancel pending doublePress")
+    assertEqual(pressed, 1, "cancelled sequence must not become a tap")
+    server:stop()
+  end)
+  clearPendingTimers()
+end)
+
 test("long press classifies tap and long transitions once and cancels safely", function()
   clearPendingTimers()
   local pressed = 0

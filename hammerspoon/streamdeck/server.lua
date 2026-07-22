@@ -391,22 +391,136 @@ function server.new(registry, protocol, contextFactory)
   end
 
 
+  local function stopTimer(timer)
+    if timer == nil then return end
+    pcall(function()
+      if type(timer.stop) == "function" then
+        timer:stop()
+      end
+    end)
+  end
+
   local function cancelLongPress(instance)
     instance.longPressGeneration = (instance.longPressGeneration or 0) + 1
-    if instance.longPressTimer ~= nil then
-      local timer = instance.longPressTimer
-      instance.longPressTimer = nil
-      pcall(function()
-        if type(timer.stop) == "function" then
-          timer:stop()
-        end
-      end)
-    end
+    stopTimer(instance.longPressTimer)
+    instance.longPressTimer = nil
     instance.pressed = false
     instance.longPressTriggered = false
   end
 
+  local function cancelDoublePress(instance)
+    instance.doublePressGeneration = (instance.doublePressGeneration or 0) + 1
+    stopTimer(instance.doublePressTimer)
+    instance.doublePressTimer = nil
+    instance.doublePressPending = false
+    instance.doublePressSecondDown = false
+  end
+
+  function object:_beginDoublePress(instance)
+    if instance.pressed then
+      return
+    end
+
+    local secondPress = instance.doublePressPending == true
+    if secondPress then
+      cancelDoublePress(instance)
+    end
+    instance.pressed = true
+    instance.longPressTriggered = false
+    instance.doublePressSecondDown = secondPress
+    if instance.definition.longPress == nil then
+      return
+    end
+
+    instance.longPressGeneration = (instance.longPressGeneration or 0) + 1
+    stopTimer(instance.longPressTimer)
+    instance.longPressTimer = nil
+    local hsapi = rawget(_G, "hs")
+    local timerApi = hsapi and hsapi.timer
+    if not timerApi or type(timerApi.doAfter) ~= "function" then
+      return
+    end
+
+    local thresholdMs = instance.definition.longPressThresholdMs or 500
+    local generation = instance.longPressGeneration
+    local callback = function()
+      if self.instances[instance.instanceId] ~= instance
+          or not instance.pressed
+          or instance.longPressGeneration ~= generation
+          or instance.longPressTriggered then
+        return
+      end
+      instance.longPressTimer = nil
+      instance.longPressTriggered = true
+      cancelDoublePress(instance)
+      instance:invoke("longPress")
+    end
+    local ok, timer = pcall(timerApi.doAfter, thresholdMs / 1000, callback)
+    if ok and timer ~= nil then
+      instance.longPressTimer = timer
+    end
+  end
+
+  function object:_awaitDoublePress(instance)
+    instance.doublePressGeneration = (instance.doublePressGeneration or 0) + 1
+    local generation = instance.doublePressGeneration
+    instance.doublePressPending = true
+    local hsapi = rawget(_G, "hs")
+    local timerApi = hsapi and hsapi.timer
+    if not timerApi or type(timerApi.doAfter) ~= "function" then
+      instance.doublePressPending = false
+      self:_invokePress(instance)
+      return
+    end
+
+    local thresholdMs = instance.definition.doublePressThresholdMs or 350
+    local callback = function()
+      if self.instances[instance.instanceId] ~= instance
+          or instance.doublePressGeneration ~= generation
+          or not instance.doublePressPending then
+        return
+      end
+      instance.doublePressTimer = nil
+      instance.doublePressPending = false
+      self:_invokePress(instance)
+    end
+    local ok, timer = pcall(timerApi.doAfter, thresholdMs / 1000, callback)
+    if ok and timer ~= nil then
+      instance.doublePressTimer = timer
+      return
+    end
+    instance.doublePressPending = false
+    self:_invokePress(instance)
+  end
+
+  function object:_endDoublePress(instance)
+    if not instance.pressed then
+      return
+    end
+
+    local longPressTriggered = instance.longPressTriggered == true
+    local secondPress = instance.doublePressSecondDown == true
+    instance.longPressGeneration = (instance.longPressGeneration or 0) + 1
+    stopTimer(instance.longPressTimer)
+    instance.longPressTimer = nil
+    instance.pressed = false
+    instance.longPressTriggered = false
+    instance.doublePressSecondDown = false
+    if not longPressTriggered then
+      if secondPress then
+        instance:invoke("doublePress")
+      else
+        self:_awaitDoublePress(instance)
+      end
+    end
+    instance:invoke("release")
+  end
+
   function object:_beginPress(instance)
+    if instance.definition.doublePress ~= nil then
+      self:_beginDoublePress(instance)
+      return
+    end
 
     cancelLongPress(instance)
     if instance.definition.longPress == nil then
@@ -446,6 +560,11 @@ function server.new(registry, protocol, contextFactory)
   end
 
   function object:_endPress(instance)
+    if instance.definition.doublePress ~= nil then
+      self:_endDoublePress(instance)
+      return
+    end
+
     if instance.definition.longPress == nil then
       instance:invoke("release")
       return
@@ -463,6 +582,7 @@ function server.new(registry, protocol, contextFactory)
 
   function object:_cancelPress(instance)
     cancelLongPress(instance)
+    cancelDoublePress(instance)
   end
 
   local function cancelInstancePress(instance)

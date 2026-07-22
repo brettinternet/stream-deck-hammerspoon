@@ -14,6 +14,8 @@ local allowedFields = {
   touchTap = true,
   longPress = true,
   longPressThresholdMs = true,
+  doublePress = true,
+  doublePressThresholdMs = true,
   appear = true,
   disappear = true,
   sound = true,
@@ -76,8 +78,8 @@ local MAX_SETTINGS_TEXT_LENGTH = 4096
 local MAX_SETTINGS_NUMBER = 1000000000000
 local MAX_SETTINGS_OPTIONS = 64
 local MAX_SETTINGS_OPTION_VALUE_LENGTH = 256
-local MIN_LONG_PRESS_THRESHOLD_MS = 100
-local MAX_LONG_PRESS_THRESHOLD_MS = 10000
+local MIN_GESTURE_THRESHOLD_MS = 100
+local MAX_GESTURE_THRESHOLD_MS = 10000
 
 local function isInteger(value)
   return type(value) == "number" and value == math.floor(value)
@@ -296,9 +298,23 @@ local function validateDefinition(definition)
     end
     local threshold = definition.longPressThresholdMs
     if not isInteger(threshold)
-        or threshold < MIN_LONG_PRESS_THRESHOLD_MS
-        or threshold > MAX_LONG_PRESS_THRESHOLD_MS then
+        or threshold < MIN_GESTURE_THRESHOLD_MS
+        or threshold > MAX_GESTURE_THRESHOLD_MS then
       error("Stream Deck action longPressThresholdMs must be an integer from 100 through 10000", 3)
+    end
+  end
+  if definition.doublePress ~= nil and type(definition.doublePress) ~= "function" then
+    error("Stream Deck action doublePress must be a function", 3)
+  end
+  if definition.doublePressThresholdMs ~= nil then
+    if definition.doublePress == nil then
+      error("Stream Deck action doublePressThresholdMs requires doublePress", 3)
+    end
+    local threshold = definition.doublePressThresholdMs
+    if not isInteger(threshold)
+        or threshold < MIN_GESTURE_THRESHOLD_MS
+        or threshold > MAX_GESTURE_THRESHOLD_MS then
+      error("Stream Deck action doublePressThresholdMs must be an integer from 100 through 10000", 3)
     end
   end
   if definition.touchTap ~= nil and type(definition.touchTap) ~= "function" then
