@@ -365,9 +365,9 @@ actions.register(streamdeck, {
 
 Each module under `hammerspoon/streamdeck/actions/` returns one plain registry-valid definition and never calls `register()` or `start()`. The catalog owns registration and the shared successful-callback refresh policy, preserving callback returns such as `sound.ON` and `sound.OFF`. Failed callbacks do not refresh the catalog. Watcher-backed actions start their watcher only while visible instances exist, and timer-backed actions retain their asynchronous instance refreshes.
 
-The [action catalog](../hammerspoon/examples/README.md) documents all names, action IDs, suggested Stream Deck types, permissions, and settings. [`hammerspoon/examples/init.lua`](../hammerspoon/examples/init.lua) is a runnable combined configuration. The pedagogical per-instance toggle is no longer shipped as an action; reusable per-instance behavior remains available through `helpers.perInstanceState`.
+The [action catalog](../hammerspoon/streamdeck/actions/) documents all names, action IDs, suggested Stream Deck types, permissions, settings, and complete or selective registration. The pedagogical per-instance toggle is no longer shipped as an action; reusable per-instance behavior remains available through `helpers.perInstanceState`.
 
-The action definitions and combined bootstrap run without Stream Deck hardware in the repository's Lua test harness. Custom definitions can still use the complete example below.
+The installed action definitions run without Stream Deck hardware in the repository's Lua test harness. Custom definitions can still use the complete example below.
 
 ## Complete example: microphone mute
 

@@ -3,7 +3,7 @@
 [![CI](https://github.com/brettinternet/stream-deck-hammerspoon/actions/workflows/ci.yml/badge.svg)](https://github.com/brettinternet/stream-deck-hammerspoon/actions/workflows/ci.yml)
 
 An Elgato Stream Deck plugin bridge for Hammerspoon. The plugin uses an authenticated loopback WebSocket by default to send key and lifecycle events to a Hammerspoon Lua module; Hammerspoon returns registered actions and appearance updates. An explicit LAN profile can add up to four isolated per-client PSK listeners without changing the loopback default.
-Browse the installed [Hammerspoon action library](hammerspoon/examples/) for ready-to-use actions and a combined configuration.
+Browse the installed [Hammerspoon action library](hammerspoon/streamdeck/actions/) for ready-to-use actions and configuration examples.
 
 The official Stream Deck application remains the owner of plugin lifecycle, property inspectors, rendering, and hardware access. Keep it running during development and manual checks. Direct USB/HID or other hardware control is forbidden. This project does **not** replace the official application.
 
@@ -64,7 +64,7 @@ actions.registerAll(streamdeck)
 streamdeck.start()
 ```
 
-Use `actions.register(streamdeck, { "application", "keep-awake" })` instead to expose only selected catalog actions. The bridge creates `~/.hammerspoon/streamdeck-token` on its first successful start. It contains two UUIDs and must remain mode `0600`. Never commit or log it. See the [action catalog](hammerspoon/examples/) or define custom actions with the [Lua API guide](docs/lua-api.md).
+Use `actions.register(streamdeck, { "application", "keep-awake" })` instead to expose only selected catalog actions. The bridge creates `~/.hammerspoon/streamdeck-token` on its first successful start. It contains two UUIDs and must remain mode `0600`. Never commit or log it. See the [action catalog](hammerspoon/streamdeck/actions/) or define custom actions with the [Lua API guide](docs/lua-api.md).
 
 LAN operation is an explicit opt-in. Configure one listener per remote client with a specific interface, unique port, and manually provisioned 32-byte key file (`0600`); the default `streamdeck.start()` above still creates only the legacy loopback listener:
 

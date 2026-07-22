@@ -14,7 +14,7 @@ actions.registerAll(streamdeck)
 streamdeck.start()
 ```
 
-[`init.lua`](init.lua) is the runnable version of that configuration. Copy those lines into `~/.hammerspoon/init.lua`, or symlink the file into `~/.hammerspoon` and require it from your existing configuration.
+Copy the complete-catalog snippet above into `~/.hammerspoon/init.lua`, or use the selective form below in an existing configuration.
 
 To expose only selected actions in Stream Deck, register their stable catalog names:
 

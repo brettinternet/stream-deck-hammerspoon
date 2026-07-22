@@ -116,29 +116,4 @@ return function(test, context, assertTrue, assertFalse, assertEqual, assertSame,
     _G.hs = previous_hs
   end)
 
-  test("combined example registers the catalog and starts one bridge", function()
-    local previous_streamdeck = package.loaded.streamdeck
-    local previous_actions = package.loaded["streamdeck.actions"]
-    local starts = 0
-    local registrations = 0
-    local bridge = {
-      start = function()
-        starts = starts + 1
-      end,
-    }
-    package.loaded.streamdeck = bridge
-    package.loaded["streamdeck.actions"] = {
-      registerAll = function(received)
-        assertSame(received, bridge)
-        registrations = registrations + 1
-      end,
-    }
-
-    dofile("hammerspoon/examples/init.lua")
-    assertEqual(registrations, 1)
-    assertEqual(starts, 1)
-
-    package.loaded.streamdeck = previous_streamdeck
-    package.loaded["streamdeck.actions"] = previous_actions
-  end)
 end
