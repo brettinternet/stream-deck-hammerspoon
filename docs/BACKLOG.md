@@ -131,7 +131,7 @@ The driving use case: a second Stream Deck, attached to another computer on the 
 
 ### B3 — Strengthen connection authentication and peer identity
 
-**Status:** Unblocked — owner decision 2026-07-21 rejected both companion footprints via the escape hatch in B3-T2.75 and reopened B3-T1/T2, which are re-decided below under a no-new-processes constraint; an independent architecture review concurred. B3-T2.5 remains complete: `29c873181695eafc5d7deac9929e8f45e28a5823` and `9912b073fb4b8f6cad2eab7fa0a8daed2d7752bf` confine the legacy token transport to literal loopback URLs, including rejection of normalized numeric/IP aliases; `bun test tests/bridge.test.ts`, `bun run check`, and `bun run build` passed after the fix. Next action: B3-T3.
+**Status:** Complete 2026-07-21 — `27a801f7fa43c8087c3a4cecd0acf5eb5b20a518`, `4a12c21fa2ad1958c0477ee292684f374b38ad7b`, and `8a376badc1b142e92ebcea71581e7f6a954ee262` implement and harden the opt-in PSK LAN transport. Independent verification passed B3-T3/T4, B3-AC1 through B3-DOD1: `bun run check`, `bun run test` (116 TypeScript, 70 Lua bridge, 10 Lua startup), `bun run build`, and Stream Deck package validation passed. The reviewer also confirmed source-map synchronization. B4-T5 retains the user-facing remote-profile configuration; B3 exposes only the deliberate library/manual profile.
 
 **Product assessment:** The current model — a mode-`0600` token file sent in cleartext in `hello` over an unencrypted loopback WebSocket — is proportionate exactly because packets never leave the machine. On a LAN, every part of that sentence fails: the token can be sniffed, replayed, or intercepted by an active peer. B3 must deliver authentication that stays safe off-loopback: confidentiality for the credential (TLS via the transport, or a challenge-response that never transmits the token), a provisioning story for getting the credential onto the second machine, and a deliberate opt-in non-loopback binding decision. Note `hs.httpserver` accepts one WebSocket client, so the transport itself is likely replaced in this track; select the mechanism with that in mind.
 
@@ -156,18 +156,18 @@ The driving use case: a second Stream Deck, attached to another computer on the 
   - Completion (2026-07-21): `29c873181695eafc5d7deac9929e8f45e28a5823` and `9912b073fb4b8f6cad2eab7fa0a8daed2d7752bf` accept only literal `ws://localhost`, `ws://127.0.0.1`, or `ws://[::1]` forms and reject all other legacy endpoints before token authentication. Independent verification found URL-normalized aliases (`127.1`, decimal IPv4, expanded IPv6); the latter commit fixes them and tests those boundaries. The source, compiled plugin artifact, tests, and security guide agree.
 - [x] B3-T2.75 — Define the companion runtime and trust bootstrap needed to ship the selected mutual-TLS architecture.
   - Resolution (2026-07-21): the owner rejected both companion footprints via this task's own escape hatch, and the mutual-TLS architecture is superseded by the re-decided B3-T1/T2 above. Footprint (a), a separately installed persistent companion, is a signed/notarized launchd-managed daemon plus a native remote-Mac Keychain component, an enrollment ceremony, CA/revocation management, and an authenticated-IPC design — a maintenance surface larger than the shipped plugin, defending bounded pre-registered callback dispatch on a home LAN. Footprint (b) is incoherent: the companion must run on the Hammerspoon Mac, which need not run the Stream Deck application, and Elgato lifecycle ownership of a security-critical listener is wrong even when co-located. No native TLS/Keychain component runs on either Mac.
-- [ ] B3-T3 — Implement the opt-in LAN listener, PSK handshake, and per-frame authentication across TypeScript and Lua; cross-validate both crypto implementations against RFC 4231 (HMAC) and RFC 5869 (HKDF) test vectors; update `docs/security.md` with the LAN trust boundary, the explicit statement that traffic content is observable to LAN peers by design, the per-client revocation procedure, and a minimum Hammerspoon version.
-- [ ] B3-T4 — Add unauthorized-peer, replayed-handshake, replayed/reflected/tampered-frame, wrong-key-client, downgrade (v1 `hello` at the LAN listener), revocation-mid-session, rotation, and reconnect tests.
+- [x] B3-T3 — Implement the opt-in LAN listener, PSK handshake, and per-frame authentication across TypeScript and Lua; cross-validate both crypto implementations against RFC 4231 (HMAC) and RFC 5869 (HKDF) test vectors; update `docs/security.md` with the LAN trust boundary, the explicit statement that traffic content is observable to LAN peers by design, the per-client revocation procedure, and a minimum Hammerspoon version.
+- [x] B3-T4 — Add unauthorized-peer, replayed-handshake, replayed/reflected/tampered-frame, wrong-key-client, downgrade (v1 `hello` at the LAN listener), revocation-mid-session, rotation, and reconnect tests.
 
 #### Acceptance criteria
 
-- [ ] B3-AC1 — Unauthenticated or incorrectly identified peers cannot dispatch callbacks.
-- [ ] B3-AC2 — Authentication failures remain safe and actionable without exposing credentials or session IDs.
-- [ ] B3-AC3 — No unauthenticated fallback or secret logging is introduced; non-loopback binding exists only as explicit opt-in behind the new authentication, and loopback remains the default.
+- [x] B3-AC1 — Unauthenticated or incorrectly identified peers cannot dispatch callbacks.
+- [x] B3-AC2 — Authentication failures remain safe and actionable without exposing credentials or session IDs.
+- [x] B3-AC3 — No unauthenticated fallback or secret logging is introduced; non-loopback binding exists only as explicit opt-in behind the new authentication, and loopback remains the default.
 
 #### Definition of Done
 
-- [ ] B3-DOD1 — Security review covers credential storage, provisioning, rotation, transport behavior, and migration from the v1 token flow.
+- [x] B3-DOD1 — Security review covers credential storage, provisioning, rotation, transport behavior, and migration from the v1 token flow.
 
 ### B5 — Add stronger denial-of-service limits
 
