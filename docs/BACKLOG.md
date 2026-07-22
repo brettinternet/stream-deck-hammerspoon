@@ -93,7 +93,7 @@ B1 and B6 follow B7 by priority order, not technical dependency; they are indepe
 
 ### B6 — Add generic presentation types to the Stream Deck manifest
 
-**Status:** Blocked pending manual device verification 2026-07-21 — `ddb70bf175c5c09b8053a3f2ecd7943d7db3b55f` and `42ac4deeac136b11cca5f0f76070c79ce77e7d90` complete and independently review the implementation; B6-T2/T3 and B6-AC1 through B6-AC3 are verified. B6-DOD1 remains: install the built plugin in the official Stream Deck application on a supported keypad, verify states 0–3 and omitted binary fallback, then confirm Button/Toggle remain unchanged. Manual-test setup 2026-07-21: `bun run install:dev` rebuilt, validated, linked, and restarted `com.brettinternet.hammerspoon`; the owner workstation's reloaded Hammerspoon configuration now registers `com.brettinternet.hammerspoon.multistate-test` (cycles `presentationState` 0–3) and `com.brettinternet.hammerspoon.multistate-fallback-test` (omits `presentationState` and toggles binary `state`). Owner must add each to a keypad-only Hammerspoon Multi-State key and report the observed result.
+**Status:** Complete 2026-07-21 — `ddb70bf175c5c09b8053a3f2ecd7943d7db3b55f` and `42ac4deeac136b11cca5f0f76070c79ce77e7d90` complete and independently review the implementation; B6-T2/T3 and B6-AC1 through B6-AC3 are verified. `bun run install:dev` rebuilt, validated, linked, and restarted `com.brettinternet.hammerspoon`. The owner manually verified in the official Stream Deck application on a supported keypad that Multi-State cycles states 0–3, omitted `presentationState` falls back to binary `state`, and Button/Toggle retain their selected action IDs and work normally. After independent review found the ignored root package stale, the current `.streamDeckPlugin` archive was rebuilt; Stream Deck validation passed and its `bin/plugin.js` SHA-256 matches the compiled tree. Temporary Hammerspoon test actions were removed after verification.
 
 **Product assessment:** Encoder and touchscreen support is not a gap — both shipped actions declare `Controllers: ["Keypad", "Encoder"]`, dial pushes/rotations and touch taps flow through `dialDown`/`dialRotate`/`dialUp`/`touchTap`, and encoder LCD rendering uses the `$A1`/`$A0` layouts. A new manifest type must therefore earn its UUID with behavior Button and Toggle cannot express. Two grounded candidates: a more-than-two-state multi-state action (the pomodoro example currently squeezes its focus/break phases into title text where distinct per-phase images would be clearer and more fun), and a dial-first action whose identity and settings are tuned for continuous values rather than presses. B6-T1 selects the type.
 
@@ -123,7 +123,7 @@ B1 and B6 follow B7 by priority order, not technical dependency; they are indepe
 
 #### Definition of Done
 
-- [ ] B6-DOD1 — Manual verification is completed with the official Stream Deck application and a supported device.
+- [x] B6-DOD1 — Manual verification is completed with the official Stream Deck application and a supported device.
 
 ## Remote-client track (planned)
 
