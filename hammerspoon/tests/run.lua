@@ -6,6 +6,7 @@ package.path = "hammerspoon/?.lua;hammerspoon/?/init.lua;" .. package.path
 
 local frames = {}
 local fakeHttp
+local fakeHttpInstances = {}
 
 local function fakeJsonString(value)
   local valueType = type(value)
@@ -170,11 +171,24 @@ end
 local fakeTimer = {
   doAfter = fakeDoAfter,
 }
+local function fakeHmacSha256(key, data)
+  local output = {}
+  for index = 1, 32 do
+    local keyByte = string.byte(key, ((index - 1) % #key) + 1) or 0
+    local dataByte = string.byte(data, ((index - 1) % #data) + 1) or 0
+    output[index] = string.char((keyByte + dataByte + index) % 256)
+  end
+  return table.concat(output)
+end
+
 
 _G.hs = {
   json = {
     encode = fakeEncode,
     decode = fakeDecode,
+  },
+  hash = {
+    hmacSHA256 = fakeHmacSha256,
   },
   fs = {
     attributes = function(path)
@@ -215,6 +229,7 @@ _G.hs = {
         started = false,
         stopped = false,
       }
+      fakeHttpInstances[#fakeHttpInstances + 1] = fakeHttp
       _G.fakeHttp = fakeHttp
 
       function fakeHttp:setInterface(interface)
@@ -260,6 +275,7 @@ _G.hs = {
 
 local Registry = require("streamdeck.registry")
 local Sound = require("streamdeck.sound")
+local Crypto = require("streamdeck.crypto")
 local Builtins = require("streamdeck.builtins")
 local StreamDeck = require("streamdeck")
 local Protocol = require("streamdeck.protocol")
@@ -356,6 +372,27 @@ local function withTokenPath(callback)
   if not ok then
     error(err, 0)
   end
+local function writeCredential(path, value)
+  local handle = assert(io.open(path, "wb"))
+  assert(handle:write(value))
+  assert(handle:close())
+  assert(os.execute("/bin/chmod 600 " .. "'" .. path:gsub("'", "'\\''") .. "'"))
+end
+
+local function withCredentials(callback)
+  local first, second = os.tmpname(), os.tmpname()
+  os.remove(first)
+  os.remove(second)
+  local ok, err = xpcall(function()
+    writeCredential(first, string.rep("K", 32))
+    writeCredential(second, string.rep("L", 32))
+    callback(first, second)
+  end, debug.traceback)
+  os.remove(first)
+  os.remove(second)
+  if not ok then error(err, 0) end
+end
+
 end
 local function withJson(json, callback)
   local previous = _G.hs.json
@@ -2308,6 +2345,199 @@ test("server emits feedback without breaking callback loop", function()
     assertEqual(responses[1].message, "Done")
     assertEqual(responses[1].durationMs, 250)
     server:stop()
+  end)
+end)
+
+local function authenticateLan(http, clientId, key, nonceByte)
+  local clientNonce = string.rep(string.char(nonceByte), Crypto.NONCE_BYTES)
+  local challenge = fakeDecode(http.websocketCallback(fakeEncode({
+    protocolVersion = Protocol.VERSION,
+    type = "lanHello",
+    clientId = clientId,
+    clientNonce = Crypto.hexEncode(clientNonce),
+  })))
+  assertEqual(challenge.type, "lanChallenge")
+  local serverNonce = assert(Crypto.hexDecode(challenge.serverNonce, Crypto.NONCE_BYTES))
+  local clientProof = assert(Crypto.proof(_G.hs, key, "client", clientId, clientNonce, serverNonce))
+  local ready = fakeDecode(http.websocketCallback(fakeEncode({
+    protocolVersion = Protocol.VERSION,
+    type = "lanProof",
+    clientId = clientId,
+    clientProof = Crypto.hexEncode(clientProof),
+  })))
+  assertEqual(ready.type, "lanReady")
+  local salt = Crypto.kdfSalt(clientId, clientNonce, serverNonce)
+  return ready.sessionId,
+    assert(Crypto.hkdf(_G.hs, key, salt, Crypto.frameInfo("client-to-server"), 32))
+end
+
+local function lanFrame(payload, key, sequence)
+  local mac = assert(Crypto.frameMac(_G.hs, key, "client-to-server", sequence, payload))
+  return fakeEncode({
+    protocolVersion = Protocol.VERSION,
+    type = "lanFrame",
+    sequence = sequence,
+    payload = payload,
+    mac = Crypto.hexEncode(mac),
+  })
+end
+
+test("LAN slots isolate authentication, contexts, callbacks, and output", function()
+  local pressed = 0
+  local registry = Registry.new()
+  registry:register({
+    id = "com.test.slots",
+    name = "Slots",
+    appearance = function(context)
+      return { title = context.instanceId, state = "inactive" }
+    end,
+    press = function(context)
+      pressed = pressed + 1
+      context:refresh()
+    end,
+  })
+  withTokenPath(function(tokenPath)
+    withCredentials(function(firstKeyPath, secondKeyPath)
+      local server = Server.new(registry, Protocol, Context)
+      server:start({
+        tokenPath = tokenPath,
+        lan = {
+          clients = {
+            alpha = { interface = "en0", port = 17322, keyPath = firstKeyPath },
+            beta = { interface = "en1", port = 17323, keyPath = secondKeyPath },
+          },
+        },
+      })
+      assertEqual(#server.slots, 3, "legacy plus two LAN slots must start")
+      assertEqual(server.slots[2].clientId, "alpha")
+      assertEqual(server.slots[3].clientId, "beta")
+      assertEqual(server.slots[2].interface, "en0")
+      assertEqual(server.slots[3].port, 17323)
+
+      local alpha = server.slots[2]
+      local beta = server.slots[3]
+      local alphaSession, alphaReceiveKey = authenticateLan(alpha.http, "alpha", string.rep("K", 32), 1)
+      local betaSession, betaReceiveKey = authenticateLan(beta.http, "beta", string.rep("L", 32), 2)
+      local alphaAppear = fakeEncode(message("instanceAppeared", {
+        sessionId = alphaSession,
+        instanceId = "same-instance",
+        actionId = "com.test.slots",
+        settings = {},
+      }))
+      local betaAppear = fakeEncode(message("instanceAppeared", {
+        sessionId = betaSession,
+        instanceId = "same-instance",
+        actionId = "com.test.slots",
+        settings = {},
+      }))
+      alpha.http.websocketCallback(lanFrame(alphaAppear, alphaReceiveKey, 1))
+      beta.http.websocketCallback(lanFrame(betaAppear, betaReceiveKey, 1))
+      assertTrue(alpha.instances["same-instance"] ~= nil)
+      assertTrue(beta.instances["same-instance"] ~= nil)
+
+      local alphaSent, betaSent = #alpha.http.sent, #beta.http.sent
+      alpha.instances["same-instance"]:refresh()
+      assertEqual(#alpha.http.sent, alphaSent + 1, "alpha context output must use alpha listener")
+      assertEqual(#beta.http.sent, betaSent, "alpha output must not route to beta")
+
+      local alphaKeyDown = fakeEncode(message("keyDown", {
+        sessionId = alphaSession,
+        instanceId = "same-instance",
+        actionId = "com.test.slots",
+      }))
+      alpha.http.websocketCallback(lanFrame(alphaKeyDown, alphaReceiveKey, 2))
+      assertEqual(pressed, 1)
+      local betaKeyDown = fakeEncode(message("keyDown", {
+        sessionId = betaSession,
+        instanceId = "same-instance",
+        actionId = "com.test.slots",
+      }))
+      beta.http.websocketCallback(lanFrame(betaKeyDown, betaReceiveKey, 2))
+      assertEqual(pressed, 2, "beta callback must survive alpha traffic")
+
+      local malformed = alpha.http.websocketCallback("not-json")
+      assertEqual(fakeDecode(malformed).code, "MALFORMED_MESSAGE")
+      assertTrue(beta.authenticated, "alpha malformed input must not retire beta")
+
+      local oldAlphaSession = alphaSession
+      alphaSession, alphaReceiveKey = authenticateLan(alpha.http, "alpha", string.rep("K", 32), 3)
+      assertTrue(alphaSession ~= oldAlphaSession)
+      assertTrue(beta.authenticated and beta.sessionId == betaSession, "alpha reconnect must not rotate beta")
+      assertTrue(next(alpha.instances) == nil, "alpha reconnect must clear only alpha contexts")
+      assertTrue(beta.instances["same-instance"] ~= nil, "beta context must survive alpha reconnect")
+
+      local staleAlpha = fakeEncode(message("keyDown", {
+        sessionId = oldAlphaSession,
+        instanceId = "same-instance",
+        actionId = "com.test.slots",
+      }))
+      local staleOuter = fakeDecode(alpha.http.websocketCallback(lanFrame(staleAlpha, alphaReceiveKey, 1)))
+      local staleResponse = fakeDecode(staleOuter.payload)
+      assertEqual(staleResponse.code, "AUTH_REQUIRED")
+      assertEqual(pressed, 2, "stale alpha session must not invoke callbacks")
+      server:stop()
+    end)
+  end)
+end)
+
+test("LAN slot bounds and startup rollback are deterministic", function()
+  withTokenPath(function(tokenPath)
+    withCredentials(function(firstKeyPath, secondKeyPath)
+      local tooMany = {}
+      for index = 1, 5 do
+        tooMany["client-" .. tostring(index)] = {
+          interface = "en" .. tostring(index),
+          port = 17321 + index,
+          keyPath = "/missing-" .. tostring(index),
+        }
+      end
+      assertFalse(pcall(function()
+        Server.new({}, Protocol, Context):start({ tokenPath = tokenPath, lan = { clients = tooMany } })
+      end), "more than four LAN clients must fail before startup")
+
+      assertFalse(pcall(function()
+        Server.new({}, Protocol, Context):start({
+          tokenPath = tokenPath,
+          lan = {
+            clients = {
+              alpha = { interface = "en0", port = 17322, keyPath = firstKeyPath },
+              beta = { interface = "en1", port = 17322, keyPath = secondKeyPath },
+            },
+          },
+        })
+      end), "duplicate LAN ports must fail before startup")
+
+      local originalNew = _G.hs.httpserver.new
+      local created = 0
+      _G.hs.httpserver.new = function(...)
+        created = created + 1
+        local http = originalNew(...)
+        if created == 3 then
+          http.start = function() error("simulated LAN start failure") end
+        end
+        return http
+      end
+      local server = Server.new({}, Protocol, Context)
+      local ok, errorMessage = pcall(function()
+        server:start({
+          tokenPath = tokenPath,
+          lan = {
+            clients = {
+              alpha = { interface = "en0", port = 17322, keyPath = firstKeyPath },
+              beta = { interface = "en1", port = 17323, keyPath = secondKeyPath },
+            },
+          },
+        })
+      end)
+      _G.hs.httpserver.new = originalNew
+      assertFalse(ok, "a later listener failure must fail startup")
+      assertTrue(tostring(errorMessage):find("LAN server startup failed", 1, true) ~= nil)
+      assertFalse(server.started)
+      assertEqual(#server.slots, 0, "failed startup must not publish partial slots")
+      assertTrue(fakeHttpInstances[#fakeHttpInstances - 2].stopped, "legacy listener must be stopped")
+      assertTrue(fakeHttpInstances[#fakeHttpInstances - 1].stopped, "first LAN listener must be stopped")
+      assertTrue(fakeHttpInstances[#fakeHttpInstances].stopped, "failed LAN listener must be stopped")
+    end)
   end)
 end)
 

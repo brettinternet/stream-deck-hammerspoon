@@ -6,6 +6,15 @@ local DEFAULT_LAN_PORT = 17322
 local DEFAULT_TOKEN_SUFFIX = "/.hammerspoon/streamdeck-token"
 local SOCKET_PATH = "/streamdeck"
 local LAN_CLIENT_ID_PATTERN = "^[A-Za-z0-9%._%-]+$"
+local MAX_LAN_CLIENTS = 4
+local MAX_INSTANCES = 64
+
+local function isSpecificInterface(interface)
+  return type(interface) == "string"
+    and interface ~= ""
+    and interface ~= "0.0.0.0"
+    and interface ~= "::"
+end
 
 local UNAUTH_RATE_BURST = 6
 local UNAUTH_RATE_REFILL_PER_SECOND = 12 / 60
@@ -99,36 +108,93 @@ local function validateOptions(options)
   end
 
   local lan = options.lan
-  if lan == nil then return port, tokenPath, nil end
+  if lan == nil then return port, tokenPath, {} end
   if type(lan) ~= "table" then error("Stream Deck lan option must be a table", 3) end
   for key in pairs(lan) do
     if key ~= "interface" and key ~= "port" and key ~= "clients" then
       error("Unknown Stream Deck LAN option: " .. tostring(key), 3)
     end
   end
-  local interface = lan.interface
-  if type(interface) ~= "string" or interface == "" or interface == "0.0.0.0" or interface == "::" then
-    error("Stream Deck LAN interface must name a specific interface", 3)
-  end
-  local lanPort = lan.port or DEFAULT_LAN_PORT
-  if not isInteger(lanPort) or lanPort < 1 or lanPort > 65535 or lanPort == port then
-    error("Stream Deck LAN port must be distinct integer from 1 to 65535", 3)
-  end
   if type(lan.clients) ~= "table" then error("Stream Deck LAN clients must be a table", 3) end
-  local clients = {}
-  local count = 0
-  for clientId, keyPath in pairs(lan.clients) do
-    if type(clientId) ~= "string" or #clientId < 1 or #clientId > 64 or clientId:match(LAN_CLIENT_ID_PATTERN) == nil then
-      error("Stream Deck LAN client IDs must use 1-64 safe characters", 3)
-    end
-    if type(keyPath) ~= "string" or keyPath == "" then
-      error("Stream Deck LAN credential paths must be non-empty strings", 3)
-    end
-    clients[clientId] = keyPath
-    count = count + 1
+
+  local entries = {}
+  local list = true
+  for key in pairs(lan.clients) do
+    if type(key) ~= "number" then list = false break end
   end
-  if count == 0 then error("Stream Deck LAN clients must not be empty", 3) end
-  return port, tokenPath, { interface = interface, port = lanPort, clients = clients }
+  if list then
+    for index, value in ipairs(lan.clients) do
+      entries[#entries + 1] = { clientId = value and value.clientId, value = value, index = index }
+    end
+  else
+    for clientId, value in pairs(lan.clients) do
+      entries[#entries + 1] = { clientId = clientId, value = value }
+    end
+  end
+  if #entries == 0 then error("Stream Deck LAN clients must not be empty", 3) end
+  if #entries > MAX_LAN_CLIENTS then
+    error("Stream Deck LAN client limit is " .. tostring(MAX_LAN_CLIENTS), 3)
+  end
+
+  local specs = {}
+  local clientIds = {}
+  local keyPaths = {}
+  local ports = { [port] = true }
+  local legacyInterface = lan.interface
+  local legacyPort = lan.port or DEFAULT_LAN_PORT
+  for _, entry in ipairs(entries) do
+    local clientId = entry.clientId
+    local value = entry.value
+    if type(clientId) ~= "string" or #clientId < 1 or #clientId > 64
+        or clientId:match(LAN_CLIENT_ID_PATTERN) == nil or clientIds[clientId] then
+      error("Stream Deck LAN client IDs must be unique and use 1-64 safe characters", 3)
+    end
+    clientIds[clientId] = true
+
+    local interface
+    local listenerPort
+    local keyPath
+    if type(value) == "string" then
+      if #entries ~= 1 then
+        error("Stream Deck LAN clients must define one listener per client", 3)
+      end
+      interface, listenerPort, keyPath = legacyInterface, legacyPort, value
+    elseif type(value) == "table" then
+      for key in pairs(value) do
+        if key ~= "clientId" and key ~= "interface" and key ~= "port" and key ~= "keyPath" then
+          error("Unknown Stream Deck LAN client option: " .. tostring(key), 3)
+        end
+      end
+      interface, listenerPort, keyPath = value.interface, value.port, value.keyPath
+    else
+      error("Stream Deck LAN client must define a keyPath", 3)
+    end
+    if not isSpecificInterface(interface) then
+      error("Stream Deck LAN client interface must name a specific interface", 3)
+    end
+    if not isInteger(listenerPort) or listenerPort < 1 or listenerPort > 65535 or ports[listenerPort] then
+      error("Stream Deck LAN client ports must be unique integers from 1 to 65535", 3)
+    end
+    if type(keyPath) ~= "string" or keyPath == "" or keyPaths[keyPath] then
+      error("Stream Deck LAN credential paths must be unique non-empty strings", 3)
+    end
+    ports[listenerPort] = true
+    keyPaths[keyPath] = true
+    specs[#specs + 1] = {
+      clientId = clientId,
+      interface = interface,
+      port = listenerPort,
+      keyPath = keyPath,
+    }
+  end
+  table.sort(specs, function(left, right) return left.clientId < right.clientId end)
+  return port, tokenPath, specs
+end
+
+local function stopHttp(http)
+  if http and type(http.stop) == "function" then
+    pcall(http.stop, http)
+  end
 end
 
 function server.new(registry, protocol, contextFactory)
@@ -136,31 +202,46 @@ function server.new(registry, protocol, contextFactory)
     registry = registry,
     protocol = protocol,
     contextFactory = contextFactory,
-    instances = {},
-    http = nil,
-    lanHttp = nil,
-    activeHttp = nil,
-    activeMode = "loopback",
-    lanConfig = nil,
-    lanClientId = nil,
-    lanKeyPath = nil,
-    lanKey = nil,
-    lanClientNonce = nil,
-    lanServerNonce = nil,
-    lanSendKey = nil,
-    lanReceiveKey = nil,
-    lanSendSequence = 0,
-    lanReceiveSequence = 0,
-    token = nil,
-    sessionId = nil,
-    sessionMode = nil,
+    slots = {},
+    slotsByHttp = {},
+    legacySlot = nil,
     rateBuckets = {},
-    sessionGeneration = 0,
     started = false,
-    authenticated = false,
-    dispatching = false,
-    responseQueue = nil,
   }
+
+  local function newSlot(spec)
+    local slot = {
+      isSlot = true,
+      registry = registry,
+      protocol = protocol,
+      contextFactory = contextFactory,
+      slotId = spec.slotId,
+      clientId = spec.clientId,
+      mode = spec.mode,
+      interface = spec.interface,
+      port = spec.port,
+      credentialPath = spec.keyPath,
+      http = nil,
+      instances = {},
+      lanKey = nil,
+      lanClientNonce = nil,
+      lanServerNonce = nil,
+      lanSendKey = nil,
+      lanReceiveKey = nil,
+      lanSendSequence = 0,
+      lanReceiveSequence = 0,
+      token = nil,
+      sessionId = nil,
+      sessionMode = nil,
+      rateBuckets = {},
+      sessionGeneration = 0,
+      started = false,
+      authenticated = false,
+      dispatching = false,
+      responseQueue = nil,
+    }
+    return setmetatable(slot, { __index = object })
+  end
 
   function object:_lanFrame(payload)
     local hsapi = rawget(_G, "hs")
@@ -184,7 +265,7 @@ function server.new(registry, protocol, contextFactory)
   function object:_queue(message)
     local encoded = self.protocol.encode(message)
     if not encoded then return false end
-    if self.activeMode == "lan" then
+    if self.mode == "lan" then
       encoded = self:_lanFrame(encoded)
       if not encoded then return false end
     end
@@ -200,7 +281,7 @@ function server.new(registry, protocol, contextFactory)
   end
 
   function object:_sendRaw(encoded)
-    local http = self.activeHttp or self.http
+    local http = self.http
     if not self.started or not http or type(http.send) ~= "function" then
       return false
     end
@@ -284,7 +365,7 @@ function server.new(registry, protocol, contextFactory)
   end
 
   function object:_context(instanceId, actionId, settings, definition, metadata)
-    return self.contextFactory.new({
+    local instance = self.contextFactory.new({
       instanceId = instanceId,
       actionId = actionId,
       settings = settings,
@@ -300,6 +381,8 @@ function server.new(registry, protocol, contextFactory)
         return self:_emitFeedback(contextInstanceId, contextActionId, kind, message, durationMs)
       end,
     })
+    instance.slot = self
+    return instance
   end
   function object:_invokePress(instance)
     local ok, callbackReturn = instance:invoke("press")
@@ -386,7 +469,7 @@ function server.new(registry, protocol, contextFactory)
 
   local function cancelInstancePress(instance)
     if instance then
-      object:_cancelPress(instance)
+      instance.slot:_cancelPress(instance)
     end
   end
 
@@ -429,7 +512,7 @@ function server.new(registry, protocol, contextFactory)
 
 
   function object:_handle(message)
-    if message.type == "hello" and self.authenticated and self.sessionMode ~= self.activeMode then
+    if message.type == "hello" and self.authenticated and self.sessionMode ~= self.mode then
       self:_queueError("AUTH_FAILED")
       return
     end
@@ -447,7 +530,7 @@ function server.new(registry, protocol, contextFactory)
       self.responseQueue = {}
       self.sessionId = sessionId
       self.authenticated = true
-      self.sessionMode = self.activeMode
+      self.sessionMode = self.mode
       self:_queue({
         protocolVersion = self.protocol.VERSION,
         type = "helloAck",
@@ -493,6 +576,12 @@ function server.new(registry, protocol, contextFactory)
         if message.metadata ~= nil then existing:updateMetadata(message.metadata) end
         existing:refresh()
       else
+        local instanceCount = 0
+        for _ in pairs(self.instances) do instanceCount = instanceCount + 1 end
+        if instanceCount >= MAX_INSTANCES then
+          self:_queueError("INVALID_STATE", nil, message.instanceId)
+          return
+        end
         local instance = self:_context(message.instanceId, message.actionId, message.settings, definition, message.metadata)
         self.instances[message.instanceId] = instance
         instance:invoke("appear")
@@ -573,23 +662,24 @@ function server.new(registry, protocol, contextFactory)
     self.lanSendKey = nil
     self.lanReceiveKey = nil
     self.lanSendSequence = 0
-    self.lanReceiveSequence = 0
-  end
-
-  function object:_lanError(code)
-    local encoded = self.protocol.encode(self.protocol.error(code))
-    return encoded or ""
-  end
-
   function object:_onLanMessage(raw, http)
+    if not self.isSlot then
+      local slot = self.slotsByHttp[http]
+      if not slot then
+        for _, candidate in ipairs(self.slots) do
+          if candidate.mode == "lan" then slot = candidate break end
+        end
+      end
+      if not slot then return self:_lanError("AUTH_FAILED") end
+      return slot:_onLanMessage(raw, http)
+    end
+    http = self.http
     local isLanSession = self.authenticated and self.sessionMode == "lan"
     if not self:_admitInbound(http, isLanSession) then
       if isLanSession then self:_dropSession() end
       return self:_lanError("AUTH_FAILED")
     end
     if self.authenticated and self.sessionMode ~= "lan" then return self:_lanError("AUTH_FAILED") end
-    self.activeMode = "lan"
-    self.activeHttp = http
     local hsapi = rawget(_G, "hs")
     if not self.protocol.preflight(raw, self.protocol.MAX_FRAME_BYTES) then
       return self:_lanError("MALFORMED_MESSAGE")
@@ -603,12 +693,13 @@ function server.new(registry, protocol, contextFactory)
 
     if value.type == "lanHello" then
       if self.authenticated and self.sessionMode ~= "lan" then return self:_lanError("AUTH_FAILED") end
-      if type(value.clientId) ~= "string" or #value.clientId < 1 or #value.clientId > 64
+      if type(value.clientId) ~= "string" or value.clientId ~= self.clientId
+          or #value.clientId < 1 or #value.clientId > 64
           or value.clientId:match(LAN_CLIENT_ID_PATTERN) == nil then
         return self:_lanError("AUTH_FAILED")
       end
       local clientNonce = Crypto.hexDecode(value.clientNonce, Crypto.NONCE_BYTES)
-      local keyPath = self.lanConfig and self.lanConfig.clients[value.clientId]
+      local keyPath = self.credentialPath
       if not clientNonce or not keyPath then return self:_lanError("AUTH_FAILED") end
       local key = Crypto.readKey(hsapi, keyPath)
       local serverNonce = Crypto.randomBytes(Crypto.NONCE_BYTES)
@@ -622,8 +713,8 @@ function server.new(registry, protocol, contextFactory)
         self.sessionMode = nil
       end
       self:_resetLanSession()
-      self.lanClientId = value.clientId
-      self.lanKeyPath = keyPath
+      self.lanClientId = self.clientId
+      self.lanKeyPath = self.credentialPath
       self.lanKey = key
       self.lanClientNonce = clientNonce
       self.lanServerNonce = serverNonce
@@ -708,16 +799,20 @@ function server.new(registry, protocol, contextFactory)
   end
 
   function object:_onMessage(raw, mode, http, admitted)
-    mode = mode or "loopback"
-    local activeHttp = http or self.http
+    if not self.isSlot then
+      local slot = self.slotsByHttp[http] or self.legacySlot
+      if not slot then return self:_safeError("AUTH_FAILED") end
+      return slot:_onMessage(raw, mode or slot.mode, http, admitted)
+    end
+    mode = mode or self.mode
+    local activeHttp = self.http
     local authenticatedForMode = self.authenticated and self.sessionMode == mode
+    if mode ~= self.mode then return self:_safeError("AUTH_FAILED") end
     if not admitted and not self:_admitInbound(activeHttp, authenticatedForMode) then
       if authenticatedForMode then self:_dropSession() end
       return self:_safeError("AUTH_FAILED")
     end
     if self.authenticated and self.sessionMode ~= mode then return self:_safeError("AUTH_FAILED") end
-    self.activeMode = mode
-    self.activeHttp = activeHttp
     self.responseQueue = {}
     self.dispatching = true
     local ok, codeOrNil = xpcall(function()
@@ -744,115 +839,118 @@ function server.new(registry, protocol, contextFactory)
     return first or ""
   end
 
+  local function stopSlot(slot, clearInstances)
+    slot.started = false
+    if clearInstances then slot:_clearInstances() end
+    stopHttp(slot.http)
+    slot.http = nil
+    slot.token = nil
+    slot.sessionId = nil
+    slot.sessionMode = nil
+    slot.authenticated = false
+    slot.rateBuckets = {}
+    slot.responseQueue = nil
+    slot:_resetLanSession()
+  end
+
+  local function configureAndStartSlot(hsapi, slot, startedSlots)
+    local ok, httpOrError = pcall(hsapi.httpserver.new, false, false)
+    if not ok or not httpOrError then return false end
+    local http = httpOrError
+    slot.http = http
+    local callback
+    if slot.mode == "lan" then
+      callback = function(raw) return slot:_onLanMessage(raw, http) end
+    else
+      callback = function(raw) return slot:_onMessage(raw, "loopback", http) end
+    end
+    local configured = pcall(http.setInterface, http, slot.interface)
+      and pcall(http.setPort, http, slot.port)
+      and pcall(http.websocket, http, SOCKET_PATH, callback)
+    if type(http.maxBodySize) == "function" then
+      pcall(http.maxBodySize, http, slot.protocol.MAX_FRAME_BYTES)
+    end
+    if not configured then
+      stopHttp(http)
+      slot.http = nil
+      return false
+    end
+    local started = pcall(http.start, http)
+    if not started then
+      stopHttp(http)
+      slot.http = nil
+      return false
+    end
+    slot.started = true
+    startedSlots[#startedSlots + 1] = slot
+    return true
+  end
+
   function object:start(options)
     if self.started then
       error("Stream Deck server is already started", 2)
     end
-    local port, tokenPath, lanConfig = validateOptions(options)
+    local port, tokenPath, lanSpecs = validateOptions(options)
     local hsapi = rawget(_G, "hs")
     if not hsapi or not hsapi.httpserver then
       error("Hammerspoon HTTP server is unavailable", 2)
     end
 
-    local token, tokenError = ensureToken(hsapi, tokenPath)
+    local token = ensureToken(hsapi, tokenPath)
     if not token then
       error("Stream Deck token startup failed", 2)
     end
-    if lanConfig then
-      for _, keyPath in pairs(lanConfig.clients) do
-        local key = Crypto.readKey(hsapi, keyPath)
-        if not key then error("Stream Deck LAN credential startup failed", 2) end
+    for _, spec in ipairs(lanSpecs) do
+      if not Crypto.readKey(hsapi, spec.keyPath) then
+        error("Stream Deck LAN credential startup failed", 2)
       end
     end
 
-    local ok, httpOrError = pcall(hsapi.httpserver.new, false, false)
-    if not ok or not httpOrError then
+    local startedSlots = {}
+    local legacy = newSlot({
+      slotId = "loopback",
+      mode = "loopback",
+      interface = "localhost",
+      port = port,
+    })
+    legacy.token = token
+    if not configureAndStartSlot(hsapi, legacy, startedSlots) then
       error("Stream Deck server startup failed", 2)
     end
-    local http = httpOrError
-    local configured = pcall(http.setInterface, http, "localhost")
-      and pcall(http.setPort, http, port)
-      and pcall(http.websocket, http, SOCKET_PATH, function(raw)
-        return self:_onMessage(raw, "loopback", http)
-      end)
-    if type(http.maxBodySize) == "function" then
-      pcall(http.maxBodySize, http, self.protocol.MAX_FRAME_BYTES)
-    end
-    if not configured then
-      pcall(http.stop, http)
-      error("Stream Deck server startup failed", 2)
-    end
-
-    local started = pcall(http.start, http)
-    if not started then
-      pcall(http.stop, http)
-      error("Stream Deck server startup failed", 2)
-    end
-
-    local lanHttp
-    if lanConfig then
-      local lanOk, lanOrError = pcall(hsapi.httpserver.new, false, false)
-      if not lanOk or not lanOrError then
-        pcall(http.stop, http)
-        error("Stream Deck LAN server startup failed", 2)
-      end
-      lanHttp = lanOrError
-      local lanConfigured = pcall(lanHttp.setInterface, lanHttp, lanConfig.interface)
-        and pcall(lanHttp.setPort, lanHttp, lanConfig.port)
-        and pcall(lanHttp.websocket, lanHttp, SOCKET_PATH, function(raw)
-          return self:_onLanMessage(raw, lanHttp)
-        end)
-      if type(lanHttp.maxBodySize) == "function" then
-        pcall(lanHttp.maxBodySize, lanHttp, self.protocol.MAX_FRAME_BYTES)
-      end
-      if not lanConfigured then
-        pcall(lanHttp.stop, lanHttp)
-        pcall(http.stop, http)
-        error("Stream Deck LAN server startup failed", 2)
-      end
-      local lanStarted = pcall(lanHttp.start, lanHttp)
-      if not lanStarted then
-        pcall(lanHttp.stop, lanHttp)
-        pcall(http.stop, http)
+    for _, spec in ipairs(lanSpecs) do
+      local slot = newSlot({
+        slotId = spec.clientId,
+        clientId = spec.clientId,
+        mode = "lan",
+        interface = spec.interface,
+        port = spec.port,
+        keyPath = spec.keyPath,
+      })
+      if not configureAndStartSlot(hsapi, slot, startedSlots) then
+        for _, startedSlot in ipairs(startedSlots) do stopSlot(startedSlot, false) end
         error("Stream Deck LAN server startup failed", 2)
       end
     end
 
-    self.http = http
-    self.lanHttp = lanHttp
-    self.activeHttp = http
-    self.activeMode = "loopback"
-    self.lanConfig = lanConfig
-    self.token = token
-    self.authenticated = false
-    self.sessionId = nil
-    self.sessionMode = nil
-    self.rateBuckets = {}
-    self:_resetLanSession()
+    self.slots = startedSlots
+    self.slotsByHttp = {}
+    for _, slot in ipairs(startedSlots) do self.slotsByHttp[slot.http] = slot end
+    self.legacySlot = legacy
     self.started = true
     return self
   end
 
   function object:stop()
+    if self.isSlot then
+      stopSlot(self, true)
+      return self
+    end
+    for _, slot in ipairs(self.slots) do stopSlot(slot, true) end
+    self.slots = {}
+    self.slotsByHttp = {}
+    self.legacySlot = nil
     self.started = false
-    self:_clearInstances()
-    if self.http and type(self.http.stop) == "function" then
-      pcall(self.http.stop, self.http)
-    end
-    if self.lanHttp and type(self.lanHttp.stop) == "function" then
-      pcall(self.lanHttp.stop, self.lanHttp)
-    end
-    self.http = nil
-    self.lanHttp = nil
-    self.activeHttp = nil
-    self.lanConfig = nil
-    self.token = nil
-    self.sessionId = nil
-    self.sessionMode = nil
-    self.authenticated = false
     self.rateBuckets = {}
-    self.responseQueue = nil
-    self:_resetLanSession()
     return self
   end
 
@@ -860,15 +958,73 @@ function server.new(registry, protocol, contextFactory)
     if not self.registry:has(actionId) then
       error("Unknown Stream Deck action id: " .. tostring(actionId), 2)
     end
-    for _, instance in pairs(self.instances) do
-      if instance.actionId == actionId then
-        instance:refresh()
+    if self.isSlot then
+      for _, instance in pairs(self.instances) do
+        if instance.actionId == actionId then instance:refresh() end
       end
+      return self
     end
+    for _, slot in ipairs(self.slots) do slot:refresh(actionId) end
     return self
   end
 
+  setmetatable(object, {
+    __index = function(target, key)
+      local slot = target.legacySlot
+      if not slot then return nil end
+      if key == "lanHttp" then
+        for _, candidate in ipairs(target.slots) do
+          if candidate.mode == "lan" then return candidate.http end
+        end
+        return nil
+      end
+      local slotFields = {
+        authenticated = true,
+        dispatching = true,
+        instances = true,
+        http = true,
+        lanKey = true,
+        lanKeyPath = true,
+        lanClientId = true,
+        lanClientNonce = true,
+        lanReceiveKey = true,
+        lanReceiveSequence = true,
+        lanSendKey = true,
+        lanSendSequence = true,
+        sessionId = true,
+        sessionMode = true,
+        token = true,
+      }
+      if slotFields[key] then return slot[key] end
+      return nil
+    end,
+    __newindex = function(target, key, value)
+      local slot = target.legacySlot
+      local slotFields = {
+        authenticated = true,
+        dispatching = true,
+        instances = true,
+        lanKey = true,
+        lanKeyPath = true,
+        lanClientId = true,
+        lanClientNonce = true,
+        lanReceiveKey = true,
+        lanReceiveSequence = true,
+        lanSendKey = true,
+        lanSendSequence = true,
+        sessionId = true,
+        sessionMode = true,
+        token = true,
+      }
+      if slot and slotFields[key] then
+        slot[key] = value
+      else
+        rawset(target, key, value)
+      end
+    end,
+  })
   return object
 end
+
 
 return server
