@@ -59,6 +59,7 @@ local function copyDevice(device)
   end
   return {
     controllerType = device.controllerType,
+    imageSize = device.imageSize,
     device = {
       type = device.device.type,
       size = { columns = device.device.size.columns, rows = device.device.size.rows },

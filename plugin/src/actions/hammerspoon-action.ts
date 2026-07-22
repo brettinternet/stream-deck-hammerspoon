@@ -36,28 +36,29 @@ const DEVICE_TYPE_NAMES: Record<number, DeviceMetadata["device"]["type"]> = {
   13: "stream-deck-plus-xl",
 };
 type RenderingProfile = {
-  keyImageSize: 72;
+  imageSize: number;
   encoderLayout?: "$A1";
   encoderDecoratedLayout?: "$A0";
   encoderValueLayout?: "$B1";
 };
 
-const DEFAULT_RENDERING_PROFILE: RenderingProfile = { keyImageSize: 72, encoderLayout: "$A1" };
-const SUPPORTED_RENDERING_PROFILES: Record<string, true> = {
-  "keypad:stream-deck:5x3": true,
-  "keypad:stream-deck-mini:3x2": true,
-  "keypad:stream-deck-xl:8x4": true,
-  "keypad:stream-deck-pedal:3x1": true,
-  "keypad:stream-deck-plus:4x2": true,
-  "keypad:stream-deck-neo:4x2": true,
-  "keypad:stream-deck-studio:16x2": true,
-  "keypad:galleon-100-sd:3x4": true,
-  "keypad:stream-deck-plus-xl:9x4": true,
-  "encoder:stream-deck-plus:4x2": true,
-  "encoder:stream-deck-studio:16x2": true,
-  "encoder:galleon-100-sd:3x4": true,
-  "encoder:stream-deck-plus-xl:9x4": true,
+const DEFAULT_RENDERING_PROFILE: RenderingProfile = { imageSize: 72, encoderLayout: "$A1" };
+const RENDERING_PROFILES: Record<string, RenderingProfile> = {
+  "keypad:stream-deck:5x3": { imageSize: 72 },
+  "keypad:stream-deck-mini:3x2": { imageSize: 80 },
+  "keypad:stream-deck-xl:8x4": { imageSize: 96 },
+  "keypad:stream-deck-plus:4x2": { imageSize: 120 },
+  "keypad:stream-deck-neo:4x2": { imageSize: 96 },
+  "encoder:stream-deck-plus:4x2": { imageSize: 48, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" },
+  "encoder:stream-deck-studio:16x2": { imageSize: 48, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" },
+  "encoder:galleon-100-sd:3x4": { imageSize: 48, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" },
+  "encoder:stream-deck-plus-xl:9x4": { imageSize: 48, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" },
 };
+
+function recognizedRenderingProfile(metadata: DeviceMetadata): RenderingProfile | undefined {
+  const { controllerType, device } = metadata;
+  return RENDERING_PROFILES[`${controllerType}:${device.type}:${device.size.columns}x${device.size.rows}`];
+}
 
 function selectRenderingProfile(metadata: DeviceMetadata | undefined): RenderingProfile | undefined {
   if (metadata === undefined) {
@@ -67,14 +68,7 @@ function selectRenderingProfile(metadata: DeviceMetadata | undefined): Rendering
   if (sanitized === undefined) {
     return undefined;
   }
-  const { controllerType, device } = sanitized;
-  const key = `${controllerType}:${device.type}:${device.size.columns}x${device.size.rows}`;
-  if (!SUPPORTED_RENDERING_PROFILES[key]) {
-    return undefined;
-  }
-  return controllerType === "encoder"
-    ? { keyImageSize: 72, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" }
-    : { keyImageSize: 72 };
+  return recognizedRenderingProfile(sanitized) ?? DEFAULT_RENDERING_PROFILE;
 }
 
 export function extractDeviceMetadata(action: unknown): DeviceMetadata | undefined {
@@ -88,13 +82,16 @@ export function extractDeviceMetadata(action: unknown): DeviceMetadata | undefin
       : context.controllerType === "Encoder"
         ? "encoder"
         : undefined;
-    return sanitizeDeviceMetadata({
+    const metadata = sanitizeDeviceMetadata({
       controllerType,
       device: {
         type: deviceType,
         size: { columns: device.size?.columns, rows: device.size?.rows },
       },
     });
+    if (metadata === undefined) return undefined;
+    const renderingProfile = recognizedRenderingProfile(metadata);
+    return renderingProfile === undefined ? metadata : { ...metadata, imageSize: renderingProfile.imageSize };
   } catch {
     return undefined;
   }
@@ -169,7 +166,7 @@ function hasValidAppearanceExtension(appearance: BridgeAppearance): boolean {
 
 function appearanceImage(
   appearance: BridgeAppearance,
-  keyImageSize = 72,
+  imageSize: number,
   bundledIcon = BUNDLED_BUTTON_ICON_PATH,
 ): string | undefined {
   const icon = appearance.icon;
@@ -232,18 +229,28 @@ function appearanceImage(
     }
   }
   const iconMarkup = icon?.kind === "bundled"
-    ? `<image href="${bundledIcon}" x="0" y="0" width="${keyImageSize}" height="${keyImageSize}"/>`
-    : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="0" y="0" width="${keyImageSize}" height="${keyImageSize}"/>`;
+    ? `<image href="${bundledIcon}" x="0" y="0" width="${imageSize}" height="${imageSize}"/>`
+    : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="0" y="0" width="${imageSize}" height="${imageSize}"/>`;
+  const scale = imageSize / 72;
+  const progressInset = 4 * scale;
+  const progressWidth = 64 * scale;
+  const progressHeight = 4 * scale;
+  const progressY = 64 * scale;
+  const borderInset = 2 * scale;
+  const borderSize = 68 * scale;
+  const borderWidth = 4 * scale;
+  const badgeX = 68 * scale;
+  const badgeY = 14 * scale;
   const progressBar = progress === undefined
     ? ""
-    : `<rect x="4" y="64" width="${Math.round(progress * 64)}" height="4" fill="${foreground}"/>`;
+    : `<rect x="${progressInset}" y="${progressY}" width="${Math.round(progress * progressWidth)}" height="${progressHeight}" fill="${foreground}"/>`;
   const foregroundBorder = appearance.foregroundColor === undefined
     ? ""
-    : `<rect x="2" y="2" width="68" height="68" fill="none" stroke="${foreground}" stroke-width="4"/>`;
+    : `<rect x="${borderInset}" y="${borderInset}" width="${borderSize}" height="${borderSize}" fill="none" stroke="${foreground}" stroke-width="${borderWidth}"/>`;
   const badgeText = badge === undefined
     ? ""
-    : `<text x="68" y="14" text-anchor="end" fill="${foreground}">${escapeXml(badge)}</text>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${keyImageSize}" height="${keyImageSize}" viewBox="0 0 ${keyImageSize} ${keyImageSize}"><rect width="${keyImageSize}" height="${keyImageSize}" fill="${background}"/>${iconMarkup}${foregroundBorder}${progressBar}${badgeText}</svg>`;
+    : `<text x="${badgeX}" y="${badgeY}" text-anchor="end" fill="${foreground}">${escapeXml(badge)}</text>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${imageSize}" height="${imageSize}" viewBox="0 0 ${imageSize} ${imageSize}"><rect width="${imageSize}" height="${imageSize}" fill="${background}"/>${iconMarkup}${foregroundBorder}${progressBar}${badgeText}</svg>`;
   try {
     return `data:image/svg+xml,${encodeURIComponent(svg)}`;
   } catch {
@@ -251,16 +258,19 @@ function appearanceImage(
   }
 }
 
-function dialAppearanceImage(appearance: BridgeAppearance, bundledIcon = BUNDLED_BUTTON_ICON_PATH): string | undefined {
-  const keyImage = appearanceImage(appearance, 72, bundledIcon);
-  if (keyImage === undefined) {
+function dialAppearanceImage(
+  appearance: BridgeAppearance,
+  imageSize: number,
+  bundledIcon = BUNDLED_BUTTON_ICON_PATH,
+): string | undefined {
+  if (appearanceImage(appearance, imageSize, bundledIcon) === undefined) {
     return undefined;
   }
   const icon = appearance.icon;
   const customIconImage = icon?.kind === "custom" ? safeAppearanceIconImage(icon) : undefined;
   const iconMarkup = icon?.kind === "bundled"
-    ? `<image href="${bundledIcon}" x="16" y="40" width="48" height="48"/>`
-    : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="16" y="40" width="48" height="48"/>`;
+    ? `<image href="${bundledIcon}" x="16" y="40" width="${imageSize}" height="${imageSize}"/>`
+    : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="16" y="40" width="${imageSize}" height="${imageSize}"/>`;
   const foreground = appearance.foregroundColor ?? "#FFFFFF";
   const background = appearance.backgroundColor ?? "#000000";
   const progressBar = appearance.progress === undefined
@@ -758,7 +768,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
     const image = appearanceImage(
       appearance,
-      instance.renderingProfile?.keyImageSize ?? 72,
+      instance.renderingProfile?.imageSize ?? DEFAULT_RENDERING_PROFILE.imageSize,
       bundledIcon,
     );
     if (appearance.icon !== undefined && image === undefined) {
@@ -940,7 +950,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
         feedback.icon = icon;
       }
       if (!(await this.setDialLayout(action, renderingProfile, "$B1"))) {
-        await this.setDialTitle(action, title, { keyImageSize: 72, encoderLayout: "$A1" });
+        await this.setDialTitle(action, title, DEFAULT_RENDERING_PROFILE);
         return false;
       }
       try {
@@ -948,20 +958,20 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
         return true;
       } catch {
         await this.alert(action);
-        await this.setDialTitle(action, title, { keyImageSize: 72, encoderLayout: "$A1" });
+        await this.setDialTitle(action, title, DEFAULT_RENDERING_PROFILE);
         return false;
       }
     }
 
     try {
       if (hasDecoration && layout === "$A0") {
-        const image = dialAppearanceImage(appearance, bundledIcon);
+        const image = dialAppearanceImage(appearance, renderingProfile?.imageSize ?? 48, bundledIcon);
         if (image === undefined) {
           await this.alert(action);
           return false;
         }
         if (!(await this.setDialLayout(action, renderingProfile, layout))) {
-          await this.setDialTitle(action, title, { keyImageSize: 72, encoderLayout: "$A1" });
+          await this.setDialTitle(action, title, DEFAULT_RENDERING_PROFILE);
           return false;
         }
         try {
@@ -969,7 +979,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
           return true;
         } catch {
           await this.alert(action);
-          await this.setDialTitle(action, title, { keyImageSize: 72, encoderLayout: "$A1" });
+          await this.setDialTitle(action, title, DEFAULT_RENDERING_PROFILE);
           return false;
         }
       }

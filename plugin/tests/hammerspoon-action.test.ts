@@ -607,18 +607,39 @@ describe("HammerspoonAction", () => {
       controllerType: "Encoder",
       device: { type: 99, size: { columns: 4, rows: 2 } },
     });
+    const mini = new FakeAction("mini-key", true, {
+      controllerType: "Keypad",
+      device: { type: 1, size: { columns: 3, rows: 2 } },
+    });
+    const plus = new FakeAction("plus-key", true, {
+      controllerType: "Keypad",
+      device: { type: 7, size: { columns: 4, rows: 2 } },
+    });
 
     await adapter.onWillAppear(appear(supported, { actionId: "action.supported" }));
     await adapter.onWillAppear(appear(unknown, { actionId: "action.unknown" }));
+    await adapter.onWillAppear(appear(mini, { actionId: "action.mini" }));
+    await adapter.onWillAppear(appear(plus, { actionId: "action.plus" }));
     expect(supported.layouts).toEqual(["$A1"]);
     expect(unknown.layouts).toEqual(["$A1"]);
     expect(bridge.upserts[0].metadata).toEqual({
       controllerType: "encoder",
+      imageSize: 48,
       device: { type: "stream-deck-plus", size: { columns: 4, rows: 2 } },
     });
     expect(bridge.upserts[1].metadata).toEqual({
       controllerType: "encoder",
       device: { type: "unknown", size: { columns: 4, rows: 2 } },
+    });
+    expect(bridge.upserts[2].metadata).toEqual({
+      controllerType: "keypad",
+      imageSize: 80,
+      device: { type: "stream-deck-mini", size: { columns: 3, rows: 2 } },
+    });
+    expect(bridge.upserts[3].metadata).toEqual({
+      controllerType: "keypad",
+      imageSize: 120,
+      device: { type: "stream-deck-plus", size: { columns: 4, rows: 2 } },
     });
 
     bridge.emit("appearance", {

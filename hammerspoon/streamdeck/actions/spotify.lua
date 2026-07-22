@@ -1,13 +1,17 @@
 -- Stream Deck action: Spotify playback, artwork, volume, and track controls.
 
 local action_id = "com.brettinternet.hammerspoon.spotify"
+local helpers = require("streamdeck.helpers")
+
 local refresh_interval = 2
 local volume_step = 2
 
 local visible_contexts = {}
 local refresh_timer
 local artwork_url
-local artwork_icon
+local artwork_image
+local artwork_icons_by_size = {}
+local artwork_icon_attempted_by_size = {}
 local requested_artwork_url
 local snapshot = {
   running = false,
@@ -31,28 +35,24 @@ local function refresh_visible_contexts()
   end
 end
 
-local function icon_from_image(image)
-  if image == nil or type(image.bitmapRepresentation) ~= "function" then
+local function clear_artwork_cache()
+  artwork_image = nil
+  artwork_icons_by_size = {}
+  artwork_icon_attempted_by_size = {}
+end
+
+local function artwork_icon_for(context)
+  local size = helpers.imageSize(context)
+  if artwork_image == nil then
     return nil
   end
-  local bitmap = image:bitmapRepresentation({ w = 72, h = 72 })
-  if bitmap == nil or type(bitmap.encodeAsURLString) ~= "function" then
-    return nil
+  if artwork_icon_attempted_by_size[size] then
+    return artwork_icons_by_size[size]
   end
-  local data_url = bitmap:encodeAsURLString(true, "PNG")
-  local data_base64 = type(data_url) == "string" and data_url:match("^data:image/png;base64,(.+)") or nil
-  if data_base64 == nil then
-    return nil
-  end
-  data_base64 = data_base64:gsub("%s", "")
-  if data_base64 == "" then
-    return nil
-  end
-  return {
-    kind = "custom",
-    mediaType = "image/png",
-    dataBase64 = data_base64,
-  }
+  artwork_icon_attempted_by_size[size] = true
+  local icon = helpers.png(context, artwork_image)
+  artwork_icons_by_size[size] = icon
+  return icon
 end
 
 local function request_artwork(url)
@@ -61,7 +61,7 @@ local function request_artwork(url)
   end
 
   artwork_url = url
-  artwork_icon = nil
+  clear_artwork_cache()
   requested_artwork_url = url
   if url == nil then
     return
@@ -76,7 +76,7 @@ local function request_artwork(url)
     if artwork_url ~= url then
       return
     end
-    artwork_icon = icon_from_image(image)
+    artwork_image = image
     refresh_visible_contexts()
   end)
 end
@@ -160,6 +160,7 @@ local function title_for_snapshot()
 end
 
 local function appearance_for(context)
+  local artwork_icon = artwork_icon_for(context)
   local device = type(context.getDevice) == "function" and context:getDevice() or nil
   local is_encoder = type(device) == "table" and device.controllerType == "encoder"
   if not is_encoder then

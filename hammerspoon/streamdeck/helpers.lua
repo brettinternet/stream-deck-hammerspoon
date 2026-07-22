@@ -1,4 +1,6 @@
 local helpers = {}
+local protocol = require("streamdeck.protocol")
+
 local base64Characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 local function base64Encode(value)
@@ -30,6 +32,62 @@ function helpers.svg(svg)
     mediaType = "image/svg+xml",
     dataBase64 = base64Encode(svg),
   }
+end
+local DEFAULT_IMAGE_SIZE = 72
+local MAX_IMAGE_SIZE = 144
+
+local function validImageSize(value)
+  return type(value) == "number"
+    and value == value
+    and value ~= math.huge
+    and value ~= -math.huge
+    and value % 1 == 0
+    and value >= 1
+    and value <= MAX_IMAGE_SIZE
+end
+
+function helpers.imageSize(context)
+  if type(context) ~= "table" or type(context.getDevice) ~= "function" then
+    return DEFAULT_IMAGE_SIZE
+  end
+  local ok, device = pcall(context.getDevice, context)
+  if not ok or type(device) ~= "table" or not validImageSize(device.imageSize) then
+    return DEFAULT_IMAGE_SIZE
+  end
+  return device.imageSize
+end
+
+function helpers.png(context, image)
+  if image == nil or type(image.bitmapRepresentation) ~= "function" then
+    return nil
+  end
+
+  local size = helpers.imageSize(context)
+  local bitmapOk, bitmap = pcall(image.bitmapRepresentation, image, { w = size, h = size })
+  if not bitmapOk or bitmap == nil or type(bitmap.encodeAsURLString) ~= "function" then
+    return nil
+  end
+
+  local encodedOk, encoded = pcall(bitmap.encodeAsURLString, bitmap, true, "PNG")
+  if not encodedOk or type(encoded) ~= "string" then
+    return nil
+  end
+  encoded = encoded:gsub("%s+", "")
+  encoded = encoded:gsub("^data:image/png;base64,", "")
+  if encoded == "" or #encoded % 4 ~= 0 then
+    return nil
+  end
+
+  local icon = {
+    kind = "custom",
+    mediaType = "image/png",
+    dataBase64 = encoded,
+  }
+  local validOk, valid = pcall(protocol.validateAppearanceIcon, icon)
+  if not validOk or not valid then
+    return nil
+  end
+  return icon
 end
 
 local function areaChartError(message)
@@ -94,7 +152,7 @@ local function validateChartValues(values)
   return count
 end
 
-function helpers.areaChart(values, options)
+function helpers.areaChart(context, values, options)
   local count = validateChartValues(values)
   if options ~= nil and type(options) ~= "table" then
     areaChartError("options must be a table")
@@ -102,19 +160,14 @@ function helpers.areaChart(values, options)
 
   local settings = options or {}
   for key in next, settings do
-    if key ~= "size" and key ~= "min" and key ~= "max"
+    if key ~= "min" and key ~= "max"
         and key ~= "backgroundColor" and key ~= "fillColor"
         and key ~= "strokeColor" and key ~= "strokeWidth" then
       areaChartError("option '" .. tostring(key) .. "' is not supported")
     end
   end
 
-  local size = rawget(settings, "size")
-  if size == nil then
-    size = 72
-  elseif not isFiniteNumber(size) or size % 1 ~= 0 or (size ~= 72 and size ~= 144) then
-    areaChartError("size must be 72 or 144")
-  end
+  local size = helpers.imageSize(context)
 
   local minimum = rawget(settings, "min")
   if minimum == nil then
@@ -199,6 +252,9 @@ function helpers.areaChart(values, options)
   end
   return helpers.svg(svg .. "</svg>")
 end
+
+
+
 
 local function validateContext(context)
   if type(context) ~= "table" or type(context.instanceId) ~= "string" or context.instanceId == "" then

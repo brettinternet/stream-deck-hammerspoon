@@ -251,9 +251,9 @@ local function appearance_for(context)
     state = "inactive",
     appearanceVersion = 1,
     icon = helpers.areaChart(
+      context,
       history_values(is_cpu and cpu_history or ram_history),
       {
-        size = 72,
         min = 0,
         max = 100,
         backgroundColor = background_color,

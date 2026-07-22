@@ -2085,6 +2085,46 @@ test("SVG helper wraps canonical base64 custom icons", function()
   end
   assertFalse(pcall(Helpers.svg, 123), "SVG helper must reject non-string input")
 end)
+test("PNG helper resizes images to device metadata and canonicalizes validated wire data", function()
+  local pngBySize = {
+    [72] = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAujBRSAAB/UYCuQAAAABJRU5ErkJggg==",
+    [120] = "iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAIAAAC2BqGFAAAAQElEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAnRipOAABp+xssgAAAABJRU5ErkJggg==",
+  }
+  local bitmapCalls = {}
+  local image = {
+    bitmapRepresentation = function(_, size)
+      bitmapCalls[size.w] = (bitmapCalls[size.w] or 0) + 1
+      assertEqual(size.h, size.w)
+      assertTrue(pngBySize[size.w] ~= nil, "PNG helper must request a supported fixture size")
+      return {
+        encodeAsURLString = function(_, scale, imageType)
+          assertTrue(scale)
+          assertEqual(imageType, "PNG")
+          return "data:image/png;base64," .. pngBySize[size.w] .. "\n"
+        end,
+      }
+    end,
+  }
+  local active_context = {
+    getDevice = function()
+      return { imageSize = 120 }
+    end,
+  }
+  local missing_context = {}
+
+  local active = Helpers.png(active_context, image)
+  assertEqual(active.kind, "custom")
+  assertEqual(active.mediaType, "image/png")
+  assertEqual(active.dataBase64, pngBySize[120])
+  assertTrue(active.dataBase64:find("^data:", 1) == nil, "PNG wire data must not retain a data URL")
+  assertTrue(Protocol.validateAppearanceIcon(active), "active PNG must pass the protocol icon validator")
+  assertEqual(bitmapCalls[120], 1)
+
+  local fallback = Helpers.png(missing_context, image)
+  assertEqual(fallback.dataBase64, pngBySize[72], "missing metadata must fall back to 72 pixels")
+  assertTrue(Protocol.validateAppearanceIcon(fallback), "fallback PNG must pass the protocol icon validator")
+  assertEqual(bitmapCalls[72], 1)
+end)
 test("area chart helper clamps and bounds safe SVG geometry", function()
   local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
   local function decodeBase64(encoded)
@@ -2113,24 +2153,37 @@ test("area chart helper clamps and bounds safe SVG geometry", function()
     assertEqual(icon.mediaType, "image/svg+xml")
     return decodeBase64(icon.dataBase64)
   end
+  local fallback_context = {}
+  local chart144_context = {
+    getDevice = function()
+      return { imageSize = 144 }
+    end,
+  }
+  local chart120_context = {
+    getDevice = function()
+      return { imageSize = 120 }
+    end,
+  }
+  local sparse = { [1] = 1, [3] = 3 }
 
-  local emptySvg = svgFor(Helpers.areaChart({}))
+
+  local emptySvg = svgFor(Helpers.areaChart(fallback_context, {}))
   assertTrue(emptySvg:find('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72">', 1, true) ~= nil)
   assertTrue(emptySvg:find('<rect width="72" height="72" fill="#000000"/>', 1, true) ~= nil)
   assertTrue(emptySvg:find('<path fill="#FFFFFF" d="M0 72 Z"/>', 1, true) ~= nil)
-  local singleSvg = svgFor(Helpers.areaChart({ 50 }))
+  local singleSvg = svgFor(Helpers.areaChart(fallback_context, { 50 }))
   assertTrue(singleSvg:find('d="M0 72 L0 36 L0 72 Z"', 1, true) ~= nil)
 
-  local multipleSvg = svgFor(Helpers.areaChart({ 0, 50, 100 }))
+  local multipleSvg = svgFor(Helpers.areaChart(fallback_context, { 0, 50, 100 }))
   assertTrue(multipleSvg:find('d="M0 72 L0 72 L36 36 L71 0 L71 72 Z"', 1, true) ~= nil)
-  local clampedSvg = svgFor(Helpers.areaChart({ -10, 200 }))
+  local clampedSvg = svgFor(Helpers.areaChart(fallback_context, { -10, 200 }))
   assertTrue(clampedSvg:find('d="M0 72 L0 72 L71 0 L71 72 Z"', 1, true) ~= nil)
 
   local samples = {}
   for index = 1, 120 do
     samples[index] = index - 1
   end
-  local boundedSvg = svgFor(Helpers.areaChart(samples))
+  local boundedSvg = svgFor(Helpers.areaChart(fallback_context, samples))
   local lineCount = 0
   for _ in boundedSvg:gmatch(" L") do
     lineCount = lineCount + 1
@@ -2138,8 +2191,7 @@ test("area chart helper clamps and bounds safe SVG geometry", function()
   assertEqual(lineCount, 73, "downsampling must retain at most 72 plotted points plus baseline")
   assertTrue(boundedSvg:find("L71 0 L71 72 Z", 1, true) ~= nil, "downsampling must retain newest value")
 
-  local chart144Svg = svgFor(Helpers.areaChart({ 0, 100 }, {
-    size = 144,
+  local chart144Svg = svgFor(Helpers.areaChart(chart144_context, { 0, 100 }, {
     backgroundColor = "#123456",
     fillColor = "#abcdef",
     strokeColor = "#0f4c75",
@@ -2153,6 +2205,22 @@ test("area chart helper clamps and bounds safe SVG geometry", function()
     1,
     true
   ) ~= nil, "the trace must remain open instead of outlining the baseline")
+  local chart120Svg = svgFor(Helpers.areaChart(chart120_context, { 0, 100 }, {
+    strokeColor = "#1B5E8A",
+    strokeWidth = 2,
+  }))
+  assertTrue(chart120Svg:find('viewBox="0 0 120 120"', 1, true) ~= nil,
+    "area charts must use active device image dimensions")
+  assertTrue(chart120Svg:find('d="M0 120 L0 120 L119 0 L119 120 Z"', 1, true) ~= nil)
+  local chart120Valid, chart120Code = Protocol.validate(message("appearance", {
+    instanceId = "chart-120",
+    actionId = "com.test.chart",
+    title = "Chart",
+    state = 0,
+    appearanceVersion = 1,
+    icon = Helpers.areaChart(chart120_context, { 25, 75 }),
+  }))
+  assertTrue(chart120Valid, chart120Code or "active-size area chart must pass the safe icon validator")
 
   local valid, code = Protocol.validate(message("appearance", {
     instanceId = "chart",
@@ -2160,36 +2228,35 @@ test("area chart helper clamps and bounds safe SVG geometry", function()
     title = "Chart",
     state = 0,
     appearanceVersion = 1,
-    icon = Helpers.areaChart({ 25, 75 }, {
+    icon = Helpers.areaChart(fallback_context, { 25, 75 }, {
       strokeColor = "#1B5E8A",
       strokeWidth = 2,
     }),
   }))
   assertTrue(valid, code or "area chart SVG must pass the safe icon validator")
 
-  local sparse = { [1] = 1, [3] = 3 }
   local invalidArguments = {
-    { "not an array" },
-    { sparse },
-    { { 1, math.huge } },
-    { { 1 }, false },
-    { { 1 }, { size = 73 } },
-    { { 1 }, { size = 72.5 } },
-    { { 1 }, { min = 1 / 0 } },
-    { { 1 }, { max = 0 / 0 } },
-    { { 1 }, { min = 10, max = 10 } },
-    { { 1 }, { backgroundColor = "#fff" } },
-    { { 1 }, { fillColor = "red" } },
-    { { 1 }, { strokeColor = "#123" } },
-    { { 1 }, { strokeWidth = 0 } },
-    { { 1 }, { strokeWidth = 0.0004 } },
-    { { 1 }, { strokeWidth = 73 } },
-    { { 1 }, { unknown = true } },
+    { fallback_context, "not an array" },
+    { fallback_context, sparse },
+    { fallback_context, { 1, math.huge } },
+    { fallback_context, { 1 }, false },
+    { fallback_context, { 1 }, { size = 73 } },
+    { fallback_context, { 1 }, { size = 72.5 } },
+    { fallback_context, { 1 }, { min = 1 / 0 } },
+    { fallback_context, { 1 }, { max = 0 / 0 } },
+    { fallback_context, { 1 }, { min = 10, max = 10 } },
+    { fallback_context, { 1 }, { backgroundColor = "#fff" } },
+    { fallback_context, { 1 }, { fillColor = "red" } },
+    { fallback_context, { 1 }, { strokeColor = "#123" } },
+    { fallback_context, { 1 }, { strokeWidth = 0 } },
+    { fallback_context, { 1 }, { strokeWidth = 0.0004 } },
+    { fallback_context, { 1 }, { strokeWidth = 73 } },
+    { fallback_context, { 1 }, { unknown = true } },
   }
   for _, arguments in ipairs(invalidArguments) do
     assertFalse(pcall(Helpers.areaChart, table.unpack(arguments)), "malformed area chart arguments must fail")
   end
-  local ok, err = pcall(Helpers.areaChart, "not an array")
+  local ok, err = pcall(Helpers.areaChart, fallback_context, "not an array")
   assertFalse(ok)
   assertTrue(tostring(err):find("dense numeric array", 1, true) ~= nil, "area chart errors must explain malformed values")
 end)

@@ -386,6 +386,7 @@ local function boundedString(value, maximum)
 end
 local MIN_DEVICE_SIZE = 1
 local MAX_DEVICE_SIZE = 64
+local MAX_IMAGE_SIZE = 144
 local deviceTypes = {
   ["stream-deck"] = true, ["stream-deck-mini"] = true, ["stream-deck-xl"] = true,
   ["stream-deck-mobile"] = true, ["corsair-g-keys"] = true, ["stream-deck-pedal"] = true,
@@ -394,6 +395,11 @@ local deviceTypes = {
   ["galleon-100-sd"] = true, ["stream-deck-plus-xl"] = true, unknown = true,
 }
 
+local validIconSizes = {
+  [48] = true, [72] = true, [80] = true, [96] = true, [120] = true, [144] = true,
+}
+
+
 local function hasOnlyKeys(value, allowed)
   for key in next, value do
     if not allowed[key] then return false end
@@ -401,15 +407,25 @@ local function hasOnlyKeys(value, allowed)
   return true
 end
 
+local function isValidImageSize(value)
+  return value == nil or (
+    isInteger(value) and value >= 1 and value <= MAX_IMAGE_SIZE
+  )
+end
+
 local function isDeviceMetadata(value)
-  if not isObject(value) or not hasOnlyKeys(value, { controllerType = true, device = true }) then return false end
+  if not isObject(value)
+      or not hasOnlyKeys(value, { controllerType = true, device = true, imageSize = true }) then
+    return false
+  end
   local controllerType, device = rawget(value, "controllerType"), rawget(value, "device")
   if controllerType ~= "keypad" and controllerType ~= "encoder" then return false end
   if not isObject(device) or not hasOnlyKeys(device, { type = true, size = true }) then return false end
   local deviceType, size = rawget(device, "type"), rawget(device, "size")
   if not deviceTypes[deviceType] or not isObject(size) or not hasOnlyKeys(size, { columns = true, rows = true }) then return false end
   local columns, rows = rawget(size, "columns"), rawget(size, "rows")
-  return isInteger(columns) and columns >= MIN_DEVICE_SIZE and columns <= MAX_DEVICE_SIZE
+  return isValidImageSize(rawget(value, "imageSize"))
+    and isInteger(columns) and columns >= MIN_DEVICE_SIZE and columns <= MAX_DEVICE_SIZE
     and isInteger(rows) and rows >= MIN_DEVICE_SIZE and rows <= MAX_DEVICE_SIZE
 end
 
@@ -688,7 +704,7 @@ local function isValidPng(bytes)
    local height = string.unpack(">I4", bytes, offset + 12)
    local bitDepth, colorType, compression, filter, interlace = bytes:byte(offset + 16, offset + 20)
    local bytesPerPixel = ({ [0] = 1, [2] = 3, [4] = 2, [6] = 4 })[colorType]
-   if width ~= height or (width ~= 72 and width ~= 144) or bitDepth ~= 8
+   if width ~= height or not validIconSizes[width] or bitDepth ~= 8
       or compression ~= 0 or filter ~= 0 or interlace ~= 0 or not bytesPerPixel then return false end
    rowLength, expectedLength = width * bytesPerPixel + 1, height * (width * bytesPerPixel + 1)
    hasHeader = true
@@ -767,11 +783,20 @@ local function isSvgNumber(value)
    and number >= 0 and math.abs(number) <= 1000000
    and (value:match("^-?%d+%.?%d*$") ~= nil or value:match("^-?%.%d+$") ~= nil)
 end
+local function iconSizeForSvgViewBox(value)
+ for size in pairs(validIconSizes) do
+  if value == "0 0 " .. tostring(size) .. " " .. tostring(size) then return size end
+ end
+ return nil
+end
+
 local function isSafeSvgAttribute(name, value, rootSize)
  if #value > 4096 or value:find("[<&%z\1-\31\127-\159]") then return false end
  if name == "xmlns" then return value == "http://www.w3.org/2000/svg" end
- if name == "viewBox" then return rootSize == nil and (value == "0 0 72 72" or value == "0 0 144 144")
-   or (rootSize ~= nil and value == "0 0 " .. tostring(rootSize) .. " " .. tostring(rootSize)) end
+ if name == "viewBox" then
+  if rootSize == nil then return iconSizeForSvgViewBox(value) ~= nil end
+  return value == "0 0 " .. tostring(rootSize) .. " " .. tostring(rootSize)
+ end
  if name == "width" or name == "height" then return rootSize == nil and isSvgNumber(value)
    or (rootSize ~= nil and value == tostring(rootSize)) end
  if name == "fill" or name == "stroke" then return value == "none" or value:match("^#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]$") ~= nil end
@@ -865,9 +890,8 @@ local function isAppearanceIcon(value)
    if tag == "svg" then
     local viewBox = attributes.viewBox
     if attributes.xmlns ~= "http://www.w3.org/2000/svg" then return false end
-    if viewBox == "0 0 72 72" then rootSize = 72
-    elseif viewBox == "0 0 144 144" then rootSize = 144
-    else return false end
+    rootSize = iconSizeForSvgViewBox(viewBox)
+    if not rootSize then return false end
     if (attributes.width ~= nil and attributes.width ~= tostring(rootSize))
         or (attributes.height ~= nil and attributes.height ~= tostring(rootSize)) then return false end
     rootSeen = true

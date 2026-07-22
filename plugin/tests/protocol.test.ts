@@ -330,6 +330,8 @@ describe("protocol direction and validation", () => {
     const svg = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA3MiA3MiI+PHJlY3QgeD0iLjUiIHk9IjAiIHdpZHRoPSI3MS41IiBoZWlnaHQ9IjcyIi8+PC9zdmc+";
     expect(parseServerMessage(JSON.stringify({ ...appearance, appearanceVersion: 1, icon: { kind: "bundled", name: "hammerspoon" } }))).toBeDefined();
     const png = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAujBRSAAB/UYCuQAAAABJRU5ErkJggg==";
+    const encoderPng = "iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAAHUlEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAQLcGGzAAAesc2NAAAAAASUVORK5CYII=";
+    const encoderSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48"/></svg>').toString("base64");
     const trailingPng = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAALElEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAujBRSAABAGBCoqcAAAAASUVORK5CYII=";
     const corruptPng = Buffer.from(png, "base64");
     corruptPng[29] ^= 1;
@@ -338,11 +340,21 @@ describe("protocol direction and validation", () => {
       appearanceVersion: 1,
       icon: { kind: "custom", mediaType: "image/png", dataBase64: png },
     }))).toBeDefined();
+    expect(parseServerMessage(JSON.stringify({
+      ...appearance,
+      appearanceVersion: 1,
+      icon: { kind: "custom", mediaType: "image/png", dataBase64: encoderPng },
+    }))).toBeDefined();
     expect(parseServerMessage(JSON.stringify({ ...appearance, appearanceVersion: 1, icon: { kind: "bundled", name: "future-icon" } }))).toBeDefined();
     expect(parseServerMessage(JSON.stringify({
       ...appearance,
       appearanceVersion: 1,
       icon: { kind: "custom", mediaType: "image/svg+xml", dataBase64: svg },
+    }))).toBeDefined();
+    expect(parseServerMessage(JSON.stringify({
+      ...appearance,
+      appearanceVersion: 1,
+      icon: { kind: "custom", mediaType: "image/svg+xml", dataBase64: encoderSvg },
     }))).toBeDefined();
     for (const icon of [
       { kind: "bundled", name: "bad_name" },

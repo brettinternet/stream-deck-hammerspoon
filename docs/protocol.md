@@ -164,11 +164,12 @@ The optional `metadata` field is a closed, protocol-owned DTO:
 ```json
 {
   "controllerType": "keypad",
+  "imageSize": 120,
   "device": { "type": "stream-deck-plus", "size": { "columns": 4, "rows": 2 } }
 }
 ```
 
-Only the lowercase controller/device type enums and bounded positive dimensions cross the bridge. SDK objects, identifiers, names, connection state, visible actions, and coordinates never cross it. Unknown SDK device types map to `"unknown"`. Reconnect replay retains each instance's metadata, and a repeated appearance updates it without invoking `appear`.
+`imageSize` is optional, bounded from 1 through 144, and resolved by the plugin's single controller/device rendering profile. Lua consumes it for generated images and uses the documented 72px fallback when absent; it does not maintain its own device map. Only the lowercase controller/device type enums, bounded positive dimensions, and bounded rendering size cross the bridge. SDK objects, identifiers, names, connection state, visible actions, and coordinates never cross it. Unknown SDK device types map to `"unknown"`. Reconnect replay retains each instance's metadata, and a repeated appearance updates it without invoking `appear`.
 
 ```json
 {

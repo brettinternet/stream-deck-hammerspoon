@@ -135,7 +135,7 @@ Returns the settings stored by Stream Deck for the current key instance. Setting
 
 ### `context:getDevice()`
 
-Returns a defensive copy of optional per-instance controller/device metadata, or `nil` when unavailable. The closed DTO contains lowercase `controllerType`, a lowercase protocol device `type` (or `"unknown"`), and positive bounded `device.size.columns`/`rows`. SDK identifiers, names, connection state, visible actions, coordinates, and SDK objects are never exposed. Repeated lifecycle announcements update metadata without rerunning `appear`; callers may mutate the returned table without changing context state.
+Returns a defensive copy of optional per-instance controller/device metadata, or `nil` when unavailable. The closed DTO contains lowercase `controllerType`, a lowercase protocol device `type` (or `"unknown"`), positive bounded `device.size.columns`/`rows`, and an optional validated `imageSize` from the plugin's canonical rendering profile. SDK identifiers, names, connection state, visible actions, coordinates, and SDK objects are never exposed. Repeated lifecycle announcements update metadata without rerunning `appear`; callers may mutate the returned table without changing context state.
 
 ### `context:success(message, durationMs)` and `context:error(message, durationMs)`
 
@@ -163,16 +163,23 @@ Returns a state component with `appear`, `disappear`, `get`, and `set` functions
 
 Returns a custom SVG icon table with canonical padded base64 in `dataBase64`. The `svg` argument must be a string; bytes are encoded as-is, without markup sanitization. The normal appearance validator still applies its bounded safe-SVG profile before the icon is sent to the plugin.
 
-### `helpers.areaChart(values, options)`
+### `helpers.imageSize(context)`
 
-Returns a custom SVG icon containing a bounded square area chart. `values` must be a dense array of finite numbers; values outside the chart range are clamped. The optional `options` table accepts only `size` (`72` or `144`, default `72`), finite `min`/`max` bounds (defaults `0` and `100`, with `max > min`), six-digit `#RRGGBB` `backgroundColor` (default `#000000`) and `fillColor` (default `#FFFFFF`), and an optional `strokeColor` plus finite `strokeWidth` from `0.001` through the chart size (default `2`). The stroke is an open trace across the samples; it does not outline the chart baseline or sides. When there are more samples than pixels, points are deterministically downsampled in chronological order while retaining the newest value.
+Returns the metadata-derived square output size for generated icons, or the documented 72px fallback when metadata is absent or malformed.
+
+### `helpers.png(context, image)`
+
+Converts an `hs.image` source once at `helpers.imageSize(context)` and returns a canonical, protocol-valid custom PNG icon or `nil`. The helper strips the local data-URL wrapper and whitespace; neither crosses the wire.
+
+### `helpers.areaChart(context, values, options)`
+
+Returns a custom SVG icon containing a bounded square area chart at the context image size. `values` must be a dense array of finite numbers; values outside the chart range are clamped. The optional `options` table accepts finite `min`/`max` bounds (defaults `0` and `100`, with `max > min`), six-digit `#RRGGBB` `backgroundColor` (default `#000000`) and `fillColor` (default `#FFFFFF`), and an optional `strokeColor` plus finite `strokeWidth` from `0.001` through the chart size (default `2`).
 
 ```lua
-local icon = helpers.areaChart({ 18, 27, 34 }, {
+local icon = helpers.areaChart(context, { 18, 27, 34 }, {
   fillColor = "#2E86DE",
   backgroundColor = "#101820",
   strokeColor = "#1B5E8A",
-  strokeWidth = 2,
 })
 ```
 

@@ -45,6 +45,7 @@
       "type": "object",
       "properties": {
         "controllerType": { "type": "string", "enum": ["keypad", "encoder"] },
+        "imageSize": { "type": "integer", "minimum": 1, "maximum": 144 },
         "device": {
           "type": "object",
           "properties": {

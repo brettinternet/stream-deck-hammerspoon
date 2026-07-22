@@ -33,6 +33,7 @@ export interface DeviceInfo {
 }
 export interface DeviceMetadata {
   controllerType: ControllerType;
+  imageSize?: number;
   device: DeviceInfo;
 }
 
@@ -68,9 +69,13 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
 }
 
 export function sanitizeDeviceMetadata(value: unknown): DeviceMetadata | undefined {
-  if (!isPlainObject(value) || !hasOnlyKeys(value, ["controllerType", "device"])) return undefined;
+  if (!isPlainObject(value) || !hasOnlyKeys(value, ["controllerType", "imageSize", "device"])) return undefined;
   const controllerType = value.controllerType;
+  const imageSize = value.imageSize;
   const device = value.device;
+  if (imageSize !== undefined && (typeof imageSize !== "number" || !Number.isInteger(imageSize) || imageSize < 1 || imageSize > 144)) {
+    return undefined;
+  }
   if (
     (controllerType !== "keypad" && controllerType !== "encoder")
     || !isPlainObject(device)
@@ -92,6 +97,7 @@ export function sanitizeDeviceMetadata(value: unknown): DeviceMetadata | undefin
   }
   return {
     controllerType,
+    ...(typeof imageSize === "number" ? { imageSize } : {}),
     device: {
       type: device.type as DeviceType,
       size: { columns: device.size.columns, rows: device.size.rows },
@@ -831,6 +837,20 @@ const SVG_NUMERIC_ATTRIBUTES = new Set([
 ]);
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
+type IconSize = 48 | 72 | 80 | 96 | 120 | 144;
+const ICON_SIZES: Record<IconSize, true> = {
+  48: true,
+  72: true,
+  80: true,
+  96: true,
+  120: true,
+  144: true,
+};
+
+function isIconSize(value: number): value is IconSize {
+  return ICON_SIZES[value as IconSize] === true;
+}
+
 function isCanonicalBase64(value: string): boolean {
   return value.length >= 4
     && value.length <= MAX_ICON_BASE64_LENGTH
@@ -878,7 +898,7 @@ function isValidPng(bytes: Buffer): boolean {
       const bitDepth = bytes[offset + 16];
       const colorType = bytes[offset + 17];
       const bytesPerPixel = ({ 0: 1, 2: 3, 4: 2, 6: 4 } as Record<number, number>)[colorType];
-      if (width !== height || (width !== 72 && width !== 144) || bitDepth !== 8
+      if (width !== height || !isIconSize(width) || bitDepth !== 8
         || bytes[offset + 18] !== 0 || bytes[offset + 19] !== 0 || bytes[offset + 20] !== 0
         || bytesPerPixel === undefined) {
         return false;
@@ -935,7 +955,7 @@ function isSvgNumber(value: string): boolean {
     && Math.abs(Number(value)) <= 1000000;
 }
 
-function isSvgAttributeValue(name: string, value: string, rootSize?: 72 | 144): boolean {
+function isSvgAttributeValue(name: string, value: string, rootSize?: IconSize): boolean {
   // eslint-disable-next-line no-control-regex -- reject control characters in untrusted SVG attributes
   if (value.length > 4096 || /[<&>\u0000-\u001f\u007f-\u009f]/.test(value)) {
     return false;
@@ -1026,7 +1046,7 @@ function sanitizeSvg(value: string): string | undefined {
   const output: string[] = [];
   let cursor = 0;
   let elementCount = 0;
-  let rootSize: 72 | 144 | undefined;
+  let rootSize: IconSize | undefined;
   let rootSeen = false;
   let match: RegExpExecArray | null;
   while ((match = tags.exec(svg)) !== null) {
@@ -1059,8 +1079,8 @@ function sanitizeSvg(value: string): string | undefined {
       return undefined;
     }
     if (parsed.name === "svg") {
-      const viewBox = parsed.attributes.get("viewBox");
-      const size = viewBox === "0 0 72 72" ? 72 : viewBox === "0 0 144 144" ? 144 : undefined;
+      const viewBoxMatch = /^0 0 (48|72|80|96|120|144) \1$/.exec(parsed.attributes.get("viewBox") ?? "");
+      const size = viewBoxMatch === null ? undefined : Number(viewBoxMatch[1]) as IconSize;
       if (parsed.attributes.get("xmlns") !== "http://www.w3.org/2000/svg" || size === undefined) {
         return undefined;
       }

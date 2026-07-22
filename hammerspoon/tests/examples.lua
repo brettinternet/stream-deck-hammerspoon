@@ -138,13 +138,17 @@ local function load_fixture(path, fake_hs)
   return streamdeck
 end
 
-local function context(instance_id, settings)
+local function context(instance_id, settings, device)
   return {
     instanceId = instance_id,
     settings = settings,
+    device = device,
     refreshes = 0,
     getSettings = function(self)
       return self.settings
+    end,
+    getDevice = function(self)
+      return self.device
     end,
     refresh = function(self)
       self.refreshes = self.refreshes + 1
@@ -319,16 +323,21 @@ test("application example toggles focused and configured applications", function
     return app
   end
 
+  local pngBySize = {
+    [72] = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAujBRSAAB/UYCuQAAAABJRU5ErkJggg==",
+    [120] = "iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAIAAAC2BqGFAAAAQElEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAnRipOAABp+xssgAAAABJRU5ErkJggg==",
+  }
   local icon_image = {
-    bitmapRepresentation = function(self, size)
-      assertEqual(size.w, 72, "application icons must be resized to 72 pixels")
-      assertEqual(size.h, 72, "application icons must be resized to 72 pixels")
-      return self
-    end,
-    encodeAsURLString = function(self, scale, image_type)
-      assertTrue(scale, "application icons must be encoded in pixels")
-      assertEqual(image_type, "PNG")
-      return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAPgxRSAABHLYB8AAAAABJRU5ErkJggg==\n"
+    bitmapRepresentation = function(_, size)
+      assertTrue(pngBySize[size.w] ~= nil, "application icons must use a known device size")
+      assertEqual(size.h, size.w, "application icons must remain square")
+      return {
+        encodeAsURLString = function(_, scale, image_type)
+          assertTrue(scale, "application icons must be encoded in pixels")
+          assertEqual(image_type, "PNG")
+          return "data:image/png;base64," .. pngBySize[size.w] .. "\n"
+        end,
+      }
     end,
   }
 
@@ -382,6 +391,7 @@ test("application example toggles focused and configured applications", function
     },
   }
 
+  local Protocol = require("streamdeck.protocol")
   local streamdeck = load_fixture("hammerspoon/streamdeck/actions/application.lua", fake_hs)
   assertEqual(#streamdeck.registrations, 1, "application must register one action")
   local action = streamdeck.registrations[1]
@@ -393,12 +403,15 @@ test("application example toggles focused and configured applications", function
   assertEqual(action.settingsSchema[1].key, "bundleID")
   assertEqual(action.settingsSchema[1].maxLength, 128)
   assertEqual(action.settingsSchema[2].type, "boolean")
-  assertEqual(action.settingsSchema[2].key, "focusOnShow")
+  local press_context = context("application", nil, {
+    controllerType = "keypad",
+    imageSize = 120,
+    device = { type = "stream-deck-plus", size = { columns = 4, rows = 2 } },
+  })
   assertFalse(action.settingsSchema[2].default)
   assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
   assertFalse(watcher_started, "application watcher must wait for a visible instance")
 
-  local press_context = context("application")
   action.appear(press_context)
   assertTrue(watcher_started, "application watcher must start for a visible instance")
   local appearance = action.appearance(press_context)
@@ -419,8 +432,10 @@ test("application example toggles focused and configured applications", function
   assertEqual(appearance.appearanceVersion, 1, "application appearance must include the system icon")
   assertEqual(appearance.icon.kind, "custom")
   assertEqual(appearance.icon.mediaType, "image/png")
-  assertEqual(appearance.icon.dataBase64, "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAPgxRSAABHLYB8AAAAABJRU5ErkJggg==",
-    "icon data must be canonical base64")
+  assertEqual(appearance.icon.dataBase64, pngBySize[120],
+    "icon data must be canonical base64 at the active keypad size")
+  assertTrue(Protocol.validateAppearanceIcon(appearance.icon),
+    "application PNG must pass the protocol icon validator")
   assertEqual(icon_requests[1], "com.example.Editor")
   icon_available = false
   local fallback_appearance = action.appearance(press_context)
@@ -470,8 +485,10 @@ test("application example toggles focused and configured applications", function
   appearance = action.appearance(configured_context)
   assertEqual(appearance.title, "Editor")
   assertEqual(appearance.state, "inactive")
-  assertEqual(appearance.icon.dataBase64, "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAPgxRSAABHLYB8AAAAABJRU5ErkJggg==",
-    "configured applications must use their system icon")
+  assertEqual(appearance.icon.dataBase64, pngBySize[72],
+    "configured applications must use the 72-pixel fallback icon")
+  assertTrue(Protocol.validateAppearanceIcon(appearance.icon),
+    "fallback application PNG must pass the protocol icon validator")
   assertEqual(get_calls, 1, "appearance must resolve configured applications")
   fallback_after_hide = other_app
   action.press(configured_context)
@@ -538,8 +555,8 @@ test("application example toggles focused and configured applications", function
   configured = nil
   local missing_appearance = action.appearance(configured_context)
   assertEqual(missing_appearance.title, "No app")
-  assertEqual(missing_appearance.icon.dataBase64, "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAK0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAPgxRSAABHLYB8AAAAABJRU5ErkJggg==",
-    "configured applications can show their system icon before launch")
+  assertEqual(missing_appearance.icon.dataBase64, pngBySize[72],
+    "configured applications can show a protocol-valid fallback icon before launch")
   action.press(configured_context)
   assertEqual(launch_calls, 1, "missing configured applications must be opened")
   assertEqual(configured_context.refreshes, 3, "opening a configured application must refresh")
@@ -712,10 +729,10 @@ test("system monitor samples bounded shared CPU/RAM history and isolates toggles
   local original_area_chart = helpers.areaChart
   local chart_lengths = {}
   local chart_options = {}
-  helpers.areaChart = function(values, options)
+  helpers.areaChart = function(device_context, values, options)
     chart_lengths[#chart_lengths + 1] = #values
     chart_options[#chart_options + 1] = options
-    return original_area_chart(values, options)
+    return original_area_chart(device_context, values, options)
   end
 
   local streamdeck = load_fixture("hammerspoon/streamdeck/actions/system-monitor.lua", fake_hs)

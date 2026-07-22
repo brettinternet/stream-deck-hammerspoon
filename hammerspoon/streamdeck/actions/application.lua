@@ -2,6 +2,8 @@
 -- Set an application bundle ID in the action settings, or omit it to track the frontmost application. Active means hidden; hold to close. Enable focusing when showing if the app should also come to the front; hiding it restores the previous frontmost application.
 
 local action_id = "com.brettinternet.hammerspoon.application-toggle"
+local helpers = require("streamdeck.helpers")
+
 local target_by_instance = {}
 local fallback_by_instance = {}
 local relevant_events = {
@@ -89,8 +91,6 @@ local function frontmost_application()
   return application
 end
 
-local MAX_ICON_BYTES = 32768
-
 local function application_bundle_id(application)
   if not application or type(application.bundleID) ~= "function" then
     return nil
@@ -103,7 +103,7 @@ local function application_bundle_id(application)
   return bundle_id
 end
 
-local function application_icon(application, configured_bundle_id)
+local function application_icon(context, application, configured_bundle_id)
   local bundle_id = configured_bundle_id or application_bundle_id(application)
   if not bundle_id
     or type(hs) ~= "table"
@@ -113,43 +113,10 @@ local function application_icon(application, configured_bundle_id)
   end
 
   local ok, image = pcall(hs.image.imageFromAppBundle, bundle_id)
-  if not ok or not image or type(image.bitmapRepresentation) ~= "function" then
+  if not ok then
     return nil
   end
-
-  local bitmap_ok, bitmap = pcall(image.bitmapRepresentation, image, { w = 72, h = 72 })
-  if not bitmap_ok or not bitmap or type(bitmap.encodeAsURLString) ~= "function" then
-    return nil
-  end
-
-  local encoded_ok, data_url = pcall(bitmap.encodeAsURLString, bitmap, true, "PNG")
-  if not encoded_ok or type(data_url) ~= "string" then
-    return nil
-  end
-
-  local data_base64 = data_url:match("^data:image/png;base64,(.+)")
-  if not data_base64 then
-    return nil
-  end
-  data_base64 = data_base64:gsub("%s+", "")
-  local base64_payload = data_base64:match("^[A-Za-z0-9+/]+=?=?")
-  if #data_base64 == 0
-    or #data_base64 % 4 ~= 0
-    or base64_payload ~= data_base64 then
-    return nil
-  end
-
-  local padding = data_base64:sub(-2) == "==" and 2 or data_base64:sub(-1) == "=" and 1 or 0
-  local byte_count = (#data_base64 / 4) * 3 - padding
-  if byte_count <= 0 or byte_count > MAX_ICON_BYTES then
-    return nil
-  end
-
-  return {
-    kind = "custom",
-    mediaType = "image/png",
-    dataBase64 = data_base64,
-  }
+  return helpers.png(context, image)
 end
 
 local function configured_application(bundle_id)
@@ -334,7 +301,7 @@ return {
       }
     end
 
-    local icon = application_icon(application, bundle_id)
+    local icon = application_icon(context, application, bundle_id)
     if icon then
       appearance.appearanceVersion = 1
       appearance.icon = icon

@@ -228,6 +228,7 @@ function copySettings(settings: JsonSettings): JsonSettings {
 function copyDeviceMetadata(metadata: DeviceMetadata): DeviceMetadata {
   return {
     controllerType: metadata.controllerType,
+    ...(metadata.imageSize === undefined ? {} : { imageSize: metadata.imageSize }),
     device: {
       type: metadata.device.type,
       size: { columns: metadata.device.size.columns, rows: metadata.device.size.rows },
