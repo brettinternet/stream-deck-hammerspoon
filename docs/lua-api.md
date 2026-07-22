@@ -340,30 +340,35 @@ Registration and startup failures are synchronous Lua errors. Callback failures 
 
 When the plugin is not connected, refresh requests cannot be delivered. The plugin displays its disconnected/offline presentation and retries with bounded backoff. Once authentication succeeds again, it receives a fresh session ID, requests the action list, re-announces visible instances with that ID, and requests appearance. Re-announcing an unchanged instance/action refreshes settings but does not invoke `appear` again.
 
-## Example collection
+## Installed action library
 
-The repository includes complete configuration snippets in `hammerspoon/examples/`:
+The Lua release includes twenty optional action definitions under `streamdeck.actions`. Installation places them beside the bridge in the managed `~/.hammerspoon/streamdeck` directory, but `require("streamdeck")` does not register them automatically.
 
-- `microphone.lua` toggles the default input device's input mute state and refreshes the pressed key.
-- `application.lua` toggles the focused application's hidden state, retaining the hidden target for the next click, or toggles a configured running application by bundle ID. A running process with no main window is reopened; when the action focuses a target, hiding it restores the application that was frontmost beforehand; `focusOnShow` controls whether showing activates the target and brings all its windows forward. It refreshes from `hs.application.watcher` events.
-- `multi-instance.lua` keeps independent toggle state for each visible key and reads an optional per-instance `label` setting.
-- `focus-timer.lua` (`com.brettinternet.hammerspoon.focus-timer`) starts and stops a per-key 25-minute focus timer, showing `Focus` while it runs and returning to `Ready` when it expires; its per-instance lifecycle owns the timer and refreshes the key on start, stop, and expiry.
-- `pomodoro.lua` (`com.brettinternet.hammerspoon.pomodoro`) runs four per-key 25-minute focus cycles with short breaks and a final long break, showing each phase and refreshing immediately after presses and timer transitions.
-- `window-maximize.lua` (`com.brettinternet.hammerspoon.window-maximize`) shows the focused application's name and toggles its focused window between zoomed and normal states, reporting `No window` when no focused window is available; it demonstrates focused-window state checks, per-instance lifecycle, and protected operation errors.
-- `clipboard-clean.lua` (`com.brettinternet.hammerspoon.clipboard-clean`) reports when no text is available, then trims surrounding whitespace on press and refreshes the appearance; it demonstrates pasteboard read/write and appearance refresh.
-- `keyboard-layout.lua` (`com.brettinternet.hammerspoon.keyboard-layout`) toggles between two keyboard layouts using `hs.keycodes`, defaults to `U.S.` and `Dvorak` when settings are absent, and refreshes the pressed key after a successful switch.
-- `url-launcher.lua` (`com.brettinternet.hammerspoon.url-launcher`) opens a configured URL with `hs.urlevent`, defaults to a Hammerspoon documentation URL when settings are absent, and reports invalid or unavailable URL launches as protected errors.
-- `window-snap.lua` (`com.brettinternet.hammerspoon.window-snap`) cycles each focused window through left-half, right-half, and full-work-area layouts with per-instance lifecycle state and refreshes after successful moves.
-- `keep-awake.lua` (`com.brettinternet.hammerspoon.keep-awake`) toggles display-idle sleep prevention with `hs.caffeinate`, updates every visible instance after the global state changes, reports unavailable or failed power APIs as protected errors, and demonstrates distinct post-action sounds by returning `sound.ON` or `sound.OFF` for the resulting boolean.
-- `app-launcher.lua` (`com.brettinternet.hammerspoon.app-launcher`) launches or focuses a configured application with safe per-key app/label defaults, shows when the target is frontmost, and refreshes after a successful launch or focus.
-- `clipboard-stash.lua` (`com.brettinternet.hammerspoon.clipboard-stash`) parks one clipboard item per key, restores it on the next press, and resets its per-instance stash on disappearance.
-- `window-center.lua` (`com.brettinternet.hammerspoon.window-center`) centers the focused window within its screen work area without changing its size, reporting when no focused window is available.
-- `meeting-mode.lua` (`com.brettinternet.hammerspoon.meeting-mode`) coordinates microphone input mute and display-idle prevention as one global mode, refreshing every visible instance only after both changes succeed.
-- `lock-screen.lua` (`com.brettinternet.hammerspoon.lock-screen`) provides a one-shot privacy key through `hs.caffeinate.lockScreen` without pretending the locked state is observable; its normal press policy demonstrates sound feedback after a successful lock callback.
+Register the complete catalog with one bridge:
 
-Copy any of the sixteen files into `~/.hammerspoon` or adapt it in your existing configuration. Each file registers a namespaced action for the generic Stream Deck action; select that registered action ID in the property inspector. The official bridge owns the connection, so the examples use `require("streamdeck")`, never `hs.streamdeck` or direct hardware access. The inspector always edits `actionId` and, when an action declares a bounded version-1 settings schema, renders and persists its validated fields; settings-based examples retain their documented defaults only until configured. Sound settings are not edited in the property inspector: configure `streamdeck.sound` in trusted Lua.
+```lua
+local streamdeck = require("streamdeck")
+local actions = require("streamdeck.actions")
 
-All sixteen examples are hardware-free and use ordinary Hammerspoon APIs; they can be copied or adapted without a connected Stream Deck. They run without Hammerspoon or hardware in the repository's Lua test harness.
+actions.registerAll(streamdeck)
+streamdeck.start()
+```
+
+Register only selected stable catalog names when a smaller action list is preferable:
+
+```lua
+actions.register(streamdeck, {
+  "application",
+  "keep-awake",
+  "window-snap",
+})
+```
+
+Each module under `hammerspoon/streamdeck/actions/` returns one plain registry-valid definition and never calls `register()` or `start()`. The catalog owns registration and the shared successful-callback refresh policy, preserving callback returns such as `sound.ON` and `sound.OFF`. Failed callbacks do not refresh the catalog. Watcher-backed actions start their watcher only while visible instances exist, and timer-backed actions retain their asynchronous instance refreshes.
+
+The [action catalog](../hammerspoon/examples/README.md) documents all names, action IDs, suggested Stream Deck types, permissions, and settings. [`hammerspoon/examples/init.lua`](../hammerspoon/examples/init.lua) is a runnable combined configuration. The pedagogical per-instance toggle is no longer shipped as an action; reusable per-instance behavior remains available through `helpers.perInstanceState`.
+
+The action definitions and combined bootstrap run without Stream Deck hardware in the repository's Lua test harness. Custom definitions can still use the complete example below.
 
 ## Complete example: microphone mute
 
