@@ -2605,16 +2605,17 @@ test("LAN disconnect and per-slot instance exhaustion stay isolated", function()
       assertEqual(alphaInstanceCount, 64, "each slot must admit at most 64 visible instances")
       assertTrue(beta.instances["beta-instance"] ~= nil, "beta context must survive alpha saturation")
 
-      local exhausted = fakeDecode(alpha.http.websocketCallback(lanFrame(fakeEncode(message("instanceAppeared", {
+      local exhaustedRaw = alpha.http.websocketCallback(lanFrame(fakeEncode(message("instanceAppeared", {
         sessionId = alphaSession,
         instanceId = "alpha-65",
         actionId = "com.test.exhaustion",
         settings = {},
-      })), alphaReceiveKey, 65)))
+      })), alphaReceiveKey, 65))
+      local exhausted = fakeDecode(exhaustedRaw)
       local diagnostic = fakeDecode(exhausted.payload)
       assertError("INVALID_STATE", { diagnostic }, "instance exhaustion must use a stable safe diagnostic")
       assertEqual(diagnostic.message, "Invalid protocol state.", "resource diagnostics must use the stable message")
-      assertFalse(tostring(exhausted):find(firstKeyPath, 1, true), "resource diagnostics must not expose credential paths")
+      assertFalse(exhaustedRaw:find(firstKeyPath, 1, true), "resource diagnostics must not expose credential paths")
       local alphaAfterExhaustion = 0
       for _ in pairs(alpha.instances) do alphaAfterExhaustion = alphaAfterExhaustion + 1 end
       assertEqual(alphaAfterExhaustion, 64, "rejected instances must not grow the slot registry")
