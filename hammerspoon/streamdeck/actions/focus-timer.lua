@@ -14,6 +14,7 @@ end
 return {
   id = "com.brettinternet.hammerspoon.focus-timer",
   name = "Focus timer",
+  description = "Start a 25-minute focus timer, or cancel it while running.",
 
   appear = function(context)
     state_by_instance[context.instanceId] = {

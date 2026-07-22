@@ -14,6 +14,7 @@ type ElementLike = {
   maxLength?: number;
   minLength?: number;
   children?: ElementLike[];
+  setAttribute(name: string, value: string): void;
   addEventListener(type: string, listener: () => void): void;
   replaceChildren(...children: ElementLike[]): void;
   appendChild(child: ElementLike): void;
@@ -89,6 +90,7 @@ const BRIDGE_DIAGNOSTIC_CODES: readonly BridgeDiagnosticCode[] = [
 const browserGlobal = globalThis as unknown as BrowserGlobal;
 const documentLike = browserGlobal.document;
 const actionSelect = documentLike?.getElementById("action-id");
+const actionDescription = documentLike?.getElementById("action-description");
 const connectionStatus = documentLike?.getElementById("connection-status");
 const connectionDetails = documentLike?.getElementById("connection-details");
 const setupGuideButton = documentLike?.getElementById("setup-guide");
@@ -107,6 +109,7 @@ let inspectorSocketReady = false;
 type SettingsFieldBase = {
   key: string;
   label?: string;
+  description?: string;
   required?: boolean;
 };
 
@@ -141,11 +144,13 @@ type SettingsField = TextSettingsField | NumberSettingsField | BooleanSettingsFi
 type BridgeAction = {
   actionId: string;
   name: string;
+  description?: string;
   settingsSchema?: unknown[];
   settingsSchemaVersion?: number;
 };
 const DEFAULT_ACTION_UUID = "com.brettinternet.hammerspoon.action";
 const SETUP_GUIDE_URL = "https://github.com/brettinternet/stream-deck-hammerspoon/blob/main/docs/setup.md";
+const DESCRIPTION_MAX_LENGTH = 512;
 
 
 function isJsonObject(value: unknown): value is JsonObject {
@@ -275,8 +280,19 @@ function createOption(value: string, text: string, disabled = false): ElementLik
   option.disabled = disabled;
   return option;
 }
+function renderActionDescription(): void {
+  if (!actionDescription) {
+    return;
+  }
+  const action = bridgeStatus === "connected" && savedActionId
+    ? bridgeActions.find((candidate) => candidate.actionId === savedActionId)
+    : undefined;
+  actionDescription.textContent = action?.description ?? "";
+}
+
 
 function renderActionSelect(): void {
+  renderActionDescription();
   if (!actionSelect || !documentLike) {
     return;
   }
@@ -337,6 +353,14 @@ function hasSetting(settings: JsonObject, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(settings, key);
 }
 
+function isValidDescription(value: unknown): value is string {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const length = stringLength(value);
+  return length > 0 && length <= DESCRIPTION_MAX_LENGTH;
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -345,11 +369,17 @@ function parseSettingsField(value: unknown): SettingsField | undefined {
   if (!isJsonObject(value) || typeof value.key !== "string" || value.key.length === 0) {
     return undefined;
   }
-  const base = {
+  const base: SettingsFieldBase = {
     key: value.key,
     ...(typeof value.label === "string" ? { label: value.label } : {}),
     ...(typeof value.required === "boolean" ? { required: value.required } : {}),
   };
+  if ("description" in value) {
+    if (!isValidDescription(value.description)) {
+      return undefined;
+    }
+    base.description = value.description;
+  }
   if (value.type === "text") {
     if (
       ("default" in value && typeof value.default !== "string") ||
@@ -526,6 +556,7 @@ function validateSettings(fields: SettingsField[], candidate: JsonObject): { set
 }
 
 function renderSettings(): void {
+  renderActionDescription();
   if (!settingsPanel || !documentLike) {
     return;
   }
@@ -562,9 +593,9 @@ function renderSettings(): void {
   }
 
   const errors: string[] = [];
-  for (const field of schema.fields) {
+  for (let fieldIndex = 0; fieldIndex < schema.fields.length; fieldIndex += 1) {
+    const field = schema.fields[fieldIndex]!;
     const wrapper = documentLike.createElement("label");
-    wrapper.textContent = field.label ?? field.key;
     const control = documentLike.createElement(field.type === "select" ? "select" : "input");
     control.type =
       field.type === "select" ? "select-one" : field.type === "boolean" ? "checkbox" : field.type;
@@ -592,6 +623,22 @@ function renderSettings(): void {
     }
     control.addEventListener("change", () => saveSettings(schema.fields));
     wrapper.appendChild(control);
+
+    const label = documentLike.createElement("span");
+    label.textContent = field.label ?? field.key;
+    label.setAttribute("class", "field-label");
+    wrapper.appendChild(label);
+
+    if (field.description !== undefined) {
+      const descriptionId = `action-field-description-${fieldIndex}`;
+      const description = documentLike.createElement("span");
+      description.textContent = field.description;
+      description.setAttribute("class", "field-description");
+      description.setAttribute("id", descriptionId);
+      description.setAttribute("role", "note");
+      control.setAttribute("aria-describedby", descriptionId);
+      wrapper.appendChild(description);
+    }
     settingsPanel.appendChild(wrapper);
   }
   setSettingsStatus(errors.length > 0 ? errors.join(" ") : "Settings are ready.");
@@ -707,6 +754,7 @@ function parseBridgeState(value: unknown): {
       item.actionId.trim().length === 0 ||
       typeof item.name !== "string" ||
       item.name.trim().length === 0 ||
+      ("description" in item && !isValidDescription(item.description)) ||
       ("settingsSchema" in item && !Array.isArray(item.settingsSchema)) ||
       ("settingsSchemaVersion" in item &&
         (typeof item.settingsSchemaVersion !== "number" ||
@@ -726,6 +774,7 @@ function parseBridgeState(value: unknown): {
     actions.push({
       actionId: item.actionId,
       name: item.name,
+      ...("description" in item ? { description: item.description as string } : {}),
       ...(Array.isArray(item.settingsSchema) ? { settingsSchema: item.settingsSchema } : {}),
       ...(typeof item.settingsSchemaVersion === "number"
         ? { settingsSchemaVersion: item.settingsSchemaVersion }
@@ -756,6 +805,9 @@ function handleStreamDeckMessage(message: { data: unknown }): void {
 
   const bridgeState = parseBridgeState(parsedMessage.payload);
   if (!bridgeState) {
+    if (actionDescription) {
+      actionDescription.textContent = "";
+    }
     return;
   }
 

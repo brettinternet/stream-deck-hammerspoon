@@ -132,6 +132,7 @@ end
 return {
   id = action_id,
   name = "Switch to last application",
+  description = "Switch to the previously active application.",
 
   appear = function(context)
     visible_contexts[context.instanceId] = context

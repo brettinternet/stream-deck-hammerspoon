@@ -46,6 +46,7 @@ end
 return {
   id = action_id,
   name = "Move window to next screen",
+  description = "Move the focused window to the next screen.",
 
   appearance = function(_context)
     local window = focused_window()

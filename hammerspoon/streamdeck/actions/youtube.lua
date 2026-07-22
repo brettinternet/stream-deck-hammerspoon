@@ -165,9 +165,10 @@ end
 return {
   id = action_id,
   name = "YouTube play/pause",
+  description = "Play or pause the first YouTube video tab in Chromium, or open the configured URL.",
   settingsSchemaVersion = 1,
   settingsSchema = {
-    { type = "text", key = "url", label = "YouTube URL", maxLength = 1024 },
+    { type = "text", key = "url", label = "YouTube URL", maxLength = 1024, description = "HTTPS YouTube URL to open when no video tab is found; defaults to https://www.youtube.com." },
   },
 
   appearance = function(_context)

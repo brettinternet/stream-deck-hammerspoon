@@ -17295,6 +17295,12 @@ var $defs = {
 		type: "string",
 		minLength: 1
 	},
+	descriptionText: {
+		type: "string",
+		minLength: 1,
+		maxLength: 512,
+		description: "Optional human-readable metadata bounded to 512 Unicode code points."
+	},
 	settings: {
 		type: "object",
 		description: "Application-owned JSON object. Keys and values are opaque to protocol v1.",
@@ -17397,6 +17403,9 @@ var $defs = {
 				type: "string",
 				minLength: 1,
 				maxLength: 128
+			},
+			description: {
+				$ref: "#/$defs/descriptionText"
 			},
 			required: {
 				type: "boolean"
@@ -17650,6 +17659,9 @@ var $defs = {
 			},
 			name: {
 				$ref: "#/$defs/text"
+			},
+			description: {
+				$ref: "#/$defs/descriptionText"
 			},
 			settingsSchema: {
 				type: "array",
@@ -18494,6 +18506,7 @@ const MAX_LAN_PAYLOAD_BYTES = 48 * 1024;
 const MAX_JSON_DEPTH = 16;
 const MAX_JSON_CONTAINER_ITEMS = 128;
 const MAX_JSON_TOTAL_ITEMS = 2048;
+const MAX_DESCRIPTION_LENGTH = 512;
 function malformedJson(message = "Malformed protocol message.") {
     const error = new Error(message);
     error.code = "MALFORMED_MESSAGE";
@@ -18852,6 +18865,14 @@ function stringLength(value) {
     }
     return length;
 }
+function isBoundedDescription(value) {
+    if (value === undefined)
+        return true;
+    if (typeof value !== "string")
+        return false;
+    const length = stringLength(value);
+    return length >= 1 && length <= MAX_DESCRIPTION_LENGTH;
+}
 function validateSettingsSchema(action, actionIndex) {
     if (action.settingsSchemaVersion !== 1) {
         return;
@@ -18866,6 +18887,9 @@ function validateSettingsSchema(action, actionIndex) {
             throw settingsSchemaError(actionIndex, fieldIndex, `duplicate key "${field.key}"`);
         }
         keys.add(field.key);
+        if (!isBoundedDescription(field.description)) {
+            throw settingsSchemaError(actionIndex, fieldIndex, "description must be non-empty and at most 512 Unicode code points");
+        }
         if (field.type === "text") {
             if (field.minLength !== undefined &&
                 field.maxLength !== undefined &&
@@ -19325,6 +19349,9 @@ function parseServerMessage(data) {
         const actions = parsed.actions;
         const actionIds = new Set();
         for (const [index, action] of actions.entries()) {
+            if (!isBoundedDescription(action.description)) {
+                throw new Error(`Invalid server message: action ${index} description must be non-empty and at most 512 Unicode code points.`);
+            }
             validateSettingsSchema(action, index);
             if (actionIds.has(action.actionId)) {
                 throw new Error("Invalid server message: duplicate action IDs are not allowed.");
@@ -19440,6 +19467,7 @@ function copyAction(action) {
     return {
         actionId: action.actionId,
         name: action.name,
+        ...(action.description === undefined ? {} : { description: action.description }),
         ...(action.settingsSchema === undefined
             ? {}
             : { settingsSchema: action.settingsSchema.map(copyJsonValue) }),

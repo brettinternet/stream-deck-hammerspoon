@@ -4,6 +4,7 @@ local Sound = require("streamdeck.sound")
 local allowedFields = {
   id = true,
   name = true,
+  description = true,
   settingsSchema = true,
   settingsSchemaVersion = true,
   appearance = true,
@@ -74,6 +75,7 @@ end
 local MAX_SETTINGS_FIELDS = 32
 local MAX_SETTINGS_KEY_LENGTH = 64
 local MAX_SETTINGS_LABEL_LENGTH = 128
+local MAX_DESCRIPTION_LENGTH = 512
 local MAX_SETTINGS_TEXT_LENGTH = 4096
 local MAX_SETTINGS_NUMBER = 1000000000000
 local MAX_SETTINGS_OPTIONS = 64
@@ -103,6 +105,7 @@ local function validateSettingsField(field, fieldIndex, seenKeys)
     type = true,
     key = true,
     label = true,
+    description = true,
     required = true,
     default = true,
   }
@@ -134,6 +137,9 @@ local function validateSettingsField(field, fieldIndex, seenKeys)
   seenKeys[fieldKey] = true
   if rawget(field, "label") ~= nil and not isBoundedString(rawget(field, "label"), MAX_SETTINGS_LABEL_LENGTH) then
     error("Stream Deck action settingsSchema field " .. fieldIndex .. " label must be non-empty and bounded", 4)
+  end
+  if rawget(field, "description") ~= nil and not isBoundedString(rawget(field, "description"), MAX_DESCRIPTION_LENGTH) then
+    error("Stream Deck action settingsSchema field " .. fieldIndex .. " description must be non-empty and bounded", 4)
   end
   if rawget(field, "required") ~= nil and type(rawget(field, "required")) ~= "boolean" then
     error("Stream Deck action settingsSchema field " .. fieldIndex .. " required must be boolean", 4)
@@ -268,6 +274,9 @@ local function validateDefinition(definition)
   if not nonEmptyString(definition.name) then
     error("Stream Deck action definition name must be a non-empty string", 3)
   end
+  if definition.description ~= nil and not isBoundedString(definition.description, MAX_DESCRIPTION_LENGTH) then
+    error("Stream Deck action description must be non-empty and bounded", 3)
+  end
   local version = definition.settingsSchemaVersion
   if version ~= nil and (not isInteger(version) or version < 1 or version > 16) then
     error("Stream Deck action settingsSchemaVersion must be a bounded positive integer", 3)
@@ -361,6 +370,9 @@ function registry.new()
         actionId = actionId,
         name = definition.name,
       }
+      if definition.description ~= nil then
+        action.description = definition.description
+      end
       if definition.settingsSchema ~= nil then
         action.settingsSchema = definition.settingsSchema
       end

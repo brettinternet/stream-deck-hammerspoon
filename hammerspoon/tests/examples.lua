@@ -183,63 +183,6 @@ test("example fixture loader restores module and hs state after failure", functi
   package.preload.streamdeck = previous_preload
 end)
 
-test("microphone example covers appearance, toggling, and no-device errors", function()
-  local microphone = {
-    muted_state = false,
-    set_calls = 0,
-    set_result = true,
-  }
-  function microphone:inputMuted()
-    return self.muted_state
-  end
-  function microphone:setInputMuted(value)
-    self.set_calls = self.set_calls + 1
-    if self.set_result then
-      self.muted_state = value
-    end
-    return self.set_result
-  end
-
-  local available = microphone
-  local streamdeck = load_fixture("hammerspoon/streamdeck/actions/microphone.lua", {
-    audiodevice = {
-      defaultInputDevice = function()
-        return available
-      end,
-    },
-  })
-  assertEqual(#streamdeck.registrations, 1, "microphone must register one action")
-  local action = streamdeck.registrations[1]
-  assertEqual(action.id, "com.brettinternet.hammerspoon.microphone-toggle")
-  assertEqual(streamdeck.starts, 0, "action modules must not start the bridge")
-
-  local appearance = action.appearance(context("mic"))
-  assertEqual(appearance.title, "Live")
-  assertEqual(appearance.state, "inactive")
-
-  local press_context = context("mic")
-  action.press(press_context)
-  assertEqual(microphone.set_calls, 1)
-  assertEqual(press_context.refreshes, 1)
-  appearance = action.appearance(press_context)
-  assertEqual(appearance.title, "Muted")
-  assertEqual(appearance.state, "active")
-  microphone.set_result = false
-  assertError(function()
-    action.press(press_context)
-  end, "failed to set microphone mute state")
-  assertEqual(press_context.refreshes, 1, "failed microphone mute must not refresh")
-  microphone.set_result = true
-
-  available = nil
-  appearance = action.appearance(press_context)
-  assertEqual(appearance.title, "No mic")
-  assertEqual(appearance.state, "inactive")
-  assertError(function()
-    action.press(press_context)
-  end, "no default input device")
-  assertEqual(press_context.refreshes, 1, "failed microphone press must not refresh")
-end)
 
 test("application example toggles focused and configured applications", function()
   local frontmost
@@ -1010,7 +953,7 @@ dofile("hammerspoon/tests/window-center-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/window-next-screen-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
-dofile("hammerspoon/tests/meeting-mode-example.lua")(
+dofile("hammerspoon/tests/microphone-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/pomodoro-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)

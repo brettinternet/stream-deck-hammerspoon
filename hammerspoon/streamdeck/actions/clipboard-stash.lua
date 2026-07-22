@@ -28,6 +28,7 @@ end
 return {
   id = action_id,
   name = "Clipboard stash",
+  description = "Save clipboard text on first press and restore it on the next.",
 
   appear = function(context)
     state_by_instance[context.instanceId] = nil

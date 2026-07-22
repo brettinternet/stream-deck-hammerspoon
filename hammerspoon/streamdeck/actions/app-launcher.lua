@@ -70,10 +70,11 @@ end
 return {
   id = action_id,
   name = "Launch or focus app",
+  description = "Launch or focus the configured macOS application.",
   settingsSchemaVersion = 1,
   settingsSchema = {
-    { type = "text", key = "app", maxLength = 128 },
-    { type = "text", key = "label", maxLength = 32 },
+    { type = "text", key = "app", maxLength = 128, description = "macOS application name shown in Applications or the app's menu; defaults to Hammerspoon." },
+    { type = "text", key = "label", maxLength = 32, description = "Text shown on the Stream Deck key; defaults to Launch app." },
   },
 
   appearance = function(context)

@@ -257,6 +257,38 @@ describe("BridgeClient authentication and transport", () => {
     expect(statuses).toContain("connected");
   });
 
+  test("publishes action and settings-field descriptions without dropping metadata", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client } = makeClient(sockets);
+    const registries: unknown[] = [];
+    client.on("actions", (actions) => registries.push(actions));
+
+    client.start();
+    await flush();
+    const socket = sockets[0];
+    const requestId = await authenticate(socket);
+    const action = {
+      actionId: "com.example.described",
+      name: "Described action",
+      description: "An action with metadata.",
+      settingsSchemaVersion: 1,
+      settingsSchema: [{
+        type: "text",
+        key: "label",
+        description: "A label shown by the action.",
+      }],
+    };
+    socket.receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "actions",
+      requestId,
+      actions: [action],
+    }));
+
+    expect(client.actions).toEqual([action]);
+    expect(registries).toEqual([[action]]);
+  });
+
   test("LAN handshake authenticates with role-separated proofs and frames", async () => {
     const sockets: FakeSocket[] = [];
     const { client, timers, key } = makeLanClient(sockets);

@@ -42,6 +42,7 @@
     const browserGlobal = globalThis;
     const documentLike = browserGlobal.document;
     const actionSelect = documentLike?.getElementById("action-id");
+    const actionDescription = documentLike?.getElementById("action-description");
     const connectionStatus = documentLike?.getElementById("connection-status");
     const connectionDetails = documentLike?.getElementById("connection-details");
     const setupGuideButton = documentLike?.getElementById("setup-guide");
@@ -56,6 +57,7 @@
     let inspectorSocketReady = false;
     const DEFAULT_ACTION_UUID = "com.brettinternet.hammerspoon.action";
     const SETUP_GUIDE_URL = "https://github.com/brettinternet/stream-deck-hammerspoon/blob/main/docs/setup.md";
+    const DESCRIPTION_MAX_LENGTH = 512;
     function isJsonObject(value) {
         return typeof value === "object" && value !== null && !Array.isArray(value);
     }
@@ -172,7 +174,17 @@
         option.disabled = disabled;
         return option;
     }
+    function renderActionDescription() {
+        if (!actionDescription) {
+            return;
+        }
+        const action = bridgeStatus === "connected" && savedActionId
+            ? bridgeActions.find((candidate) => candidate.actionId === savedActionId)
+            : undefined;
+        actionDescription.textContent = action?.description ?? "";
+    }
     function renderActionSelect() {
+        renderActionDescription();
         if (!actionSelect || !documentLike) {
             return;
         }
@@ -222,6 +234,13 @@
     function hasSetting(settings, key) {
         return Object.prototype.hasOwnProperty.call(settings, key);
     }
+    function isValidDescription(value) {
+        if (typeof value !== "string") {
+            return false;
+        }
+        const length = stringLength(value);
+        return length > 0 && length <= DESCRIPTION_MAX_LENGTH;
+    }
     function isFiniteNumber(value) {
         return typeof value === "number" && Number.isFinite(value);
     }
@@ -234,6 +253,12 @@
             ...(typeof value.label === "string" ? { label: value.label } : {}),
             ...(typeof value.required === "boolean" ? { required: value.required } : {}),
         };
+        if ("description" in value) {
+            if (!isValidDescription(value.description)) {
+                return undefined;
+            }
+            base.description = value.description;
+        }
         if (value.type === "text") {
             if (("default" in value && typeof value.default !== "string") ||
                 ("minLength" in value && (!Number.isInteger(value.minLength) || value.minLength < 0)) ||
@@ -397,6 +422,7 @@
         return errors.length > 0 ? { errors } : { settings: normalized, errors: [] };
     }
     function renderSettings() {
+        renderActionDescription();
         if (!settingsPanel || !documentLike) {
             return;
         }
@@ -432,9 +458,9 @@
             return;
         }
         const errors = [];
-        for (const field of schema.fields) {
+        for (let fieldIndex = 0; fieldIndex < schema.fields.length; fieldIndex += 1) {
+            const field = schema.fields[fieldIndex];
             const wrapper = documentLike.createElement("label");
-            wrapper.textContent = field.label ?? field.key;
             const control = documentLike.createElement(field.type === "select" ? "select" : "input");
             control.type =
                 field.type === "select" ? "select-one" : field.type === "boolean" ? "checkbox" : field.type;
@@ -470,6 +496,20 @@
             }
             control.addEventListener("change", () => saveSettings(schema.fields));
             wrapper.appendChild(control);
+            const label = documentLike.createElement("span");
+            label.textContent = field.label ?? field.key;
+            label.setAttribute("class", "field-label");
+            wrapper.appendChild(label);
+            if (field.description !== undefined) {
+                const descriptionId = `action-field-description-${fieldIndex}`;
+                const description = documentLike.createElement("span");
+                description.textContent = field.description;
+                description.setAttribute("class", "field-description");
+                description.setAttribute("id", descriptionId);
+                description.setAttribute("role", "note");
+                control.setAttribute("aria-describedby", descriptionId);
+                wrapper.appendChild(description);
+            }
             settingsPanel.appendChild(wrapper);
         }
         setSettingsStatus(errors.length > 0 ? errors.join(" ") : "Settings are ready.");
@@ -576,6 +616,7 @@
                 item.actionId.trim().length === 0 ||
                 typeof item.name !== "string" ||
                 item.name.trim().length === 0 ||
+                ("description" in item && !isValidDescription(item.description)) ||
                 ("settingsSchema" in item && !Array.isArray(item.settingsSchema)) ||
                 ("settingsSchemaVersion" in item &&
                     (typeof item.settingsSchemaVersion !== "number" ||
@@ -594,6 +635,7 @@
             actions.push({
                 actionId: item.actionId,
                 name: item.name,
+                ...("description" in item ? { description: item.description } : {}),
                 ...(Array.isArray(item.settingsSchema) ? { settingsSchema: item.settingsSchema } : {}),
                 ...(typeof item.settingsSchemaVersion === "number"
                     ? { settingsSchemaVersion: item.settingsSchemaVersion }
@@ -619,6 +661,9 @@
         }
         const bridgeState = parseBridgeState(parsedMessage.payload);
         if (!bridgeState) {
+            if (actionDescription) {
+                actionDescription.textContent = "";
+            }
             return;
         }
         bridgeActions = bridgeState.actions;

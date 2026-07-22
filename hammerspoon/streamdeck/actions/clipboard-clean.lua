@@ -22,6 +22,7 @@ end
 return {
   id = action_id,
   name = "Clean clipboard",
+  description = "Trim leading and trailing whitespace from the clipboard text.",
 
   appearance = function(_context)
     local contents = clipboard_contents()

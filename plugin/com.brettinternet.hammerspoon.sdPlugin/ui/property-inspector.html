@@ -27,6 +27,14 @@
         font-weight: 600;
       }
 
+      .description {
+        margin: 0;
+        color: #bdbdbd;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+
+
       select {
         box-sizing: border-box;
         width: 100%;
@@ -62,6 +70,29 @@
         color: inherit;
         font: inherit;
       }
+
+      #action-settings label {
+        display: grid;
+        gap: 4px;
+      }
+
+      #action-settings .field-label {
+        order: 1;
+      }
+
+      #action-settings input,
+      #action-settings select {
+        order: 2;
+      }
+
+      #action-settings .field-description {
+        order: 3;
+        color: #bdbdbd;
+        font-size: 11px;
+        font-weight: 400;
+        line-height: 1.4;
+      }
+
 
       input[type="checkbox"] {
         width: auto;
@@ -102,9 +133,15 @@
   <body>
     <main>
       <label for="action-id">Hammerspoon action</label>
-      <select id="action-id" name="actionId" aria-describedby="connection-status connection-details" disabled>
+      <select
+        id="action-id"
+        name="actionId"
+        aria-describedby="action-description connection-status connection-details"
+        disabled
+      >
         <option value="">No actions available</option>
       </select>
+      <p id="action-description" class="description" role="note" aria-live="polite"></p>
       <section id="action-settings" aria-live="polite"></section>
       <p id="settings-status" role="status" aria-live="polite">Select an action to edit its settings.</p>
       <p id="connection-status" role="status" aria-live="polite">Connecting</p>

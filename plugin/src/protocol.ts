@@ -185,6 +185,7 @@ export interface SettingsFieldBase {
   type: "text" | "number" | "boolean" | "select";
   key: string;
   label?: string;
+  description?: string;
   required?: boolean;
 }
 
@@ -219,6 +220,7 @@ export type SettingsField = TextSettingsField | NumberSettingsField | BooleanSet
 export interface ActionDefinition {
   actionId: string;
   name: string;
+  description?: string;
   settingsSchema?: JsonValue[];
   settingsSchemaVersion?: number;
   [key: string]: unknown;
@@ -400,6 +402,7 @@ export const MAX_LAN_PAYLOAD_BYTES = 48 * 1024;
 export const MAX_JSON_DEPTH = 16;
 export const MAX_JSON_CONTAINER_ITEMS = 128;
 export const MAX_JSON_TOTAL_ITEMS = 2048;
+export const MAX_DESCRIPTION_LENGTH = 512 as const;
 
 type JsonFrameContainer = {
   kind: "object" | "array";
@@ -742,6 +745,13 @@ function stringLength(value: string): number {
   return length;
 }
 
+function isBoundedDescription(value: unknown): value is string | undefined {
+  if (value === undefined) return true;
+  if (typeof value !== "string") return false;
+  const length = stringLength(value);
+  return length >= 1 && length <= MAX_DESCRIPTION_LENGTH;
+}
+
 function validateSettingsSchema(action: ActionDefinition, actionIndex: number): void {
   if (action.settingsSchemaVersion !== 1) {
     return;
@@ -757,6 +767,9 @@ function validateSettingsSchema(action: ActionDefinition, actionIndex: number): 
       throw settingsSchemaError(actionIndex, fieldIndex, `duplicate key "${field.key}"`);
     }
     keys.add(field.key);
+    if (!isBoundedDescription(field.description)) {
+      throw settingsSchemaError(actionIndex, fieldIndex, "description must be non-empty and at most 512 Unicode code points");
+    }
 
     if (field.type === "text") {
       if (
@@ -1255,6 +1268,9 @@ export function parseServerMessage(data: string): ServerMessage {
     const actions = parsed.actions as ActionDefinition[];
     const actionIds = new Set<string>();
     for (const [index, action] of actions.entries()) {
+      if (!isBoundedDescription(action.description)) {
+        throw new Error(`Invalid server message: action ${index} description must be non-empty and at most 512 Unicode code points.`);
+      }
       validateSettingsSchema(action, index);
       if (actionIds.has(action.actionId)) {
         throw new Error("Invalid server message: duplicate action IDs are not allowed.");

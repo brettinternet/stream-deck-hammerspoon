@@ -31,6 +31,7 @@ end
 return {
   id = action_id,
   name = "Keep awake",
+  description = "Toggle display sleep prevention on or off.",
   sound = sound.toggle(),
 
   appearance = function(_context)

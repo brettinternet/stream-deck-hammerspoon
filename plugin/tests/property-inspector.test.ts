@@ -22,9 +22,14 @@ class FakeElement {
   maxLength = 0;
   minLength = 0;
   children: FakeChild[] = [];
+  readonly attributes = new Map<string, string>();
   private readonly listeners = new Map<string, Listener>();
 
   constructor(readonly tagName = "div") {}
+
+  setAttribute(name: string, value: string): void {
+    this.attributes.set(name, value);
+  }
 
   addEventListener(type: string, listener: Listener): void {
     this.listeners.set(type, listener);
@@ -45,15 +50,18 @@ class FakeElement {
 
 class FakeDocument {
   readonly actionSelect = new FakeElement("select");
+  readonly actionDescription = new FakeElement("p");
   readonly connectionStatus = new FakeElement("p");
   readonly connectionDetails = new FakeElement("p");
   readonly setupGuideButton = new FakeElement("button");
   readonly actionSettings = new FakeElement("section");
   readonly settingsStatus = new FakeElement("p");
-
   getElementById(id: string): FakeElement | null {
     if (id === "action-id") {
       return this.actionSelect;
+    }
+    if (id === "action-description") {
+      return this.actionDescription;
     }
     if (id === "connection-status") {
       return this.connectionStatus;
@@ -240,8 +248,11 @@ describe.serial("property inspector", () => {
       ]);
       socket.message(
         bridgeState("connected", [
-          action("action-one", "First action"),
-          action("action-two", "Second action", { settingsSchema: [] }),
+          action("action-one", "First action", { description: "Runs the first action." }),
+          action("action-two", "Second action", {
+            description: "Runs the second action.",
+            settingsSchema: [],
+          }),
         ]),
       );
       expect(environment.document.connectionStatus.textContent).toBe("Connected");
@@ -252,6 +263,7 @@ describe.serial("property inspector", () => {
         { value: "action-one", textContent: "First action", disabled: false },
         { value: "action-two", textContent: "Second action", disabled: false },
       ]);
+      expect(environment.document.actionDescription.textContent).toBe("Runs the second action.");
 
       socket.message(
         JSON.stringify({
@@ -260,9 +272,12 @@ describe.serial("property inspector", () => {
         }),
       );
       expect(environment.document.actionSelect.value).toBe("action-one");
+      expect(environment.document.actionDescription.textContent).toBe("Runs the first action.");
 
       environment.document.actionSelect.value = "action-two";
       environment.document.actionSelect.dispatch("change");
+      expect(environment.document.actionSelect.value).toBe("action-two");
+      expect(environment.document.actionDescription.textContent).toBe("Runs the second action.");
       expect(sentFrames(socket).slice(-1)).toEqual([
         {
           action: "com.brettinternet.hammerspoon.button",
@@ -274,6 +289,7 @@ describe.serial("property inspector", () => {
 
       socket.message(JSON.stringify({ event: "didReceiveSettings", payload: {} }));
       expect(environment.document.actionSelect.value).toBe("");
+      expect(environment.document.actionDescription.textContent).toBe("");
     } finally {
       environment.restore();
     }
@@ -336,11 +352,12 @@ describe.serial("property inspector", () => {
         "context-01",
         "register",
         "",
-        JSON.stringify({ context: "context-01", payload: { settings: {} } }),
+        JSON.stringify({ context: "context-01", payload: { settings: { actionId: "known" } } }),
       );
       const firstSocket = FakeSocket.instances[0]!;
       firstSocket.open();
-      firstSocket.message(bridgeState("connected", [action("known", "Known action")]));
+      firstSocket.message(bridgeState("connected", [action("known", "Known action", { description: "Known description" })]));
+      expect(environment.document.actionDescription.textContent).toBe("Known description");
 
       const expectedOptions = [
         { value: "", textContent: "No action selected", disabled: false },
@@ -350,6 +367,7 @@ describe.serial("property inspector", () => {
         bridgeState("bogus" as "connected", []),
         JSON.stringify({ event: "sendToPropertyInspector", payload: { type: "bridgeState", status: "connected" } }),
         bridgeState("connected", [action("", "Blank id")]),
+        bridgeState("connected", [action("known", "Known action", { description: "" })]),
         bridgeState("connected", [action("known", "Duplicate", { settingsSchema: "invalid" })]),
         bridgeState("connected", [action("known", "Known action"), action("known", "Duplicate")]),
       ];
@@ -358,6 +376,7 @@ describe.serial("property inspector", () => {
       }
       expect(environment.document.connectionStatus.textContent).toBe("Connected");
       expect(environment.document.actionSelect.children).toEqual(expectedOptions);
+      expect(environment.document.actionDescription.textContent).toBe("");
 
       environment.connect(28197, "context-02", "registerAgain", "", "{}");
       const secondSocket = FakeSocket.instances[1]!;
@@ -456,13 +475,21 @@ describe.serial("property inspector", () => {
   test("moves to offline and clears actions on socket failure and close", async () => {
     const environment = await installEnvironment();
     try {
-      environment.connect(28196, "context-01", "register", "", "{}");
+      environment.connect(
+        28196,
+        "context-01",
+        "register",
+        "",
+        JSON.stringify({ context: "context-01", payload: { settings: { actionId: "current" } } }),
+      );
       const socket = FakeSocket.instances[0]!;
       socket.open();
-      socket.message(bridgeState("connected", [action("current", "Current action")]));
+      socket.message(bridgeState("connected", [action("current", "Current action", { description: "Current description" })]));
+      expect(environment.document.actionDescription.textContent).toBe("Current description");
       socket.error();
       expect(environment.document.connectionStatus.textContent).toBe("Offline");
       expect(environment.document.actionSelect.disabled).toBe(true);
+      expect(environment.document.actionDescription.textContent).toBe("");
       expect(environment.document.actionSelect.children).toEqual([
         { value: "", textContent: "No actions available", disabled: false },
       ]);
@@ -671,15 +698,34 @@ describe.serial("property inspector", () => {
       socket.message(
         bridgeState("connected", [
           action("schema", "Schema", {
+            description: "Configures schema values.",
             settingsSchemaVersion: 1,
             settingsSchema: [
-              { type: "text", key: "text", label: "Text", default: "default", minLength: 2, maxLength: 5 },
-              { type: "number", key: "count", label: "Count", default: 4, min: 0, max: 10, step: 2 },
-              { type: "boolean", key: "enabled", label: "Enabled", default: true },
+              {
+                type: "text",
+                key: "text",
+                label: "Text",
+                description: "A short text value.",
+                default: "default",
+                minLength: 2,
+                maxLength: 5,
+              },
+              {
+                type: "number",
+                key: "count",
+                label: "Count",
+                description: "How many items to process.",
+                default: 4,
+                min: 0,
+                max: 10,
+                step: 2,
+              },
+              { type: "boolean", key: "enabled", label: "Enabled", description: "Whether processing is enabled.", default: true },
               {
                 type: "select",
                 key: "mode",
                 label: "Mode",
+                description: "Which processing mode to use.",
                 default: "one",
                 options: [
                   { value: "one", label: "One" },
@@ -698,10 +744,17 @@ describe.serial("property inspector", () => {
       );
 
       expect(environment.document.actionSettings.children).toHaveLength(4);
-      const text = (environment.document.actionSettings.children[0] as FakeElement).children[0] as FakeElement;
-      const count = (environment.document.actionSettings.children[1] as FakeElement).children[0] as FakeElement;
+      expect(environment.document.actionDescription.textContent).toBe("Configures schema values.");
+      const textWrapper = environment.document.actionSettings.children[0] as FakeElement;
+      const countWrapper = environment.document.actionSettings.children[1] as FakeElement;
+      const text = textWrapper.children[0] as FakeElement;
+      const count = countWrapper.children[0] as FakeElement;
       const enabled = (environment.document.actionSettings.children[2] as FakeElement).children[0] as FakeElement;
       const mode = (environment.document.actionSettings.children[3] as FakeElement).children[0] as FakeElement;
+      expect(textWrapper.children[1]).toMatchObject({ textContent: "Text" });
+      expect(textWrapper.children[2]).toMatchObject({ textContent: "A short text value." });
+      expect(countWrapper.children[2]).toMatchObject({ textContent: "How many items to process." });
+      expect(text.attributes.get("aria-describedby")).toBe("action-field-description-0");
       expect(text.value).toBe("init");
       expect(text.maxLength).toBe(5);
       expect(text.minLength).toBe(2);

@@ -31,6 +31,7 @@ end
 return {
   id = action_id,
   name = "Zoom focused window",
+  description = "Toggle zoom for the focused window.",
 
   appear = function(context)
     zoomed_by_instance[context.instanceId] = false

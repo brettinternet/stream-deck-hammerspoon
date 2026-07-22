@@ -204,17 +204,19 @@ end
 return {
   id = action_id,
   name = "Spotify controls",
+  description = "Press a key or encoder to play or pause Spotify, with artwork and playback state shown; rotate an encoder for volume or track changes.",
   settingsSchemaVersion = 1,
   settingsSchema = {
     {
       type = "select",
       key = "dialControl",
       label = "Dial control",
-      default = "volume",
+      description = "Choose whether encoder rotation adjusts volume or moves to the previous or next track.",
       options = {
         { value = "volume", label = "Volume" },
         { value = "tracks", label = "Previous / next track" },
       },
+      default = "volume",
     },
   },
 
@@ -247,8 +249,12 @@ return {
   appearance = appearance_for,
 
   press = function()
+    local spotify = require_spotify("isRunning")
+    local was_running = spotify.isRunning()
     require_spotify("playpause").playpause()
-    sample_spotify()
+    if was_running then
+      sample_spotify()
+    end
   end,
 
   rotate = function(context, ticks)

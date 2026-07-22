@@ -1,8 +1,113 @@
 -- Stream Deck action: a Stream Deck key that switches keyboard layouts.
--- It toggles between U.S. and Dvorak by default; set both layout names in the action settings.
+-- Layout choices are populated from the enabled Hammerspoon keyboard layouts.
 
-local DEFAULT_FIRST_LAYOUT = "U.S."
-local DEFAULT_SECOND_LAYOUT = "Dvorak"
+local NOT_CONFIGURED = "__not_configured__"
+local NOT_CONFIGURED_LABEL = "Not configured"
+
+local function keycodes_api()
+  if type(hs) ~= "table"
+    or type(hs.keycodes) ~= "table"
+    or type(hs.keycodes.currentLayout) ~= "function"
+    or type(hs.keycodes.layouts) ~= "function"
+    or type(hs.keycodes.setLayout) ~= "function" then
+    error("keyboard layout unavailable")
+  end
+  return hs.keycodes
+end
+
+local function discover_layout_options()
+  local options = {
+    { value = NOT_CONFIGURED, label = NOT_CONFIGURED_LABEL },
+  }
+  local records = {}
+  local seen = {}
+  local query_error
+  local current
+
+  if type(hs) ~= "table"
+    or type(hs.keycodes) ~= "table"
+    or type(hs.keycodes.layouts) ~= "function" then
+    return options, nil, nil
+  end
+
+  local ok, layouts = pcall(hs.keycodes.layouts)
+  if not ok then
+    return options, nil, "failed to list keyboard layouts: " .. tostring(layouts)
+  end
+  if type(layouts) ~= "table" then
+    return options, nil, "failed to list keyboard layouts: expected a table"
+  end
+
+  for _, layout in ipairs(layouts) do
+    if type(layout) == "string" and layout ~= "" and not seen[layout] then
+      seen[layout] = true
+      records[#records + 1] = layout
+    end
+  end
+
+  if type(hs.keycodes.currentLayout) == "function" then
+    local current_ok, current_layout = pcall(hs.keycodes.currentLayout)
+    if current_ok and type(current_layout) == "string" and current_layout ~= ""
+      and seen[current_layout] then
+      current = current_layout
+    elseif not current_ok then
+      query_error = "failed to read keyboard layout: " .. tostring(current_layout)
+    end
+  end
+
+  table.sort(records)
+  local selected = {}
+  for index = 1, math.min(#records, 63) do
+    selected[#selected + 1] = records[index]
+  end
+  if current ~= nil then
+    local current_included = false
+    for _, layout in ipairs(selected) do
+      if layout == current then
+        current_included = true
+        break
+      end
+    end
+    if not current_included then
+      selected[#selected] = current
+    end
+  end
+  table.sort(selected)
+  for _, layout in ipairs(selected) do
+    options[#options + 1] = { value = layout, label = layout }
+  end
+  if #records == 0 and query_error == nil then
+    query_error = "no enabled keyboard layouts available"
+  end
+  return options, current, query_error
+end
+
+local LAYOUT_OPTIONS, CURRENT_LAYOUT, LAYOUT_QUERY_ERROR = discover_layout_options()
+
+local function layout_defaults()
+  local first = CURRENT_LAYOUT
+  if first == nil then
+    for index = 2, #LAYOUT_OPTIONS do
+      local value = LAYOUT_OPTIONS[index].value
+      if value ~= NOT_CONFIGURED then
+        first = value
+        break
+      end
+    end
+  end
+
+  local second
+  for index = 2, #LAYOUT_OPTIONS do
+    local value = LAYOUT_OPTIONS[index].value
+    if value ~= NOT_CONFIGURED and value ~= first then
+      second = value
+      break
+    end
+  end
+  return first or NOT_CONFIGURED, second or NOT_CONFIGURED
+end
+
+local DEFAULT_FIRST_LAYOUT, DEFAULT_SECOND_LAYOUT = layout_defaults()
 
 local function settings_for(context)
   local settings = nil
@@ -29,16 +134,6 @@ local function settings_for(context)
   return first_layout, second_layout
 end
 
-local function keycodes_api()
-  if type(hs) ~= "table"
-    or type(hs.keycodes) ~= "table"
-    or type(hs.keycodes.currentLayout) ~= "function"
-    or type(hs.keycodes.setLayout) ~= "function" then
-    error("keyboard layout unavailable")
-  end
-  return hs.keycodes
-end
-
 local function current_layout()
   local keycodes = keycodes_api()
   local ok, layout = pcall(keycodes.currentLayout)
@@ -51,13 +146,31 @@ end
 return {
   id = "com.brettinternet.hammerspoon.keyboard-layout",
   name = "Keyboard layout",
+  description = "Switch between two enabled keyboard layouts.",
   settingsSchemaVersion = 1,
   settingsSchema = {
-    { type = "text", key = "firstLayout", maxLength = 64 },
-    { type = "text", key = "secondLayout", maxLength = 64 },
+    {
+      type = "select",
+      key = "firstLayout",
+      label = "First layout",
+      description = "Layout selected after the second layout.",
+      options = LAYOUT_OPTIONS,
+      default = DEFAULT_FIRST_LAYOUT,
+    },
+    {
+      type = "select",
+      key = "secondLayout",
+      label = "Second layout",
+      description = "Layout selected after the first layout.",
+      options = LAYOUT_OPTIONS,
+      default = DEFAULT_SECOND_LAYOUT,
+    },
   },
 
   appearance = function(context)
+    if LAYOUT_QUERY_ERROR ~= nil and #LAYOUT_OPTIONS == 1 then
+      error(LAYOUT_QUERY_ERROR)
+    end
     local first_layout, second_layout = settings_for(context)
     local layout = current_layout()
     if type(layout) ~= "string" or layout == "" then
@@ -71,9 +184,15 @@ return {
   end,
 
   press = function(context)
+    if LAYOUT_QUERY_ERROR ~= nil and #LAYOUT_OPTIONS == 1 then
+      error(LAYOUT_QUERY_ERROR)
+    end
     local first_layout, second_layout = settings_for(context)
     local layout = current_layout()
     local target = layout == first_layout and second_layout or first_layout
+    if target == NOT_CONFIGURED then
+      error("no second keyboard layout configured")
+    end
     local keycodes = keycodes_api()
     local ok, result = pcall(keycodes.setLayout, target)
     if not ok then
@@ -82,7 +201,5 @@ return {
     if result ~= true then
       error("failed to switch keyboard layout")
     end
-
   end,
 }
-

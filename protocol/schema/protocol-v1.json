@@ -36,6 +36,12 @@
       "type": "string",
       "minLength": 1
     },
+    "descriptionText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "description": "Optional human-readable metadata bounded to 512 Unicode code points."
+    },
     "settings": {
       "type": "object",
       "description": "Application-owned JSON object. Keys and values are opaque to protocol v1.",
@@ -82,6 +88,7 @@
         "type": { "type": "string", "enum": ["text", "number", "boolean", "select"] },
         "key": { "type": "string", "minLength": 1, "maxLength": 64 },
         "label": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "description": { "$ref": "#/$defs/descriptionText" },
         "required": { "type": "boolean" },
         "default": {}
       }
@@ -228,6 +235,7 @@
       "properties": {
         "actionId": { "$ref": "#/$defs/id" },
         "name": { "$ref": "#/$defs/text" },
+        "description": { "$ref": "#/$defs/descriptionText" },
         "settingsSchema": {
           "type": "array",
           "maxItems": 32,

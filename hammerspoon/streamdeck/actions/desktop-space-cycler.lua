@@ -92,6 +92,7 @@ end
 return {
   id = action_id,
   name = "Desktop space cycler",
+  description = "Switch to the next user desktop Space, skipping full-screen and tiled Spaces.",
 
   appearance = function(_context)
     local spaces, screen = spaces_api()

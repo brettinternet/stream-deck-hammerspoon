@@ -17,6 +17,7 @@ end
 return {
   id = action_id,
   name = "Lock screen",
+  description = "Lock the screen.",
   sound = sound.press(),
   -- The shared policy plays the default press cue only after this callback succeeds.
 

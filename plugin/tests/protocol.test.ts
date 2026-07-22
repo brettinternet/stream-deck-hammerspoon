@@ -36,18 +36,35 @@ const actions: ServerMessage = {
   type: "actions",
   requestId: "req-01",
   actions: [
-    { actionId: "com.example.volumeUp", name: "Volume Up" },
+    { actionId: "com.example.volumeUp", name: "Volume Up", description: "Raise the system volume." },
     {
       actionId: "com.example.mute",
       name: "Mute",
+      description: "Mute the system audio output.",
       settingsSchemaVersion: 1,
       settingsSchema: [
-        { type: "text", key: "label", minLength: 1, maxLength: 32, default: "Mute" },
-        { type: "number", key: "volume", min: 0, max: 100, step: 1, default: 50 },
-        { type: "boolean", key: "muted", default: false },
+        {
+          type: "text",
+          key: "label",
+          description: "Label shown on the action.",
+          minLength: 1,
+          maxLength: 32,
+          default: "Mute",
+        },
+        {
+          type: "number",
+          key: "volume",
+          description: "Volume level to apply.",
+          min: 0,
+          max: 100,
+          step: 1,
+          default: 50,
+        },
+        { type: "boolean", key: "muted", description: "Whether output starts muted.", default: false },
         {
           type: "select",
           key: "mode",
+          description: "Audio behavior mode.",
           options: [{ value: "normal", label: "Normal" }, { value: "silent", label: "Silent" }],
           default: "normal",
         },
@@ -444,6 +461,35 @@ describe("versioned settings schema compatibility", () => {
         }),
       ),
     ).toBeDefined();
+  });
+
+  test("round-trips optional action and field descriptions within Unicode bounds", () => {
+    const maximumDescription = "😀".repeat(512);
+    const message = JSON.parse(actionMessage({
+      description: maximumDescription,
+      settingsSchemaVersion: 1,
+      settingsSchema: [{
+        type: "text",
+        key: "label",
+        description: maximumDescription,
+      }],
+    })) as Record<string, unknown>;
+    expect(parseServerMessage(JSON.stringify(message))).toEqual(message);
+
+    const omitted = JSON.parse(actionMessage({
+      settingsSchemaVersion: 1,
+      settingsSchema: [{ type: "text", key: "label" }],
+    })) as Record<string, unknown>;
+    expect(parseServerMessage(JSON.stringify(omitted))).toEqual(omitted);
+
+    const malformedDescriptions: unknown[] = ["", 0, false, null, "😀".repeat(513)];
+    for (const description of malformedDescriptions) {
+      expect(() => parseServerMessage(actionMessage({ description }))).toThrow();
+      expect(() => parseServerMessage(actionMessage({
+        settingsSchemaVersion: 1,
+        settingsSchema: [{ type: "text", key: "label", description }],
+      }))).toThrow();
+    }
   });
 
   test("requires settingsSchema when settingsSchemaVersion is 1", () => {

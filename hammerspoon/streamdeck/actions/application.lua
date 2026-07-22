@@ -269,10 +269,11 @@ end
 return {
   id = action_id,
   name = "Hide/show application",
+  description = "Toggle the configured application's hidden state, or track the frontmost app when no bundle ID is set.",
   settingsSchemaVersion = 1,
   settingsSchema = {
-    { type = "text", key = "bundleID", label = "Application bundle ID", maxLength = 128 },
-    { type = "boolean", key = "focusOnShow", label = "Focus app when showing", default = false },
+    { type = "text", key = "bundleID", label = "Application bundle ID", maxLength = 128, description = "Optional bundle ID; find it with osascript -e 'id of app \"App Name\"'." },
+    { type = "boolean", key = "focusOnShow", label = "Focus app when showing", default = false, description = "Focus the app after showing it; defaults to off." },
   },
 
   appear = function(context)

@@ -66,6 +66,7 @@ local definitions = {
   {
     id = RELOAD_ID,
     name = "Reload Hammerspoon",
+    description = "Reload the Hammerspoon configuration.",
     appearance = function()
       reloadApi()
       return { title = "Reload", state = "inactive" }
@@ -75,6 +76,7 @@ local definitions = {
   {
     id = CONSOLE_ID,
     name = "Toggle Hammerspoon Console",
+    description = "Show or hide the Hammerspoon Console.",
     appearance = function()
       local visible = consoleIsVisible()
       return {

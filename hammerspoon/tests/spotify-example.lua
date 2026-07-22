@@ -5,18 +5,30 @@ return function(test, load_fixture, context, assertTrue, _, assertEqual)
     local volume = 50
     local next_calls = 0
     local previous_calls = 0
+    local playpause_calls = 0
+    local get_current_track_calls = 0
+    local get_volume_calls = 0
     local artwork_callback
     local scheduled
 
     local spotify = {
       isRunning = function() return running end,
       isPlaying = function() return playing end,
-      getCurrentTrack = function() return "Test Track" end,
+      getCurrentTrack = function()
+        get_current_track_calls = get_current_track_calls + 1
+        return "Test Track"
+      end,
       getCurrentArtist = function() return "Test Artist" end,
       getCurrentTrackArtworkURL = function() return "artwork-token" end,
-      getVolume = function() return volume end,
+      getVolume = function()
+        get_volume_calls = get_volume_calls + 1
+        return volume
+      end,
       setVolume = function(value) volume = value end,
-      playpause = function() playing = not playing end,
+      playpause = function()
+        playpause_calls = playpause_calls + 1
+        playing = not playing
+      end,
       next = function() next_calls = next_calls + 1 end,
       previous = function() previous_calls = previous_calls + 1 end,
     }
@@ -65,6 +77,11 @@ return function(test, load_fixture, context, assertTrue, _, assertEqual)
     })
 
     assertEqual(action.id, "com.brettinternet.hammerspoon.spotify")
+    assertTrue(type(action.description) == "string" and action.description ~= "",
+      "Spotify action description must explain playback, artwork, state, and rotation")
+    assertTrue(type(action.settingsSchema[1].description) == "string"
+        and action.settingsSchema[1].description ~= "",
+      "Spotify dial setting description must explain rotation behavior")
     assertEqual(action.settingsSchema[1].default, "volume")
     action.appear(button)
     action.appear(volume_dial)
@@ -112,8 +129,15 @@ return function(test, load_fixture, context, assertTrue, _, assertEqual)
     })
     assertTrue(valid, "album artwork must be a schema-valid PNG icon: " .. tostring(code))
 
+    local track_calls_before_press = get_current_track_calls
+    local volume_calls_before_press = get_volume_calls
     action.press(button)
-    assertEqual(action.appearance(button).state, "active")
+    assertEqual(get_current_track_calls, track_calls_before_press + 1,
+      "pressing while Spotify is running must sample the current track immediately")
+    assertEqual(get_volume_calls, volume_calls_before_press + 1,
+      "pressing while Spotify is running must sample volume immediately")
+    assertEqual(playpause_calls, 1,
+      "pressing while Spotify is running must delegate to playpause")
 
     action.rotate(volume_dial, 2, false)
     local volume_appearance = action.appearance(volume_dial)
@@ -142,5 +166,77 @@ return function(test, load_fixture, context, assertTrue, _, assertEqual)
     action.disappear(volume_dial)
     action.disappear(track_dial)
     assertEqual(scheduled.stop_calls, 1)
+  end)
+  test("Spotify press while closed delegates without eager startup sampling", function()
+    local running = false
+    local playing = false
+    local playpause_calls = 0
+    local get_current_track_calls = 0
+    local get_volume_calls = 0
+    local scheduled
+    local spotify = {
+      isRunning = function() return running end,
+      isPlaying = function() return playing end,
+      getCurrentTrack = function()
+        get_current_track_calls = get_current_track_calls + 1
+        return "Started Track"
+      end,
+      getCurrentTrackArtworkURL = function() return nil end,
+      getVolume = function()
+        get_volume_calls = get_volume_calls + 1
+        return 40
+      end,
+      playpause = function()
+        playpause_calls = playpause_calls + 1
+        running = true
+        playing = true
+      end,
+    }
+    local fake_hs
+    fake_hs = {
+      spotify = spotify,
+      timer = {
+        doEvery = function(seconds, callback)
+          scheduled = {
+            seconds = seconds,
+            callback = function()
+              local previous_hs = _G.hs
+              _G.hs = fake_hs
+              local ok, err = pcall(callback)
+              _G.hs = previous_hs
+              if not ok then
+                error(err, 0)
+              end
+            end,
+            stop = function() end,
+          }
+          return scheduled
+        end,
+      },
+    }
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/spotify.lua", fake_hs)
+    local action = streamdeck.registrations[1]
+    local button = context("spotify-closed", nil, {
+      controllerType = "keypad",
+      imageSize = 120,
+    })
+
+    action.appear(button)
+    action.press(button)
+    assertEqual(playpause_calls, 1, "closed Spotify press must delegate to playpause")
+    assertEqual(get_current_track_calls, 0,
+      "closed Spotify press must not eagerly fetch the current track")
+    assertEqual(get_volume_calls, 0,
+      "closed Spotify press must not eagerly fetch volume")
+    assertEqual(action.appearance(button).title, "Spotify closed",
+      "closed Spotify must retain its state until the refresh timer samples startup")
+
+    scheduled.callback()
+    assertEqual(get_current_track_calls, 1,
+      "refresh timer must sample the current track after Spotify starts")
+    assertEqual(get_volume_calls, 1,
+      "refresh timer must sample volume after Spotify starts")
+    assertEqual(action.appearance(button).title, "Started Track")
+    action.disappear(button)
   end)
 end

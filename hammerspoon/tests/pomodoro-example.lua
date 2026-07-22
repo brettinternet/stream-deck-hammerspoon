@@ -1,9 +1,13 @@
 return function(test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
-  test("pomodoro example advances through a responsive session and isolates lifecycle", function()
+  test("pomodoro example counts down configured phases and isolates lifecycle", function()
+    local now = 1000
     local scheduled
     local fake_hs = {
       timer = {
-        doAfter = function(seconds, callback)
+        secondsSinceEpoch = function()
+          return now
+        end,
+        doEvery = function(seconds, callback)
           local timer = {
             seconds = seconds,
             callback = callback,
@@ -28,76 +32,172 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         error(err, 0)
       end
     end
+
     local streamdeck = load_fixture("hammerspoon/streamdeck/actions/pomodoro.lua", fake_hs)
     local action = streamdeck.registrations[1]
-    local pomodoro = context("pomodoro")
+    local pomodoro = context("pomodoro", {
+      focusMinutes = 2,
+      shortBreakMinutes = 1,
+      longBreakMinutes = 3,
+      cycles = 2,
+    })
 
     assertEqual(action.id, "com.brettinternet.hammerspoon.pomodoro")
-    assertEqual(action.appearance(pomodoro).title, "Start")
-    assertEqual(action.appearance(pomodoro).state, "inactive")
+    assertEqual(action.settingsSchemaVersion, 1)
+    assertEqual(#action.settingsSchema, 4)
+    assertEqual(action.settingsSchema[1].key, "focusMinutes")
+    assertEqual(action.settingsSchema[1].default, 25)
+    assertTrue(action.settingsSchema[1].description ~= "")
+    assertEqual(action.settingsSchema[2].key, "shortBreakMinutes")
+    assertEqual(action.settingsSchema[2].default, 5)
+    assertTrue(action.settingsSchema[2].description ~= "")
+    assertEqual(action.settingsSchema[3].key, "longBreakMinutes")
+    assertEqual(action.settingsSchema[3].default, 15)
+    assertTrue(action.settingsSchema[3].description ~= "")
+    assertEqual(action.settingsSchema[4].key, "cycles")
+    assertEqual(action.settingsSchema[4].default, 4)
+    assertTrue(action.settingsSchema[4].description ~= "")
+
+    local ready = action.appearance(pomodoro)
+    assertEqual(ready.title, "Start")
+    assertEqual(ready.state, "inactive")
+    assertEqual(ready.progress, 0)
+    assertEqual(ready.icon.kind, "custom")
+    assertEqual(ready.icon.mediaType, "image/svg+xml")
 
     action.appear(pomodoro)
     action.press(pomodoro)
-    assertEqual(scheduled.seconds, 25 * 60, "focus phase must use a 25-minute duration")
+    assertEqual(scheduled.seconds, 1, "the visible refresh timer must run once per second")
     assertEqual(pomodoro.refreshes, 1, "starting must refresh immediately")
-    assertEqual(action.appearance(pomodoro).title, "Focus 1/4")
-    assertEqual(action.appearance(pomodoro).state, "active")
 
+    local focus = action.appearance(pomodoro)
+    assertEqual(focus.title, "02:00", "custom focus duration must be displayed")
+    assertEqual(focus.badge, "F1")
+    assertEqual(focus.progress, 0)
+    assertEqual(focus.backgroundColor, "#D94B4B")
+    assertEqual(focus.icon.kind, "custom")
+
+    now = now + 1
     run_timer()
-    assertEqual(scheduled.seconds, 5 * 60, "short break must use a 5-minute duration")
-    assertEqual(pomodoro.refreshes, 2, "focus completion must refresh")
-    assertEqual(action.appearance(pomodoro).title, "Break 1/4")
-    assertEqual(action.appearance(pomodoro).state, "active")
+    focus = action.appearance(pomodoro)
+    assertEqual(focus.title, "01:59", "countdown must update from the Hammerspoon clock")
+    assertEqual(focus.progress, 1 / 120, "progress must represent elapsed phase time")
+    assertEqual(pomodoro.refreshes, 2, "each timer tick must refresh visible output")
 
+    now = now + 119
     run_timer()
-    assertEqual(scheduled.seconds, 25 * 60, "the next focus phase must be scheduled")
-    assertEqual(pomodoro.refreshes, 3, "break completion must refresh")
-    assertEqual(action.appearance(pomodoro).title, "Focus 2/4")
+    local short_break = action.appearance(pomodoro)
+    assertEqual(short_break.title, "01:00", "focus completion must enter the configured short break")
+    assertEqual(short_break.badge, "B1")
+    assertEqual(short_break.progress, 0)
+    assertEqual(short_break.backgroundColor, "#3F9B66", "breaks must use a distinct color")
 
-    for cycle = 2, 3 do
-      run_timer()
-      assertEqual(action.appearance(pomodoro).title,
-        string.format("Break %d/4", cycle),
-        "each focus phase must enter its matching break")
-      assertEqual(pomodoro.refreshes, cycle * 2, "focus transition must refresh")
-
-      run_timer()
-      assertEqual(action.appearance(pomodoro).title,
-        string.format("Focus %d/4", cycle + 1),
-        "each break must enter the next focus phase")
-      assertEqual(pomodoro.refreshes, cycle * 2 + 1, "break transition must refresh")
-    end
-
+    now = now + 60
     run_timer()
-    assertEqual(scheduled.seconds, 15 * 60, "the final cycle must enter a long break")
-    assertEqual(pomodoro.refreshes, 8, "final focus transition must refresh")
-    assertEqual(action.appearance(pomodoro).title, "Long break")
-    assertEqual(action.appearance(pomodoro).state, "active")
+    local second_focus = action.appearance(pomodoro)
+    assertEqual(second_focus.title, "02:00")
+    assertEqual(second_focus.badge, "F2")
+    assertEqual(second_focus.progress, 0)
 
+    now = now + 120
     run_timer()
-    assertEqual(pomodoro.refreshes, 9, "session completion must refresh")
-    assertEqual(action.appearance(pomodoro).title, "Done")
-    assertEqual(action.appearance(pomodoro).state, "inactive")
+    local long_break = action.appearance(pomodoro)
+    assertEqual(long_break.title, "03:00")
+    assertEqual(long_break.badge, "L2")
+    assertEqual(long_break.progress, 0)
+
+    now = now + 180
+    local completed_timer = scheduled
+    run_timer()
+    local complete = action.appearance(pomodoro)
+    assertEqual(complete.title, "Done")
+    assertEqual(complete.state, "inactive")
+    assertEqual(complete.progress, 1)
+    assertEqual(completed_timer.stop_calls, 1, "completion must stop the refresh timer")
 
     action.press(pomodoro)
-    assertEqual(scheduled.seconds, 25 * 60, "pressing Done must start a new session")
-    assertEqual(pomodoro.refreshes, 10)
+    local reset_timer = scheduled
+    assertEqual(action.appearance(pomodoro).title, "02:00")
     action.press(pomodoro)
-    assertEqual(scheduled.stop_calls, 1, "pressing a running session must stop its timer")
-    assertEqual(pomodoro.refreshes, 11, "stopping must refresh immediately")
-    assertEqual(action.appearance(pomodoro).title, "Start")
-    assertEqual(action.appearance(pomodoro).state, "inactive")
-
-    run_timer()
-    assertEqual(pomodoro.refreshes, 11, "a canceled timer must not update the button")
-    assertEqual(action.appearance(pomodoro).title, "Start")
+    assertEqual(reset_timer.stop_calls, 1, "pressing a running session must stop its timer")
+    assertEqual(pomodoro.refreshes, 8, "reset must refresh immediately")
+    local refreshes_after_reset = pomodoro.refreshes
+    reset_timer.callback()
+    assertEqual(pomodoro.refreshes, refreshes_after_reset, "stale reset callbacks must be ignored")
 
     action.press(pomodoro)
     local disappearing_timer = scheduled
     action.disappear(pomodoro)
     assertEqual(disappearing_timer.stop_calls, 1, "disappearing must stop the active timer")
+    local refreshes_after_disappear = pomodoro.refreshes
+    disappearing_timer.callback()
+    assertEqual(pomodoro.refreshes, refreshes_after_disappear, "stale disappear callbacks must be ignored")
     action.appear(pomodoro)
     assertEqual(action.appearance(pomodoro).title, "Start", "reappearing must reset the session")
+  end)
+
+  test("pomodoro example catches up elapsed phases from phase deadlines", function()
+    local now = 1000
+    local scheduled
+    local fake_hs = {
+      timer = {
+        secondsSinceEpoch = function()
+          return now
+        end,
+        doEvery = function(seconds, callback)
+          local timer = {
+            seconds = seconds,
+            callback = callback,
+            stop_calls = 0,
+          }
+          function timer:stop()
+            self.stop_calls = self.stop_calls + 1
+            return true
+          end
+          scheduled = timer
+          return timer
+        end,
+      },
+    }
+
+    local function run_timer()
+      local previous_hs = _G.hs
+      _G.hs = fake_hs
+      local ok, err = xpcall(scheduled.callback, debug.traceback)
+      _G.hs = previous_hs
+      if not ok then
+        error(err, 0)
+      end
+    end
+
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/pomodoro.lua", fake_hs)
+    local action = streamdeck.registrations[1]
+    local pomodoro = context("catch-up", {
+      focusMinutes = 1,
+      shortBreakMinutes = 1,
+      longBreakMinutes = 1,
+      cycles = 3,
+    })
+
+    action.appear(pomodoro)
+    action.press(pomodoro)
+
+    now = now + 245
+    run_timer()
+    local focus = action.appearance(pomodoro)
+    assertEqual(focus.title, "00:55", "late ticks must preserve wall-clock countdown")
+    assertEqual(focus.badge, "F3", "late ticks must catch up every elapsed phase")
+    assertEqual(focus.progress, 5 / 60, "progress must use the elapsed active phase time")
+    assertEqual(pomodoro.refreshes, 2, "catch-up must refresh once")
+
+    now = now + 115
+    local completed_timer = scheduled
+    run_timer()
+    local complete = action.appearance(pomodoro)
+    assertEqual(complete.title, "Done")
+    assertEqual(complete.progress, 1)
+    assertEqual(completed_timer.stop_calls, 1, "elapsed completion must stop the refresh timer")
+    assertEqual(pomodoro.refreshes, 3, "completion catch-up must refresh once")
   end)
 
   test("pomodoro example reports unavailable timer without refreshing", function()

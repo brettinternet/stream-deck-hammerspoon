@@ -77,6 +77,7 @@ end
 return {
   id = action_id,
   name = "Center window",
+  description = "Center the focused window without changing its size.",
 
   appearance = function(_context)
     if focused_window() == nil then

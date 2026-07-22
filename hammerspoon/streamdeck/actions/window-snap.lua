@@ -18,6 +18,7 @@ end
 return {
   id = action_id,
   name = "Snap focused window",
+  description = "Cycle the focused window through left-half, right-half, and full-screen layouts.",
 
   appear = function(context)
     layout_by_instance[context.instanceId] = 0

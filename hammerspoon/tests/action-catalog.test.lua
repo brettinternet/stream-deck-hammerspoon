@@ -77,6 +77,10 @@ return function(test, context, assertTrue, assertFalse, assertEqual, assertSame,
           terminated = 6,
         },
       },
+      audiodevice = {
+        allInputDevices = function() return {} end,
+        defaultInputDevice = function() return nil end,
+      },
     }
 
     local function bridge()
@@ -93,13 +97,27 @@ return function(test, context, assertTrue, assertFalse, assertEqual, assertSame,
     local catalog = require("streamdeck.actions")
     local all_bridge = bridge()
     local definitions = catalog.registerAll(all_bridge)
-    assertEqual(#definitions, 22, "the pedagogical per-instance demo must not ship as an action")
+    assertEqual(#definitions, 21, "meeting mode must not ship as an action")
 
     local ids = {}
     for _, definition in ipairs(definitions) do
       assertFalse(ids[definition.id], "catalog action IDs must be unique")
       ids[definition.id] = true
+      assertTrue(type(definition.description) == "string" and definition.description ~= "",
+        "every catalog action must have a non-empty description")
+      assertTrue(utf8.len(definition.description) <= 512,
+        "catalog action descriptions must be concise")
+      if definition.settingsSchema ~= nil then
+        for _, field in ipairs(definition.settingsSchema) do
+          assertTrue(type(field.description) == "string" and field.description ~= "",
+            "every catalog settings field must have a non-empty description")
+          assertTrue(utf8.len(field.description) <= 512,
+            "catalog settings field descriptions must be concise")
+        end
+      end
     end
+    assertFalse(ids["com.brettinternet.hammerspoon.meeting-mode"],
+      "meeting mode must not be present in the complete catalog")
 
     local invalid_bridge = bridge()
     assertError(function()

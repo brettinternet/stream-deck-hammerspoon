@@ -38,10 +38,11 @@ end
 return {
   id = "com.brettinternet.hammerspoon.url-launcher",
   name = "URL launcher",
+  description = "Open the configured URL when pressed.",
   settingsSchemaVersion = 1,
   settingsSchema = {
-    { type = "text", key = "label", maxLength = 32 },
-    { type = "text", key = "url", maxLength = 1024 },
+    { type = "text", key = "label", maxLength = 32, description = "Text shown on the Stream Deck key; defaults to Open URL." },
+    { type = "text", key = "url", maxLength = 1024, description = "URL to open; defaults to https://www.hammerspoon.org/." },
   },
 
   appearance = function(context)

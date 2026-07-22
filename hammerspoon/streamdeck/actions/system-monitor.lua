@@ -267,6 +267,7 @@ end
 return {
   id = action_id,
   name = "System monitor",
+  description = "View live CPU and RAM usage; press to switch metrics.",
 
   appear = function(context)
     local instance_id = context.instanceId

@@ -444,6 +444,23 @@ test("registry rejects malformed definitions and duplicate IDs", function()
     release = true,
   }), "non-function release callbacks must be rejected")
   registry:register(definition)
+  for index, badDescription in ipairs({ "", 0, string.rep("😀", 513) }) do
+    assertFalse(pcall(registry.register, registry, {
+      id = "com.test.bad-action-description-" .. tostring(index),
+      name = "Bad action description",
+      description = badDescription,
+      appearance = function() end,
+      press = function() end,
+    }), "malformed or overlong action descriptions must be rejected")
+    assertFalse(pcall(registry.register, registry, {
+      id = "com.test.bad-field-description-" .. tostring(index),
+      name = "Bad field description",
+      settingsSchemaVersion = 1,
+      settingsSchema = {{ type = "text", key = "label", description = badDescription }},
+      appearance = function() end,
+      press = function() end,
+    }), "malformed or overlong field descriptions must be rejected")
+  end
   assertFalse(pcall(registry.register, registry, definition), "duplicate IDs must be rejected")
   assertEqual(#registry:list(), 1, "duplicate registration must not append")
 end)
@@ -627,8 +644,10 @@ test("built-in Hammerspoon utility actions register idempotently", function()
   assertEqual(#actions, 2, "built-ins must not be duplicated")
   assertEqual(actions[1].actionId, "com.brettinternet.hammerspoon.reload")
   assertEqual(actions[1].name, "Reload Hammerspoon")
+  assertEqual(actions[1].description, "Reload the Hammerspoon configuration.")
   assertEqual(actions[2].actionId, "com.brettinternet.hammerspoon.console")
   assertEqual(actions[2].name, "Toggle Hammerspoon Console")
+  assertEqual(actions[2].description, "Show or hide the Hammerspoon Console.")
 
   local reloadAction = registry:get("com.brettinternet.hammerspoon.reload")
   assertEqual(reloadAction.appearance().title, "Reload")
@@ -720,19 +739,22 @@ test("streamdeck module publishes built-in utility actions", function()
 end)
 
 test("action listing preserves names and order", function()
+  local maximumDescription = string.rep("😀", 512)
   local registry = Registry.new()
   registry:register({
     id = "com.test.first",
     name = "First action",
+    description = maximumDescription,
     appearance = function() return { title = "First", state = "inactive" } end,
     press = function() end,
   })
   registry:register({
     id = "com.test.second",
     name = "Second action",
+    description = maximumDescription,
     settingsSchemaVersion = 1,
     settingsSchema = {
-      { type = "text", key = "label" },
+      { type = "text", key = "label", description = maximumDescription },
     },
     appearance = function() return { title = "Second", state = "active" } end,
     press = function() end,
@@ -753,10 +775,12 @@ test("action listing preserves names and order", function()
     assertEqual(responses[1].type, "actions")
     assertEqual(responses[1].actions[1].actionId, "com.test.first")
     assertEqual(responses[1].actions[1].name, "First action")
+    assertEqual(responses[1].actions[1].description, maximumDescription)
     assertEqual(responses[1].actions[2].actionId, "com.test.second")
     assertEqual(responses[1].actions[2].name, "Second action")
+    assertEqual(responses[1].actions[2].description, maximumDescription)
     assertEqual(responses[1].actions[2].settingsSchemaVersion, 1)
-    assertTrue(responses[1].actions[2].settingsSchema ~= nil, "settings schema must be listed")
+    assertEqual(responses[1].actions[2].settingsSchema[1].description, maximumDescription)
     server:stop()
   end)
 end)

@@ -59,6 +59,7 @@ export interface BridgeDiagnosticStatus {
 export interface BridgeAction {
   actionId: string;
   name: string;
+  description?: string;
   settingsSchema?: JsonValue[];
   settingsSchemaVersion?: number;
 }
@@ -240,6 +241,7 @@ function copyAction(action: BridgeAction): BridgeAction {
   return {
     actionId: action.actionId,
     name: action.name,
+    ...(action.description === undefined ? {} : { description: action.description }),
     ...(action.settingsSchema === undefined
       ? {}
       : { settingsSchema: action.settingsSchema.map(copyJsonValue) }),

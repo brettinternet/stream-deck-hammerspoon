@@ -336,6 +336,7 @@ end
 local MAX_SETTINGS_FIELDS = 32
 local MAX_SETTINGS_KEY_LENGTH = 64
 local MAX_SETTINGS_LABEL_LENGTH = 128
+local MAX_DESCRIPTION_LENGTH = 512
 local MAX_SETTINGS_TEXT_LENGTH = 4096
 local MAX_SETTINGS_NUMBER = 1000000000000
 local MAX_SETTINGS_OPTIONS = 64
@@ -908,7 +909,7 @@ local function isAppearanceIcon(value)
 end
 local function validateSettingsField(field, seenKeys)
   local kind = rawget(field, "type")
-  local allowed = { type = true, key = true, label = true, required = true, default = true }
+  local allowed = { type = true, key = true, label = true, description = true, required = true, default = true }
   if kind == "text" then
     allowed.minLength = true
     allowed.maxLength = true
@@ -925,6 +926,7 @@ local function validateSettingsField(field, seenKeys)
     if not allowed[key] then return false end
   end
   if rawget(field, "label") ~= nil and not boundedString(rawget(field, "label"), MAX_SETTINGS_LABEL_LENGTH) then return false end
+  if rawget(field, "description") ~= nil and not boundedString(rawget(field, "description"), MAX_DESCRIPTION_LENGTH) then return false end
   if rawget(field, "required") ~= nil and type(rawget(field, "required")) ~= "boolean" then return false end
   local fieldKey = rawget(field, "key")
   if seenKeys[fieldKey] then return false end
@@ -989,6 +991,9 @@ local function validateActions(actions)
         or not isNonEmptyString(rawget(action, "actionId"))
         or not isNonEmptyString(rawget(action, "name"))
         or seen[rawget(action, "actionId")] then
+      return false, "INVALID_FIELD"
+    end
+    if rawget(action, "description") ~= nil and not boundedString(rawget(action, "description"), MAX_DESCRIPTION_LENGTH) then
       return false, "INVALID_FIELD"
     end
     local settingsSchema = rawget(action, "settingsSchema")
