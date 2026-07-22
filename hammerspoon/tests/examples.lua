@@ -84,7 +84,7 @@ local function load_fixture(path, fake_hs)
     for key, value in pairs(definition) do
       registered[key] = value
     end
-    for _, field in ipairs({ "appearance", "press", "longPress", "appear", "disappear" }) do
+    for _, field in ipairs({ "appearance", "press", "longPress", "appear", "disappear", "rotate" }) do
       if type(definition[field]) == "function" then
         local callback = definition[field]
         registered[field] = function(...)
@@ -998,6 +998,8 @@ dofile("hammerspoon/tests/meeting-mode-example.lua")(
 dofile("hammerspoon/tests/pomodoro-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/lock-screen-example.lua")(
+  test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
+dofile("hammerspoon/tests/spotify-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 
 dofile("hammerspoon/tests/action-catalog.test.lua")(
