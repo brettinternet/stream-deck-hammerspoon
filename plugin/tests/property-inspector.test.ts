@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, vi } from "bun:test";
 
 type Listener = () => void;
 
@@ -31,6 +31,10 @@ class FakeElement {
     this.attributes.set(name, value);
   }
 
+  removeAttribute(name: string): void {
+    this.attributes.delete(name);
+  }
+
   addEventListener(type: string, listener: Listener): void {
     this.listeners.set(type, listener);
   }
@@ -50,41 +54,43 @@ class FakeElement {
 
 class FakeDocument {
   readonly actionSelect = new FakeElement("select");
+  readonly actionSearch = new FakeElement("input");
+  readonly actionGestures = new FakeElement("p");
+  readonly previewDevice = new FakeElement("div");
+  readonly previewTitle = new FakeElement("span");
+  readonly previewIcon = new FakeElement("img");
+  readonly previewBadge = new FakeElement("span");
+  readonly previewProgress = new FakeElement("span");
+  readonly previewValue = new FakeElement("span");
   readonly actionDescription = new FakeElement("p");
   readonly connectionStatus = new FakeElement("p");
   readonly connectionDetails = new FakeElement("p");
   readonly setupGuideButton = new FakeElement("button");
   readonly actionSettings = new FakeElement("section");
   readonly settingsStatus = new FakeElement("p");
+  readonly resetActionButton = new FakeElement("button");
   getElementById(id: string): FakeElement | null {
-    if (id === "action-id") {
-      return this.actionSelect;
-    }
-    if (id === "action-description") {
-      return this.actionDescription;
-    }
-    if (id === "connection-status") {
-      return this.connectionStatus;
-    }
-    if (id === "connection-details") {
-      return this.connectionDetails;
-    }
-    if (id === "setup-guide") {
-      return this.setupGuideButton;
-    }
-    if (id === "action-settings") {
-      return this.actionSettings;
-    }
-    if (id === "settings-status") {
-      return this.settingsStatus;
-    }
+    if (id === "action-id") return this.actionSelect;
+    if (id === "action-search") return this.actionSearch;
+    if (id === "action-description") return this.actionDescription;
+    if (id === "action-gestures") return this.actionGestures;
+    if (id === "preview-device") return this.previewDevice;
+    if (id === "preview-title") return this.previewTitle;
+    if (id === "preview-icon") return this.previewIcon;
+    if (id === "preview-badge") return this.previewBadge;
+    if (id === "preview-progress") return this.previewProgress;
+    if (id === "preview-value") return this.previewValue;
+    if (id === "connection-status") return this.connectionStatus;
+    if (id === "connection-details") return this.connectionDetails;
+    if (id === "setup-guide") return this.setupGuideButton;
+    if (id === "action-settings") return this.actionSettings;
+    if (id === "settings-status") return this.settingsStatus;
+    if (id === "reset-action") return this.resetActionButton;
     return null;
   }
 
   createElement(tagName: string): FakeElement | FakeOption {
-    if (tagName === "option") {
-      return { value: "", textContent: null, disabled: false };
-    }
+    if (tagName === "option") return { value: "", textContent: null, disabled: false };
     return new FakeElement(tagName);
   }
 }
@@ -376,7 +382,7 @@ describe.serial("property inspector", () => {
       }
       expect(environment.document.connectionStatus.textContent).toBe("Connected");
       expect(environment.document.actionSelect.children).toEqual(expectedOptions);
-      expect(environment.document.actionDescription.textContent).toBe("");
+      expect(environment.document.actionDescription.textContent).toBe("Known description");
 
       environment.connect(28197, "context-02", "registerAgain", "", "{}");
       const secondSocket = FakeSocket.instances[1]!;
@@ -923,6 +929,243 @@ describe.serial("property inspector", () => {
       expect(environment.document.actionSelect.disabled).toBe(false);
     } finally {
       environment.restore();
+    }
+  });
+
+  test("renders categorized live previews and interactive action settings", async () => {
+    vi.useFakeTimers();
+    const environment = await installEnvironment();
+    try {
+      environment.connect(
+        28196,
+        "context-01",
+        "register",
+        "",
+        JSON.stringify({
+          context: "context-01",
+          payload: {
+            settings: {
+              actionId: "audio",
+              inputDevice: "missing",
+              muteMeetingApps: false,
+            },
+          },
+        }),
+      );
+      const socket = FakeSocket.instances[0]!;
+      socket.open();
+      const inputOptions = [
+        { value: "default", label: "Default input" },
+        { value: "missing", label: "Studio Mic" },
+      ];
+      const keypadPreview = {
+        title: "Studio Mic — Muted",
+        state: 1,
+        appearanceVersion: 1,
+        badge: "SM",
+        progress: 0.4,
+        backgroundColor: "#281315",
+        foregroundColor: "#FFFFFF",
+        icon: { kind: "bundled", name: "hammerspoon" },
+      };
+      const actions = [
+        action("app", "Launch app", {
+          category: "Applications",
+          description: "Launch an application.",
+          gesture: "Press: launch or focus",
+        }),
+        action("audio", "Microphone mute", {
+          category: "Audio",
+          description: "Control a microphone.",
+          gesture: "Press: toggle · Hold: talk",
+          settingsSchemaVersion: 1,
+          settingsSchema: [
+            {
+              type: "select",
+              key: "inputDevice",
+              label: "Input device",
+              description: "Choose a microphone.",
+              options: inputOptions,
+              default: "default",
+              refreshable: true,
+            },
+            {
+              type: "boolean",
+              key: "muteMeetingApps",
+              label: "Integrate meeting apps",
+              default: false,
+            },
+            {
+              type: "boolean",
+              key: "muteZoom",
+              label: "Zoom",
+              default: true,
+              visibleWhen: { key: "muteMeetingApps", equals: true },
+              section: "Meeting apps",
+            },
+          ],
+        }),
+        action("spotify", "Spotify controls", {
+          category: "Media",
+          description: "Control Spotify.",
+          gesture: "Press: play or pause",
+          settingsSchemaVersion: 1,
+          settingsSchema: [
+            {
+              type: "select",
+              key: "dialControl",
+              label: "Dial control",
+              controllers: ["encoder"],
+              options: [{ value: "volume", label: "Volume" }],
+              default: "volume",
+            },
+          ],
+        }),
+      ];
+      socket.message(JSON.stringify({
+        event: "sendToPropertyInspector",
+        payload: {
+          type: "bridgeState",
+          status: "connected",
+          controller: "keypad",
+          preview: keypadPreview,
+          actions,
+        },
+      }));
+
+      expect(environment.document.actionDescription.textContent).toBe("Control a microphone.");
+      expect(sentFrames(socket).filter((frame) => frame.event === "setSettings").at(-1)?.payload).toMatchObject({
+        __optionLabels: {
+          audio: { inputDevice: { missing: "Studio Mic" } },
+        },
+      });
+      inputOptions.splice(1, 1);
+      socket.message(JSON.stringify({
+        event: "sendToPropertyInspector",
+        payload: {
+          type: "bridgeState",
+          status: "connected",
+          controller: "keypad",
+          preview: keypadPreview,
+          actions,
+        },
+      }));
+      socket.message(JSON.stringify({
+        event: "sendToPropertyInspector",
+        payload: {
+          type: "inspectorFeedback",
+          kind: "success",
+          message: "Microphone muted",
+          durationMs: 100,
+        },
+      }));
+      expect(environment.document.settingsStatus.textContent).toBe("Microphone muted");
+      expect(environment.document.settingsStatus.attributes.get("data-feedback")).toBe("success");
+      socket.message(JSON.stringify({
+        event: "sendToPropertyInspector",
+        payload: {
+          type: "previewState",
+          controller: "keypad",
+          appearance: keypadPreview,
+        },
+      }));
+      expect(environment.document.settingsStatus.textContent).toBe("Microphone muted");
+      expect(environment.document.settingsStatus.attributes.get("data-feedback")).toBe("success");
+      expect(environment.document.actionGestures.textContent).toBe("Press: toggle · Hold: talk");
+      expect(environment.document.previewTitle.textContent).toBe("Studio Mic — Muted");
+      expect(environment.document.previewBadge.textContent).toBe("SM");
+      expect(environment.document.previewProgress.attributes.get("style")).toBe("width:40%");
+      expect(environment.document.previewDevice.attributes.get("class")).toBe("preview-device keypad");
+      expect(environment.document.previewIcon.attributes.get("src")).toBe("../imgs/plugin.svg");
+      expect(environment.document.actionSelect.children).toHaveLength(4);
+      const applicationGroup = environment.document.actionSelect.children[1] as FakeElement;
+      const audioGroup = environment.document.actionSelect.children[2] as FakeElement;
+      const mediaGroup = environment.document.actionSelect.children[3] as FakeElement;
+      expect(applicationGroup.attributes.get("label")).toBe("Applications");
+      expect(audioGroup.attributes.get("label")).toBe("Audio");
+      expect(mediaGroup.attributes.get("label")).toBe("Media");
+
+      expect(environment.document.actionSettings.children).toHaveLength(2);
+      let inputWrapper = environment.document.actionSettings.children[0] as FakeElement;
+      const inputControl = inputWrapper.children[0] as FakeElement;
+      expect(inputControl.value).toBe("missing");
+      expect(inputControl.children.at(-1)).toMatchObject({
+        value: "missing",
+        textContent: "Unavailable — Studio Mic",
+      });
+
+      environment.document.actionSearch.value = "spotify";
+      environment.document.actionSearch.dispatch("input");
+      expect(environment.document.actionSelect.children).toHaveLength(3);
+      expect((environment.document.actionSelect.children[1] as FakeElement).attributes.get("label")).toBe("Audio");
+      expect((environment.document.actionSelect.children[2] as FakeElement).attributes.get("label")).toBe("Media");
+      environment.document.actionSearch.value = "";
+      environment.document.actionSearch.dispatch("input");
+
+      let meetingWrapper = environment.document.actionSettings.children[1] as FakeElement;
+      const meetingControl = meetingWrapper.children[0] as FakeElement;
+      meetingControl.checked = true;
+      meetingControl.dispatch("change");
+      expect(environment.document.actionSettings.children).toHaveLength(3);
+      const meetingSection = environment.document.actionSettings.children[2] as FakeElement;
+      expect((meetingSection.children[0] as FakeElement).textContent).toBe("Meeting apps");
+      expect(sentFrames(socket).filter((frame) => frame.event === "setSettings").at(-1)?.payload).toMatchObject({
+        actionId: "audio",
+        muteMeetingApps: true,
+      });
+
+      inputWrapper = environment.document.actionSettings.children[0] as FakeElement;
+      (inputWrapper.children[4] as FakeElement).dispatch("click");
+      expect(sentFrames(socket).filter((frame) => frame.event === "sendToPlugin").at(-1)?.payload).toEqual({
+        type: "refreshActions",
+      });
+
+      meetingWrapper = environment.document.actionSettings.children[1] as FakeElement;
+      (meetingWrapper.children[2] as FakeElement).dispatch("click");
+      expect(environment.document.actionSettings.children).toHaveLength(2);
+      expect(sentFrames(socket).filter((frame) => frame.event === "setSettings").at(-1)?.payload).toMatchObject({
+        actionId: "audio",
+        muteMeetingApps: false,
+      });
+
+      environment.document.resetActionButton.dispatch("click");
+      expect(environment.document.settingsStatus.textContent).toBe("Action settings reset.");
+      vi.advanceTimersByTime(100);
+      expect(environment.document.settingsStatus.textContent).toBe("Action settings reset.");
+      expect(sentFrames(socket).filter((frame) => frame.event === "setSettings").at(-1)?.payload).toMatchObject({
+        actionId: "audio",
+        inputDevice: "default",
+        muteMeetingApps: false,
+        muteZoom: true,
+      });
+
+      environment.document.actionSelect.value = "spotify";
+      environment.document.actionSelect.dispatch("change");
+      expect(environment.document.actionSettings.children).toHaveLength(0);
+      socket.message(JSON.stringify({
+        event: "sendToPropertyInspector",
+        payload: {
+          type: "bridgeState",
+          status: "connected",
+          controller: "encoder",
+          actions,
+          preview: {
+            title: "Volume",
+            state: 1,
+            appearanceVersion: 1,
+            value: "35%",
+            indicator: 35,
+          },
+        },
+      }));
+      expect(environment.document.actionSettings.children).toHaveLength(1);
+      expect(((environment.document.actionSettings.children[0] as FakeElement).children[0] as FakeElement).value)
+        .toBe("volume");
+      expect(environment.document.previewProgress.attributes.get("style")).toBe("width:35%");
+      expect(environment.document.previewValue.textContent).toBe("35%");
+    } finally {
+      environment.restore();
+      vi.useRealTimers();
     }
   });
 });

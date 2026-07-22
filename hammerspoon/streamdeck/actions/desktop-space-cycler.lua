@@ -93,6 +93,8 @@ return {
   id = action_id,
   name = "Desktop space cycler",
   description = "Switch to the next user desktop Space, skipping full-screen and tiled Spaces.",
+  category = "Windows",
+  gesture = "Press: move to the next desktop Space",
 
   appearance = function(_context)
     local spaces, screen = spaces_api()
@@ -114,6 +116,7 @@ return {
       error("failed to switch Spaces desktop")
     end
     refresh_after_transition(context)
+    context:success("Desktop " .. tostring(next_index), 850)
   end,
 }
 

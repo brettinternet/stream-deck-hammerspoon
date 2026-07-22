@@ -2,6 +2,7 @@
 -- The window keeps its relative position and size, and the destination frame is kept inside the display.
 
 local action_id = "com.brettinternet.hammerspoon.window-next-screen"
+local helpers = require("streamdeck.helpers")
 
 local function focused_window()
   if type(hs) ~= "table"
@@ -47,26 +48,19 @@ return {
   id = action_id,
   name = "Move window to next screen",
   description = "Move the focused window to the next screen.",
+  category = "Windows",
+  gesture = "Press: move the focused window to the next display",
 
   appearance = function(_context)
     local window = focused_window()
-    if not window then
-      return {
-        title = "No window",
-        state = "inactive",
-      }
-    end
-
-    if not next_screen_for(window) then
-      return {
-        title = "One display",
-        state = "inactive",
-      }
-    end
-
+    local has_next = window ~= nil and next_screen_for(window) ~= nil
     return {
-      title = "Next display",
+      title = window == nil and "No window" or (has_next and "Next display" or "One display"),
       state = "inactive",
+      appearanceVersion = 1,
+      icon = helpers.icon("next-screen", {
+        foregroundColor = has_next and helpers.colors.accent or helpers.colors.inactive,
+      }),
     }
   end,
 
@@ -91,6 +85,7 @@ return {
     if not result then
       error("failed to move focused window")
     end
+    context:success("Moved to next display", 850)
 
   end,
 }

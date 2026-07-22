@@ -2,6 +2,7 @@
 -- Pressing the key uses Hammerspoon's toggleZoom API and tracks the zoom state independently per key.
 
 local action_id = "com.brettinternet.hammerspoon.window-maximize"
+local helpers = require("streamdeck.helpers")
 local zoomed_by_instance = {}
 
 local function focused_window()
@@ -32,6 +33,8 @@ return {
   id = action_id,
   name = "Zoom focused window",
   description = "Toggle zoom for the focused window.",
+  category = "Windows",
+  gesture = "Press: toggle maximize",
 
   appear = function(context)
     zoomed_by_instance[context.instanceId] = false
@@ -39,16 +42,14 @@ return {
 
   appearance = function(context)
     local window = focused_window()
-    if not window then
-      return {
-        title = "No window",
-        state = "inactive",
-      }
-    end
-
+    local available = window ~= nil
     return {
-      title = window_name(window),
-      state = zoomed_by_instance[context.instanceId] and "active" or "inactive",
+      title = available and window_name(window) or "No window",
+      state = available and zoomed_by_instance[context.instanceId] and "active" or "inactive",
+      appearanceVersion = 1,
+      icon = helpers.icon("maximize", {
+        foregroundColor = available and helpers.colors.accent or helpers.colors.inactive,
+      }),
     }
   end,
 
@@ -65,6 +66,7 @@ return {
     end
 
     zoomed_by_instance[context.instanceId] = not zoomed_by_instance[context.instanceId]
+    context:success(zoomed_by_instance[context.instanceId] and "Window maximized" or "Window restored", 850)
   end,
 
   disappear = function(context)

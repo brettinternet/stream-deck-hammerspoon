@@ -102,6 +102,65 @@ local function isHexColor(value)
   return type(value) == "string"
     and value:match("^#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]$") ~= nil
 end
+helpers.colors = {
+  background = "#111827",
+  active = "#22C55E",
+  inactive = "#64748B",
+  accent = "#38BDF8",
+  warning = "#F59E0B",
+  error = "#EF4444",
+  foreground = "#F8FAFC",
+}
+
+local iconShapes = {
+  speaker = [[<path d="M14 30h12l14-12v36L26 42H14z" fill="currentColor"/><path d="M47 27a14 14 0 0 1 0 18M53 20a24 24 0 0 1 0 32" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>]],
+  headphones = [[<path d="M14 39v-7a22 22 0 0 1 44 0v7" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><rect x="10" y="36" width="14" height="24" rx="6" fill="currentColor"/><rect x="48" y="36" width="14" height="24" rx="6" fill="currentColor"/>]],
+  display = [[<rect x="9" y="12" width="54" height="38" rx="5" fill="none" stroke="currentColor" stroke-width="5"/><path d="M27 61h18M36 50v11" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>]],
+  keyboard = [[<rect x="7" y="18" width="58" height="38" rx="6" fill="none" stroke="currentColor" stroke-width="5"/><path d="M16 29h5m7 0h5m7 0h5m7 0h5M16 40h5m7 0h5m7 0h5m7 0h5M20 49h32" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>]],
+  clipboard = [[<rect x="15" y="12" width="42" height="50" rx="6" fill="none" stroke="currentColor" stroke-width="5"/><rect x="26" y="7" width="20" height="12" rx="5" fill="currentColor"/><path d="M25 33h22M25 44h18" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>]],
+  ["clipboard-check"] = [[<rect x="15" y="12" width="42" height="50" rx="6" fill="none" stroke="currentColor" stroke-width="5"/><rect x="26" y="7" width="20" height="12" rx="5" fill="currentColor"/><path d="m24 40 8 8 17-19" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>]],
+  sun = [[<circle cx="36" cy="36" r="13" fill="currentColor"/><path d="M36 7v9m0 40v9M7 36h9m40 0h9M15 15l7 7m28 28 7 7M57 15l-7 7M22 50l-7 7" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>]],
+  moon = [[<path d="M53 49A25 25 0 0 1 25 13a26 26 0 1 0 28 36z" fill="currentColor"/>]],
+  rocket = [[<path d="M42 10c10 0 18 1 20 3 2 2 3 10 3 20L42 56 18 32z" fill="currentColor"/><circle cx="47" cy="27" r="7" fill="#111827"/><path d="m21 38-9 4-5 15 15-5 4-9M32 53l-2 12 12-8" fill="currentColor"/>]],
+  link = [[<path d="M29 44l-5 5a12 12 0 0 1-17-17l10-10a12 12 0 0 1 17 0M43 28l5-5a12 12 0 1 1 17 17L55 50a12 12 0 0 1-17 0M24 36h24" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>]],
+  spotify = [[<circle cx="36" cy="36" r="30" fill="currentColor"/><path d="M19 28c13-4 31-2 40 3M21 39c12-3 26-1 35 3M24 49c10-2 20-1 28 3" fill="none" stroke="#111827" stroke-width="5" stroke-linecap="round"/>]],
+  center = [[<rect x="8" y="8" width="56" height="56" rx="6" fill="none" stroke="currentColor" stroke-width="4"/><rect x="24" y="24" width="24" height="24" rx="3" fill="currentColor"/>]],
+  maximize = [[<rect x="8" y="8" width="56" height="56" rx="6" fill="none" stroke="currentColor" stroke-width="5"/><rect x="17" y="17" width="38" height="38" rx="3" fill="currentColor"/>]],
+  ["next-screen"] = [[<rect x="5" y="15" width="28" height="38" rx="4" fill="none" stroke="currentColor" stroke-width="4"/><rect x="39" y="15" width="28" height="38" rx="4" fill="none" stroke="currentColor" stroke-width="4"/><path d="M24 34h26m-7-7 7 7-7 7" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>]],
+  ["snap-left"] = [[<rect x="8" y="8" width="56" height="56" rx="6" fill="none" stroke="currentColor" stroke-width="4"/><path d="M10 10h26v52H10z" fill="currentColor"/>]],
+  ["snap-right"] = [[<rect x="8" y="8" width="56" height="56" rx="6" fill="none" stroke="currentColor" stroke-width="4"/><path d="M36 10h26v52H36z" fill="currentColor"/>]],
+  ["snap-top"] = [[<rect x="8" y="8" width="56" height="56" rx="6" fill="none" stroke="currentColor" stroke-width="4"/><path d="M10 10h52v26H10z" fill="currentColor"/>]],
+  ["snap-bottom"] = [[<rect x="8" y="8" width="56" height="56" rx="6" fill="none" stroke="currentColor" stroke-width="4"/><path d="M10 36h52v26H10z" fill="currentColor"/>]],
+}
+
+function helpers.icon(name, options)
+  local shape = iconShapes[name]
+  if shape == nil then
+    error("Unknown Stream Deck icon: " .. tostring(name), 2)
+  end
+  if options ~= nil and type(options) ~= "table" then
+    error("Stream Deck icon options must be a table", 2)
+  end
+  local settings = options or {}
+  for key in pairs(settings) do
+    if key ~= "backgroundColor" and key ~= "foregroundColor" then
+      error("Unknown Stream Deck icon option: " .. tostring(key), 2)
+    end
+  end
+  local background = settings.backgroundColor or helpers.colors.background
+  local foreground = settings.foregroundColor or helpers.colors.foreground
+  if not isHexColor(background) or not isHexColor(foreground) then
+    error("Stream Deck icon colors must be six-digit #RRGGBB values", 2)
+  end
+  shape = shape:gsub("currentColor", foreground)
+  return helpers.svg(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><rect width="72" height="72" rx="12" fill="'
+      .. background
+      .. '"/>'
+      .. shape
+      .. "</svg>"
+  )
+end
 
 local function formatChartNumber(value)
   local rounded = math.floor(value * 1000 + 0.5) / 1000

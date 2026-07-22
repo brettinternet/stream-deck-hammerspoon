@@ -2498,12 +2498,16 @@ test("callback exceptions are protected and reported", function()
       instanceId = "callback-instance",
       actionId = "com.test.callback-error",
     }))
-    assertError("CALLBACK_FAILED", responses)
+    assertEqual(responses[1].type, "feedback", "callback failures should emit immediate feedback")
+    assertEqual(responses[1].kind, "error", "callback failure feedback should be an error")
+    assertEqual(responses[1].message, "Action failed", "callback failure feedback should be concise")
+    assertError("CALLBACK_FAILED", { responses[2] })
     local releaseResponses = exchange(server, message("keyUp", {
       instanceId = "callback-instance",
       actionId = "com.test.callback-error",
     }))
-    assertError("CALLBACK_FAILED", releaseResponses)
+    assertEqual(releaseResponses[1].type, "feedback", "release failures should emit immediate feedback")
+    assertError("CALLBACK_FAILED", { releaseResponses[2] })
     server:stop()
   end)
 end)

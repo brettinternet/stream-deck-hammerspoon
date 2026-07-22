@@ -955,6 +955,55 @@ describe("HammerspoonAction", () => {
     expect(propertyInspectorMessages).toHaveLength(1);
   });
 
+  test("includes inspected controller and latest appearance in bridge state", async () => {
+    propertyInspectorMessages.length = 0;
+    const bridge = new FakeBridge();
+    bridge.status = "connected";
+    bridge.actions = [{
+      actionId: "action.id",
+      name: "Action",
+      description: "Action description",
+      category: "Media",
+      gesture: "Press: run",
+    }];
+    const adapter = makeAction(bridge);
+    const dial = new FakeAction("preview-instance", false, {
+      controllerType: "Encoder",
+      device: { type: 7, size: { columns: 4, rows: 2 } },
+    });
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(dial, { actionId: "action.id" }));
+    const appearance = {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: dial.id,
+      actionId: "action.id",
+      title: "Now playing",
+      state: 1,
+      appearanceVersion: 1,
+      badge: "Ⅱ",
+      progress: 0.5,
+    } as const;
+    bridge.emit("appearance", appearance);
+    await flush();
+    propertyInspectorMessages.length = 0;
+
+    await adapter.onSendToPlugin({ action: dial, payload: { type: "requestState" } } as never);
+    expect(propertyInspectorMessages).toEqual([{
+      type: "bridgeState",
+      status: "connected",
+      controller: "encoder",
+      preview: appearance,
+      actions: [{
+        actionId: "action.id",
+        name: "Action",
+        description: "Action description",
+        category: "Media",
+        gesture: "Press: run",
+      }],
+    }]);
+  });
+
   test("includes safe diagnostics in offline bridge state", async () => {
     propertyInspectorMessages.length = 0;
     const bridge = new FakeBridge();

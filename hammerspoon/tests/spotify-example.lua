@@ -20,6 +20,8 @@ return function(test, load_fixture, context, assertTrue, _, assertEqual)
       end,
       getCurrentArtist = function() return "Test Artist" end,
       getCurrentTrackArtworkURL = function() return "artwork-token" end,
+      getPosition = function() return 30 end,
+      getDuration = function() return 120 end,
       getVolume = function()
         get_volume_calls = get_volume_calls + 1
         return volume
@@ -83,15 +85,18 @@ return function(test, load_fixture, context, assertTrue, _, assertEqual)
         and action.settingsSchema[1].description ~= "",
       "Spotify dial setting description must explain rotation behavior")
     assertEqual(action.settingsSchema[1].default, "volume")
+    assertEqual(action.settingsSchema[1].controllers[1], "encoder")
     action.appear(button)
     action.appear(volume_dial)
     action.appear(track_dial)
     assertEqual(scheduled.seconds, 2)
 
     local initial_button = action.appearance(button)
-    assertEqual(initial_button.title, "Test Track")
+    assertEqual(initial_button.title, "Test Artist\nTest Track")
     assertEqual(initial_button.state, "inactive")
-    assertEqual(initial_button.icon, nil, "artwork must not be emitted before it is fetched")
+    assertEqual(initial_button.icon.kind, "custom", "fallback Spotify artwork must be visible while fetching")
+    assertEqual(initial_button.badge, "▶")
+    assertEqual(initial_button.progress, 0.25)
 
     local artwork_image = {
       bitmapRepresentation = function(_, size)
@@ -138,6 +143,10 @@ return function(test, load_fixture, context, assertTrue, _, assertEqual)
       "pressing while Spotify is running must sample volume immediately")
     assertEqual(playpause_calls, 1,
       "pressing while Spotify is running must delegate to playpause")
+    local playing_button = action.appearance(button)
+    assertEqual(playing_button.state, "active")
+    assertEqual(playing_button.badge, "Ⅱ")
+    assertEqual(playing_button.progress, 0.25)
 
     action.rotate(volume_dial, 2, false)
     local volume_appearance = action.appearance(volume_dial)
@@ -182,6 +191,9 @@ return function(test, load_fixture, context, assertTrue, _, assertEqual)
         return "Started Track"
       end,
       getCurrentTrackArtworkURL = function() return nil end,
+      getCurrentArtist = function() return "Started Artist" end,
+      getPosition = function() return 10 end,
+      getDuration = function() return 100 end,
       getVolume = function()
         get_volume_calls = get_volume_calls + 1
         return 40
@@ -228,15 +240,15 @@ return function(test, load_fixture, context, assertTrue, _, assertEqual)
       "closed Spotify press must not eagerly fetch the current track")
     assertEqual(get_volume_calls, 0,
       "closed Spotify press must not eagerly fetch volume")
-    assertEqual(action.appearance(button).title, "Spotify closed",
-      "closed Spotify must retain its state until the refresh timer samples startup")
+    assertEqual(action.appearance(button).title, "Spotify unavailable",
+      "closed Spotify must show an explicit unavailable state until startup is sampled")
 
     scheduled.callback()
     assertEqual(get_current_track_calls, 1,
       "refresh timer must sample the current track after Spotify starts")
     assertEqual(get_volume_calls, 1,
       "refresh timer must sample volume after Spotify starts")
-    assertEqual(action.appearance(button).title, "Started Track")
+    assertEqual(action.appearance(button).title, "Started Artist\nStarted Track")
     action.disappear(button)
   end)
 end

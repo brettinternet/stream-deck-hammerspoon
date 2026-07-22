@@ -17301,6 +17301,52 @@ var $defs = {
 		maxLength: 512,
 		description: "Optional human-readable metadata bounded to 512 Unicode code points."
 	},
+	actionCategory: {
+		type: "string",
+		"enum": [
+			"Applications",
+			"Audio",
+			"Productivity",
+			"Windows",
+			"System",
+			"Media"
+		]
+	},
+	settingsController: {
+		type: "string",
+		"enum": [
+			"keypad",
+			"encoder"
+		]
+	},
+	settingsVisibility: {
+		type: "object",
+		properties: {
+			key: {
+				type: "string",
+				minLength: 1,
+				maxLength: 64
+			},
+			equals: {
+				oneOf: [
+					{
+						type: "string"
+					},
+					{
+						type: "number"
+					},
+					{
+						type: "boolean"
+					}
+				]
+			}
+		},
+		required: [
+			"key",
+			"equals"
+		],
+		additionalProperties: false
+	},
 	settings: {
 		type: "object",
 		description: "Application-owned JSON object. Keys and values are opaque to protocol v1.",
@@ -17411,6 +17457,23 @@ var $defs = {
 				type: "boolean"
 			},
 			"default": {
+			},
+			controllers: {
+				type: "array",
+				minItems: 1,
+				maxItems: 2,
+				uniqueItems: true,
+				items: {
+					$ref: "#/$defs/settingsController"
+				}
+			},
+			visibleWhen: {
+				$ref: "#/$defs/settingsVisibility"
+			},
+			section: {
+				type: "string",
+				minLength: 1,
+				maxLength: 64
 			}
 		}
 	},
@@ -17511,6 +17574,9 @@ var $defs = {
 					},
 					"default": {
 						type: "string"
+					},
+					refreshable: {
+						type: "boolean"
 					},
 					options: {
 						type: "array",
@@ -17661,6 +17727,12 @@ var $defs = {
 				$ref: "#/$defs/text"
 			},
 			description: {
+				$ref: "#/$defs/descriptionText"
+			},
+			category: {
+				$ref: "#/$defs/actionCategory"
+			},
+			gesture: {
 				$ref: "#/$defs/descriptionText"
 			},
 			settingsSchema: {
@@ -18890,6 +18962,16 @@ function validateSettingsSchema(action, actionIndex) {
         if (!isBoundedDescription(field.description)) {
             throw settingsSchemaError(actionIndex, fieldIndex, "description must be non-empty and at most 512 Unicode code points");
         }
+        if (field.controllers !== undefined &&
+            (new Set(field.controllers).size !== field.controllers.length)) {
+            throw settingsSchemaError(actionIndex, fieldIndex, "controllers must not contain duplicates");
+        }
+        if (field.visibleWhen !== undefined && field.visibleWhen.key === field.key) {
+            throw settingsSchemaError(actionIndex, fieldIndex, "visibleWhen must reference another field");
+        }
+        if (field.type !== "select" && "refreshable" in field) {
+            throw settingsSchemaError(actionIndex, fieldIndex, "refreshable is only valid for select fields");
+        }
         if (field.type === "text") {
             if (field.minLength !== undefined &&
                 field.maxLength !== undefined &&
@@ -18925,6 +19007,11 @@ function validateSettingsSchema(action, actionIndex) {
             }
         }
         else if (field.type === "boolean") ;
+    });
+    fields.forEach((field, fieldIndex) => {
+        if (field.visibleWhen !== undefined && !keys.has(field.visibleWhen.key)) {
+            throw settingsSchemaError(actionIndex, fieldIndex, `visibleWhen references unknown key "${field.visibleWhen.key}"`);
+        }
     });
 }
 function validateFeedback(message) {
@@ -19352,6 +19439,13 @@ function parseServerMessage(data) {
             if (!isBoundedDescription(action.description)) {
                 throw new Error(`Invalid server message: action ${index} description must be non-empty and at most 512 Unicode code points.`);
             }
+            if (action.category !== undefined &&
+                !["Applications", "Audio", "Productivity", "Windows", "System", "Media"].includes(action.category)) {
+                throw new Error(`Invalid server message: action ${index} category is unsupported.`);
+            }
+            if (!isBoundedDescription(action.gesture)) {
+                throw new Error(`Invalid server message: action ${index} gesture must be non-empty and at most 512 Unicode code points.`);
+            }
             validateSettingsSchema(action, index);
             if (actionIds.has(action.actionId)) {
                 throw new Error("Invalid server message: duplicate action IDs are not allowed.");
@@ -19468,6 +19562,8 @@ function copyAction(action) {
         actionId: action.actionId,
         name: action.name,
         ...(action.description === undefined ? {} : { description: action.description }),
+        ...(action.category === undefined ? {} : { category: action.category }),
+        ...(action.gesture === undefined ? {} : { gesture: action.gesture }),
         ...(action.settingsSchema === undefined
             ? {}
             : { settingsSchema: action.settingsSchema.map(copyJsonValue) }),
@@ -20836,6 +20932,9 @@ function isDialAction(value) {
 function isRequestStateMessage(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value) && value.type === "requestState";
 }
+function isRefreshActionsMessage(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value) && value.type === "refreshActions";
+}
 /** Bridges the official generic keypad action to one shared Hammerspoon connection. */
 class HammerspoonAction extends SingletonAction {
     bridge;
@@ -20876,16 +20975,17 @@ class HammerspoonAction extends SingletonAction {
             void this.sendBridgeState();
         });
         this.bridge.on("actions", () => {
-            void this.sendBridgeState();
+            void this.sendBridgeState(streamDeck.ui.action?.id);
         });
-        streamDeck.ui.onDidAppear(() => {
-            void this.sendBridgeState();
+        streamDeck.ui.onDidAppear((event) => {
+            void this.sendBridgeState(event?.action?.id ?? streamDeck.ui.action?.id);
         });
         this.bridge.on("appearance", (appearance) => {
             void this.enqueueRender(appearance.instanceId, () => this.renderAppearance(appearance));
         });
         this.bridge.on("feedback", (feedback) => {
             void this.enqueueRender(feedback.instanceId, () => this.renderFeedback(feedback));
+            void this.sendInspectorFeedback(feedback);
         });
         this.bridge.on("protocolError", (error) => {
             if (error.instanceId) {
@@ -21050,8 +21150,12 @@ class HammerspoonAction extends SingletonAction {
         this.bridge.touchTap(ev.action.id, instance.actionId, ev.payload.hold, ev.payload.tapPos, instance.settings);
     }
     async onSendToPlugin(ev) {
+        if (isRefreshActionsMessage(ev.payload)) {
+            this.bridge.requestActions();
+            return;
+        }
         if (isRequestStateMessage(ev.payload)) {
-            await this.sendBridgeState();
+            await this.sendBridgeState(ev.action?.id ?? streamDeck.ui.action?.id);
         }
     }
     targetState(appearance) {
@@ -21138,6 +21242,7 @@ class HammerspoonAction extends SingletonAction {
             }
             instance.lastAppearance = appearance;
             this.synchronized.add(appearance.instanceId);
+            await this.sendPreviewState(appearance.instanceId);
             return;
         }
         const image = appearanceImage(appearance, instance.renderingProfile?.imageSize ?? DEFAULT_RENDERING_PROFILE.imageSize, bundledIcon);
@@ -21159,6 +21264,7 @@ class HammerspoonAction extends SingletonAction {
         instance.lastAppearance = appearance;
         this.synchronized.add(appearance.instanceId);
         await this.setActionTitle(instance.action, appearance.title, instance.renderingProfile);
+        await this.sendPreviewState(appearance.instanceId);
     }
     async renderFeedback(feedback) {
         const instance = this.instances.get(feedback.instanceId);
@@ -21386,12 +21492,45 @@ class HammerspoonAction extends SingletonAction {
             // Stream Deck feedback is best-effort when an instance is disappearing.
         }
     }
-    async sendBridgeState() {
+    async sendPreviewState(instanceId) {
+        const instance = this.instances.get(instanceId);
+        if (!instance || streamDeck.ui.action?.id !== instanceId) {
+            return;
+        }
+        await streamDeck.ui.sendToPropertyInspector({
+            type: "previewState",
+            controller: isDialAction(instance.action) ? "encoder" : "keypad",
+            ...(instance.lastAppearance === undefined
+                ? {}
+                : { appearance: cloneJsonValue(instance.lastAppearance) }),
+        });
+    }
+    async sendInspectorFeedback(feedback) {
+        if (streamDeck.ui.action?.id !== feedback.instanceId) {
+            return;
+        }
+        await streamDeck.ui.sendToPropertyInspector({
+            type: "inspectorFeedback",
+            kind: feedback.kind,
+            message: feedback.message,
+            durationMs: feedback.durationMs,
+        });
+    }
+    async sendBridgeState(instanceId = streamDeck.ui.action?.id) {
         const actions = this.bridge.actions.map((action) => {
             const copy = {
                 actionId: action.actionId,
                 name: action.name,
             };
+            if (action.description !== undefined) {
+                copy.description = action.description;
+            }
+            if (action.category !== undefined) {
+                copy.category = action.category;
+            }
+            if (action.gesture !== undefined) {
+                copy.gesture = action.gesture;
+            }
             if (action.settingsSchema) {
                 copy.settingsSchema = action.settingsSchema.map(cloneJsonValue);
             }
@@ -21400,10 +21539,19 @@ class HammerspoonAction extends SingletonAction {
             }
             return copy;
         });
+        const instance = instanceId === undefined ? undefined : this.instances.get(instanceId);
         await streamDeck.ui.sendToPropertyInspector({
             type: "bridgeState",
             status: this.bridge.status,
             actions,
+            ...(instance === undefined
+                ? {}
+                : {
+                    controller: isDialAction(instance.action) ? "encoder" : "keypad",
+                    ...(instance.lastAppearance === undefined
+                        ? {}
+                        : { preview: cloneJsonValue(instance.lastAppearance) }),
+                }),
             ...(this.bridge.status === "disconnected" ? { diagnostics: safeDiagnosticsSnapshot(this.bridge.diagnostics) } : {}),
         });
     }

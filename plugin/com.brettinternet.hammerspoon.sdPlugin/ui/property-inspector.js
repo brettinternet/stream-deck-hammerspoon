@@ -42,11 +42,20 @@
     const browserGlobal = globalThis;
     const documentLike = browserGlobal.document;
     const actionSelect = documentLike?.getElementById("action-id");
+    const actionSearch = documentLike?.getElementById("action-search");
     const actionDescription = documentLike?.getElementById("action-description");
+    const actionGestures = documentLike?.getElementById("action-gestures");
+    const previewDevice = documentLike?.getElementById("preview-device");
+    const previewIcon = documentLike?.getElementById("preview-icon");
+    const previewTitle = documentLike?.getElementById("preview-title");
+    const previewBadge = documentLike?.getElementById("preview-badge");
+    const previewProgress = documentLike?.getElementById("preview-progress");
+    const previewValue = documentLike?.getElementById("preview-value");
     const connectionStatus = documentLike?.getElementById("connection-status");
     const connectionDetails = documentLike?.getElementById("connection-details");
     const setupGuideButton = documentLike?.getElementById("setup-guide");
     const settingsPanel = documentLike?.getElementById("action-settings");
+    const resetActionButton = documentLike?.getElementById("reset-action");
     const settingsStatus = documentLike?.getElementById("settings-status");
     let inspectorConnection;
     let savedActionId = "";
@@ -55,9 +64,22 @@
     let bridgeDiagnostics;
     let bridgeActions = [];
     let inspectorSocketReady = false;
+    let activeController = "keypad";
+    let previewAppearance;
+    let catalogFilter = "";
+    let feedbackGeneration = 0;
+    const renderedControls = new Map();
     const DEFAULT_ACTION_UUID = "com.brettinternet.hammerspoon.action";
     const SETUP_GUIDE_URL = "https://github.com/brettinternet/stream-deck-hammerspoon/blob/main/docs/setup.md";
     const DESCRIPTION_MAX_LENGTH = 512;
+    const CATEGORY_ORDER = [
+        "Applications",
+        "Audio",
+        "Productivity",
+        "Windows",
+        "System",
+        "Media",
+    ];
     function isJsonObject(value) {
         return typeof value === "object" && value !== null && !Array.isArray(value);
     }
@@ -142,8 +164,10 @@
         }));
     }
     function setSettingsStatus(message) {
+        feedbackGeneration += 1;
         if (settingsStatus) {
             settingsStatus.textContent = message;
+            settingsStatus.removeAttribute("data-feedback");
         }
     }
     function setBridgeStatus(status, diagnostics) {
@@ -174,14 +198,65 @@
         option.disabled = disabled;
         return option;
     }
-    function renderActionDescription() {
-        if (!actionDescription) {
-            return;
+    function renderPreview() {
+        const action = bridgeActions.find((candidate) => candidate.actionId === savedActionId);
+        const appearance = previewAppearance;
+        if (previewDevice) {
+            previewDevice.setAttribute("class", `preview-device ${activeController}`);
+            const background = appearance?.backgroundColor;
+            const foreground = appearance?.foregroundColor;
+            previewDevice.setAttribute("style", `background:${background && /^#[0-9A-Fa-f]{6}$/.test(background) ? background : "#151515"};`
+                + `color:${foreground && /^#[0-9A-Fa-f]{6}$/.test(foreground) ? foreground : "#ffffff"}`);
         }
+        if (previewTitle) {
+            previewTitle.textContent = appearance?.title || action?.name || "Select action";
+        }
+        if (previewValue) {
+            previewValue.textContent = appearance?.value ?? "";
+            if (appearance?.value)
+                previewValue.removeAttribute("hidden");
+            else
+                previewValue.setAttribute("hidden", "");
+        }
+        if (previewBadge) {
+            previewBadge.textContent = appearance?.badge ?? "";
+            if (appearance?.badge)
+                previewBadge.removeAttribute("hidden");
+            else
+                previewBadge.setAttribute("hidden", "");
+        }
+        if (previewProgress) {
+            const progress = appearance?.progress
+                ?? (typeof appearance?.indicator === "number" ? appearance.indicator / 100 : undefined);
+            previewProgress.setAttribute("style", `width:${typeof progress === "number" && Number.isFinite(progress) ? Math.max(0, Math.min(100, progress * 100)) : 0}%`);
+        }
+        if (previewIcon) {
+            const icon = appearance?.icon;
+            if (icon?.kind === "custom") {
+                previewIcon.setAttribute("src", `data:${icon.mediaType};base64,${icon.dataBase64}`);
+                previewIcon.removeAttribute("hidden");
+            }
+            else if (icon?.kind === "bundled") {
+                previewIcon.setAttribute("src", icon.name === "hammerspoon" ? "../imgs/plugin.svg" : "../imgs/action.svg");
+                previewIcon.removeAttribute("hidden");
+            }
+            else {
+                previewIcon.removeAttribute("src");
+                previewIcon.setAttribute("hidden", "");
+            }
+        }
+    }
+    function renderActionDescription() {
         const action = bridgeStatus === "connected" && savedActionId
             ? bridgeActions.find((candidate) => candidate.actionId === savedActionId)
             : undefined;
-        actionDescription.textContent = action?.description ?? "";
+        if (actionDescription) {
+            actionDescription.textContent = action?.description ?? "";
+        }
+        if (actionGestures) {
+            actionGestures.textContent = action?.gesture ?? "";
+        }
+        renderPreview();
     }
     function renderActionSelect() {
         renderActionDescription();
@@ -192,6 +267,8 @@
             actionSelect.replaceChildren(createOption(savedActionId, "Loading actions...", true));
             actionSelect.value = savedActionId;
             actionSelect.disabled = true;
+            if (actionSearch)
+                actionSearch.disabled = true;
             renderSettings();
             return;
         }
@@ -200,23 +277,52 @@
             actionSelect.replaceChildren(createOption("", bridgeActions.length === 0 ? "No actions available" : "Offline"));
             actionSelect.value = "";
             actionSelect.disabled = true;
+            if (actionSearch)
+                actionSearch.disabled = true;
             renderSettings();
             return;
         }
-        const options = [createOption("", "No action selected")];
+        const filter = catalogFilter.trim().toLocaleLowerCase();
+        const children = [createOption("", "No action selected")];
         let savedActionAvailable = savedActionId.length === 0;
-        for (const action of bridgeActions) {
-            options.push(createOption(action.actionId, action.name));
-            if (action.actionId === savedActionId) {
-                savedActionAvailable = true;
+        for (const category of CATEGORY_ORDER) {
+            const matches = bridgeActions.filter((action) => {
+                if (action.category !== category)
+                    return false;
+                if (action.actionId === savedActionId || filter.length === 0)
+                    return true;
+                return `${action.name} ${action.description ?? ""} ${category}`.toLocaleLowerCase().includes(filter);
+            });
+            if (matches.length === 0)
+                continue;
+            const group = documentLike.createElement("optgroup");
+            group.setAttribute("label", category);
+            for (const action of matches) {
+                group.appendChild(createOption(action.actionId, action.name));
+                if (action.actionId === savedActionId)
+                    savedActionAvailable = true;
             }
+            children.push(group);
+        }
+        for (const action of bridgeActions) {
+            if (action.category !== undefined)
+                continue;
+            if (action.actionId !== savedActionId &&
+                filter.length > 0 &&
+                !`${action.name} ${action.description ?? ""}`.toLocaleLowerCase().includes(filter))
+                continue;
+            children.push(createOption(action.actionId, action.name));
+            if (action.actionId === savedActionId)
+                savedActionAvailable = true;
         }
         if (savedActionId && !savedActionAvailable) {
-            options.push(createOption(savedActionId, `Unavailable: ${savedActionId}`, true));
+            children.push(createOption(savedActionId, `Unavailable: ${savedActionId}`, true));
         }
-        actionSelect.replaceChildren(...options);
+        actionSelect.replaceChildren(...children);
         actionSelect.value = savedActionId;
         actionSelect.disabled = false;
+        if (actionSearch)
+            actionSearch.disabled = false;
         renderSettings();
     }
     function sendSettings(settings) {
@@ -258,6 +364,35 @@
                 return undefined;
             }
             base.description = value.description;
+        }
+        if ("controllers" in value) {
+            if (!Array.isArray(value.controllers) ||
+                value.controllers.length < 1 ||
+                value.controllers.some((controller) => controller !== "keypad" && controller !== "encoder") ||
+                new Set(value.controllers).size !== value.controllers.length) {
+                return undefined;
+            }
+            base.controllers = value.controllers;
+        }
+        if ("visibleWhen" in value) {
+            if (!isJsonObject(value.visibleWhen) ||
+                typeof value.visibleWhen.key !== "string" ||
+                value.visibleWhen.key.length === 0 ||
+                (typeof value.visibleWhen.equals !== "string" &&
+                    typeof value.visibleWhen.equals !== "boolean" &&
+                    !isFiniteNumber(value.visibleWhen.equals))) {
+                return undefined;
+            }
+            base.visibleWhen = {
+                key: value.visibleWhen.key,
+                equals: value.visibleWhen.equals,
+            };
+        }
+        if ("section" in value) {
+            if (typeof value.section !== "string" || value.section.length === 0) {
+                return undefined;
+            }
+            base.section = value.section;
         }
         if (value.type === "text") {
             if (("default" in value && typeof value.default !== "string") ||
@@ -309,7 +444,8 @@
             }
             if (options.length === 0 ||
                 ("default" in value && typeof value.default !== "string") ||
-                (typeof value.default === "string" && !options.some((option) => option.value === value.default))) {
+                (typeof value.default === "string" && !options.some((option) => option.value === value.default)) ||
+                ("refreshable" in value && typeof value.refreshable !== "boolean")) {
                 return undefined;
             }
             return {
@@ -317,6 +453,7 @@
                 type: "select",
                 options,
                 ...(typeof value.default === "string" ? { default: value.default } : {}),
+                ...(typeof value.refreshable === "boolean" ? { refreshable: value.refreshable } : {}),
             };
         }
         return undefined;
@@ -343,6 +480,11 @@
             }
             keys.add(field.key);
             fields.push(field);
+        }
+        for (const field of fields) {
+            if (field.visibleWhen && !keys.has(field.visibleWhen.key)) {
+                return { fields: [], unsupported: `Settings field "${field.key}" depends on an unknown field.` };
+            }
         }
         return { fields };
     }
@@ -384,7 +526,8 @@
         if (field.type === "boolean") {
             return typeof value === "boolean";
         }
-        return typeof value === "string" && field.options.some((option) => option.value === value);
+        return typeof value === "string" && (field.options.some((option) => option.value === value) ||
+            (field.refreshable === true && value.length > 0 && stringLength(value) <= 256));
     }
     function defaultFieldValue(field) {
         if (field.default !== undefined) {
@@ -421,8 +564,87 @@
         }
         return errors.length > 0 ? { errors } : { settings: normalized, errors: [] };
     }
+    function fieldIsVisible(field, fields) {
+        if (field.controllers && !field.controllers.includes(activeController)) {
+            return false;
+        }
+        if (!field.visibleWhen) {
+            return true;
+        }
+        const dependency = fields.find((candidate) => candidate.key === field.visibleWhen?.key);
+        if (!dependency) {
+            return false;
+        }
+        const value = hasSetting(savedSettings, dependency.key)
+            ? savedSettings[dependency.key]
+            : defaultFieldValue(dependency);
+        return value === field.visibleWhen.equals;
+    }
+    function savedOptionLabel(fieldKey, value) {
+        const labels = savedSettings.__optionLabels;
+        if (!isJsonObject(labels))
+            return undefined;
+        const actionLabels = labels[savedActionId];
+        if (!isJsonObject(actionLabels))
+            return undefined;
+        const fieldLabels = actionLabels[fieldKey];
+        if (!isJsonObject(fieldLabels))
+            return undefined;
+        const label = fieldLabels[value];
+        return typeof label === "string" && label.length > 0 ? label : undefined;
+    }
+    function withRefreshableOptionLabels(settings, actionId, fields) {
+        const labelsValue = settings.__optionLabels;
+        const labels = isJsonObject(labelsValue) ? labelsValue : {};
+        const actionLabelsValue = labels[actionId];
+        let actionLabels = isJsonObject(actionLabelsValue) ? actionLabelsValue : {};
+        let changed = false;
+        for (const field of fields) {
+            if (field.type !== "select" || !field.refreshable)
+                continue;
+            const value = settings[field.key];
+            if (typeof value !== "string")
+                continue;
+            const selected = field.options.find((option) => option.value === value);
+            if (!selected)
+                continue;
+            const fieldLabelsValue = actionLabels[field.key];
+            const fieldLabels = isJsonObject(fieldLabelsValue) ? fieldLabelsValue : {};
+            if (fieldLabels[selected.value] === selected.label && Object.keys(fieldLabels).length === 1)
+                continue;
+            actionLabels = {
+                ...actionLabels,
+                [field.key]: { [selected.value]: selected.label },
+            };
+            changed = true;
+        }
+        if (!changed)
+            return settings;
+        return {
+            ...settings,
+            __optionLabels: {
+                ...labels,
+                [actionId]: actionLabels,
+            },
+        };
+    }
+    function requestOptionsRefresh() {
+        const connection = inspectorConnection;
+        if (!connection || !connection.context)
+            return;
+        connection.socket.send(JSON.stringify({
+            action: connection.action,
+            event: "sendToPlugin",
+            context: connection.context,
+            payload: { type: "refreshActions" },
+        }));
+        setSettingsStatus("Refreshing system options…");
+    }
     function renderSettings() {
         renderActionDescription();
+        renderedControls.clear();
+        if (resetActionButton)
+            resetActionButton.disabled = true;
         if (!settingsPanel || !documentLike) {
             return;
         }
@@ -453,17 +675,30 @@
             setSettingsStatus(schema.unsupported);
             return;
         }
+        const labeledSettings = withRefreshableOptionLabels(savedSettings, savedActionId, schema.fields);
+        if (labeledSettings !== savedSettings) {
+            savedSettings = labeledSettings;
+            sendSettings(savedSettings);
+        }
         if (schema.fields.length === 0) {
             setSettingsStatus("No additional settings.");
             return;
         }
+        if (resetActionButton)
+            resetActionButton.disabled = false;
         const errors = [];
+        const sections = new Map();
         for (let fieldIndex = 0; fieldIndex < schema.fields.length; fieldIndex += 1) {
             const field = schema.fields[fieldIndex];
-            const wrapper = documentLike.createElement("label");
+            if (!fieldIsVisible(field, schema.fields))
+                continue;
+            const wrapper = documentLike.createElement("div");
+            wrapper.setAttribute("class", "field-row");
             const control = documentLike.createElement(field.type === "select" ? "select" : "input");
-            control.type =
-                field.type === "select" ? "select-one" : field.type === "boolean" ? "checkbox" : field.type;
+            if (field.type !== "select") {
+                control.type = field.type === "boolean" ? "checkbox" : field.type;
+            }
+            control.setAttribute("aria-label", field.label ?? field.key);
             const currentValue = hasSetting(savedSettings, field.key) ? savedSettings[field.key] : defaultFieldValue(field);
             const displayValue = fieldValueIsValid(field, currentValue) ? currentValue : defaultFieldValue(field);
             if (hasSetting(savedSettings, field.key) && !fieldValueIsValid(field, currentValue)) {
@@ -491,10 +726,20 @@
                     control.step = String(field.step);
             }
             else if (field.type === "select") {
-                control.replaceChildren(...field.options.map((option) => createOption(option.value, option.label)));
+                const options = field.options.map((option) => createOption(option.value, option.label));
+                if (field.refreshable &&
+                    typeof currentValue === "string" &&
+                    !field.options.some((option) => option.value === currentValue)) {
+                    options.push(createOption(currentValue, `Unavailable — ${savedOptionLabel(field.key, currentValue) ?? currentValue}`));
+                }
+                control.replaceChildren(...options);
                 control.value = String(displayValue);
             }
-            control.addEventListener("change", () => saveSettings(schema.fields));
+            renderedControls.set(field.key, control);
+            control.addEventListener("change", () => {
+                if (saveSettings(schema.fields))
+                    renderSettings();
+            });
             wrapper.appendChild(control);
             const label = documentLike.createElement("span");
             label.textContent = field.label ?? field.key;
@@ -510,51 +755,106 @@
                 control.setAttribute("aria-describedby", descriptionId);
                 wrapper.appendChild(description);
             }
-            settingsPanel.appendChild(wrapper);
+            const reset = documentLike.createElement("button");
+            reset.type = "button";
+            reset.textContent = "Reset";
+            reset.setAttribute("class", "field-action reset-field");
+            reset.setAttribute("aria-label", `Reset ${field.label ?? field.key}`);
+            reset.addEventListener("click", () => {
+                const candidate = { ...savedSettings, [field.key]: defaultFieldValue(field) };
+                const result = validateSettings(schema.fields, candidate);
+                if (!result.settings) {
+                    setSettingsStatus(result.errors.join(" "));
+                    return;
+                }
+                savedSettings = result.settings;
+                sendSettings(savedSettings);
+                renderSettings();
+                setSettingsStatus(`${field.label ?? field.key} reset.`);
+            });
+            wrapper.appendChild(reset);
+            if (field.type === "select" && field.refreshable) {
+                const refresh = documentLike.createElement("button");
+                refresh.type = "button";
+                refresh.textContent = "Refresh";
+                refresh.setAttribute("class", "field-action refresh-field");
+                refresh.setAttribute("aria-label", `Refresh ${field.label ?? field.key}`);
+                refresh.addEventListener("click", requestOptionsRefresh);
+                wrapper.appendChild(refresh);
+            }
+            if (!field.section) {
+                settingsPanel.appendChild(wrapper);
+                continue;
+            }
+            let section = sections.get(field.section);
+            if (!section) {
+                section = documentLike.createElement("details");
+                section.setAttribute("class", "settings-section");
+                const summary = documentLike.createElement("summary");
+                summary.textContent = field.section;
+                section.appendChild(summary);
+                sections.set(field.section, section);
+                settingsPanel.appendChild(section);
+            }
+            section.appendChild(wrapper);
         }
         setSettingsStatus(errors.length > 0 ? errors.join(" ") : "Settings are ready.");
     }
     function saveSettings(fields) {
-        if (!inspectorConnection || bridgeStatus !== "connected") {
-            return;
+        if (!inspectorConnection || bridgeStatus !== "connected" || !actionSelect) {
+            return false;
         }
-        const candidate = { ...savedSettings };
-        if (!actionSelect) {
-            return;
-        }
-        candidate.actionId = actionSelect.value;
-        if (settingsPanel) {
-            const controls = settingsPanel.children ?? [];
-            fields.forEach((field, index) => {
-                const wrapper = controls[index];
-                const control = wrapper?.children?.[0];
-                if (!control)
-                    return;
-                if (field.type === "boolean") {
-                    candidate[field.key] = control.checked === true;
-                }
-                else if (field.type === "number") {
-                    if (control.value.trim() === "") {
-                        delete candidate[field.key];
-                    }
-                    else {
-                        candidate[field.key] = Number(control.value);
-                    }
-                }
-                else {
-                    candidate[field.key] = control.value;
-                }
-            });
+        const candidate = { ...savedSettings, actionId: actionSelect.value };
+        for (const field of fields) {
+            const control = renderedControls.get(field.key);
+            if (!control)
+                continue;
+            if (field.type === "boolean") {
+                candidate[field.key] = control.checked === true;
+            }
+            else if (field.type === "number") {
+                if (control.value.trim() === "")
+                    delete candidate[field.key];
+                else
+                    candidate[field.key] = Number(control.value);
+            }
+            else {
+                candidate[field.key] = control.value;
+            }
         }
         const result = validateSettings(fields, candidate);
         if (!result.settings) {
             setSettingsStatus(result.errors.join(" "));
-            return;
+            return false;
         }
-        savedSettings = result.settings;
+        savedSettings = withRefreshableOptionLabels(result.settings, actionSelect.value, fields);
         savedActionId = actionSelect.value;
         sendSettings(savedSettings);
         setSettingsStatus("Settings saved.");
+        return true;
+    }
+    function resetActionSettings() {
+        const action = bridgeActions.find((candidate) => candidate.actionId === savedActionId);
+        if (!action)
+            return;
+        const schema = fieldsForAction(action);
+        if (schema.unsupported) {
+            setSettingsStatus(schema.unsupported);
+            return;
+        }
+        const candidate = { ...savedSettings, actionId: savedActionId };
+        for (const field of schema.fields) {
+            candidate[field.key] = defaultFieldValue(field);
+        }
+        const result = validateSettings(schema.fields, candidate);
+        if (!result.settings) {
+            setSettingsStatus(result.errors.join(" "));
+            return;
+        }
+        savedSettings = withRefreshableOptionLabels(result.settings, savedActionId, schema.fields);
+        sendSettings(savedSettings);
+        renderSettings();
+        setSettingsStatus("Action settings reset.");
     }
     function saveActionId() {
         if (!actionSelect || !inspectorConnection || bridgeStatus !== "connected") {
@@ -572,7 +872,8 @@
             return;
         }
         savedActionId = selectedActionId;
-        savedSettings = result.settings;
+        previewAppearance = undefined;
+        savedSettings = withRefreshableOptionLabels(result.settings, savedActionId, fields);
         renderSettings();
         sendSettings(savedSettings);
     }
@@ -593,6 +894,55 @@
             ? { code: value.latest.code }
             : undefined;
         return { port, ...(retryInMs === undefined ? {} : { retryInMs }), ...(latest === undefined ? {} : { latest }) };
+    }
+    function parsePreviewAppearance(value) {
+        if (!isJsonObject(value) || typeof value.title !== "string" || (value.state !== 0 && value.state !== 1)) {
+            return undefined;
+        }
+        if (("foregroundColor" in value && (typeof value.foregroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(value.foregroundColor))) ||
+            ("backgroundColor" in value && (typeof value.backgroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(value.backgroundColor))) ||
+            ("progress" in value && (!isFiniteNumber(value.progress) || value.progress < 0 || value.progress > 1)) ||
+            ("badge" in value && (typeof value.badge !== "string" || stringLength(value.badge) > 4)) ||
+            ("value" in value && typeof value.value !== "string") ||
+            ("indicator" in value && (!isFiniteNumber(value.indicator) || value.indicator < 0 || value.indicator > 100))) {
+            return undefined;
+        }
+        let icon;
+        if ("icon" in value) {
+            if (!isJsonObject(value.icon))
+                return undefined;
+            if (value.icon.kind === "bundled" &&
+                typeof value.icon.name === "string" &&
+                /^[a-z][a-z0-9-]{0,31}$/.test(value.icon.name)) {
+                icon = { kind: "bundled", name: value.icon.name };
+            }
+            else if (value.icon.kind === "custom" &&
+                (value.icon.mediaType === "image/png" || value.icon.mediaType === "image/svg+xml") &&
+                typeof value.icon.dataBase64 === "string" &&
+                value.icon.dataBase64.length > 0 &&
+                value.icon.dataBase64.length <= 196608 &&
+                /^[A-Za-z0-9+/]*={0,2}$/.test(value.icon.dataBase64)) {
+                icon = {
+                    kind: "custom",
+                    mediaType: value.icon.mediaType,
+                    dataBase64: value.icon.dataBase64,
+                };
+            }
+            else {
+                return undefined;
+            }
+        }
+        return {
+            title: value.title,
+            state: value.state,
+            ...(typeof value.foregroundColor === "string" ? { foregroundColor: value.foregroundColor } : {}),
+            ...(typeof value.backgroundColor === "string" ? { backgroundColor: value.backgroundColor } : {}),
+            ...(typeof value.progress === "number" ? { progress: value.progress } : {}),
+            ...(typeof value.badge === "string" ? { badge: value.badge } : {}),
+            ...(typeof value.value === "string" ? { value: value.value } : {}),
+            ...(typeof value.indicator === "number" ? { indicator: value.indicator } : {}),
+            ...(icon === undefined ? {} : { icon }),
+        };
     }
     function parseBridgeState(value) {
         if (!isJsonObject(value) || value.type !== "bridgeState") {
@@ -617,6 +967,8 @@
                 typeof item.name !== "string" ||
                 item.name.trim().length === 0 ||
                 ("description" in item && !isValidDescription(item.description)) ||
+                ("category" in item && !CATEGORY_ORDER.includes(item.category)) ||
+                ("gesture" in item && !isValidDescription(item.gesture)) ||
                 ("settingsSchema" in item && !Array.isArray(item.settingsSchema)) ||
                 ("settingsSchemaVersion" in item &&
                     (typeof item.settingsSchemaVersion !== "number" ||
@@ -636,6 +988,8 @@
                 actionId: item.actionId,
                 name: item.name,
                 ...("description" in item ? { description: item.description } : {}),
+                ...("category" in item ? { category: item.category } : {}),
+                ...("gesture" in item ? { gesture: item.gesture } : {}),
                 ...(Array.isArray(item.settingsSchema) ? { settingsSchema: item.settingsSchema } : {}),
                 ...(typeof item.settingsSchemaVersion === "number"
                     ? { settingsSchemaVersion: item.settingsSchemaVersion }
@@ -643,7 +997,19 @@
             });
         }
         const diagnostics = status === "disconnected" ? parseBridgeDiagnostics(value.diagnostics) : undefined;
-        return { status, actions, ...(diagnostics === undefined ? {} : { diagnostics }) };
+        const controller = value.controller === "keypad" || value.controller === "encoder"
+            ? value.controller
+            : undefined;
+        const preview = value.preview === undefined ? undefined : parsePreviewAppearance(value.preview);
+        if (value.preview !== undefined && preview === undefined)
+            return undefined;
+        return {
+            status,
+            actions,
+            ...(diagnostics === undefined ? {} : { diagnostics }),
+            ...(controller === undefined ? {} : { controller }),
+            ...(preview === undefined ? {} : { preview }),
+        };
     }
     function handleStreamDeckMessage(message) {
         if (typeof message.data !== "string") {
@@ -651,22 +1017,62 @@
         }
         const parsedMessage = parseJsonObject(message.data);
         if (parsedMessage.event === "didReceiveSettings") {
-            savedSettings = settingsFromValue(parsedMessage.payload);
-            savedActionId = actionIdFromSettings(parsedMessage.payload);
+            const nextSettings = settingsFromValue(parsedMessage.payload);
+            const nextActionId = actionIdFromSettings(parsedMessage.payload);
+            if (nextActionId !== savedActionId)
+                previewAppearance = undefined;
+            savedSettings = nextSettings;
+            savedActionId = nextActionId;
             renderActionSelect();
             return;
         }
-        if (parsedMessage.event !== "sendToPropertyInspector") {
+        if (parsedMessage.event !== "sendToPropertyInspector" || !isJsonObject(parsedMessage.payload)) {
             return;
         }
-        const bridgeState = parseBridgeState(parsedMessage.payload);
-        if (!bridgeState) {
-            if (actionDescription) {
-                actionDescription.textContent = "";
+        const payload = parsedMessage.payload;
+        if (payload.type === "previewState") {
+            if (payload.controller !== "keypad" && payload.controller !== "encoder")
+                return;
+            const appearance = payload.appearance === undefined ? undefined : parsePreviewAppearance(payload.appearance);
+            if (payload.appearance !== undefined && appearance === undefined)
+                return;
+            const controllerChanged = activeController !== payload.controller;
+            activeController = payload.controller;
+            previewAppearance = appearance;
+            renderPreview();
+            if (controllerChanged)
+                renderSettings();
+            return;
+        }
+        if (payload.type === "inspectorFeedback") {
+            if ((payload.kind !== "success" && payload.kind !== "error") ||
+                typeof payload.message !== "string" ||
+                payload.message.length === 0 ||
+                !isFiniteNumber(payload.durationMs) ||
+                payload.durationMs < 100 ||
+                payload.durationMs > 10000) {
+                return;
             }
+            feedbackGeneration += 1;
+            const generation = feedbackGeneration;
+            if (settingsStatus) {
+                settingsStatus.textContent = payload.message;
+                settingsStatus.setAttribute("data-feedback", payload.kind);
+            }
+            globalThis.setTimeout(() => {
+                if (feedbackGeneration !== generation)
+                    return;
+                setSettingsStatus("Settings are ready.");
+            }, payload.durationMs);
             return;
         }
+        const bridgeState = parseBridgeState(payload);
+        if (!bridgeState)
+            return;
         bridgeActions = bridgeState.actions;
+        if (bridgeState.controller !== undefined)
+            activeController = bridgeState.controller;
+        previewAppearance = bridgeState.preview;
         setBridgeStatus(bridgeState.status, bridgeState.diagnostics);
         renderActionSelect();
     }
@@ -689,6 +1095,8 @@
         savedSettings = settingsFromValue(parsedActionInfo.payload);
         savedActionId = parseInitialActionInfo(actionInfo) || actionIdFromSettings(parsedActionInfo.payload);
         bridgeActions = [];
+        previewAppearance = undefined;
+        activeController = "keypad";
         setBridgeStatus("connecting");
         renderActionSelect();
         const Socket = browserGlobal.WebSocket;
@@ -720,6 +1128,7 @@
                 inspectorConnection = undefined;
                 setBridgeStatus("disconnected");
                 bridgeActions = [];
+                previewAppearance = undefined;
                 renderActionSelect();
                 inspectorSocketReady = false;
                 renderSetupGuideButton();
@@ -730,6 +1139,7 @@
                 inspectorConnection = undefined;
                 setBridgeStatus("disconnected");
                 bridgeActions = [];
+                previewAppearance = undefined;
                 renderActionSelect();
                 inspectorSocketReady = false;
                 renderSetupGuideButton();
@@ -738,6 +1148,15 @@
     }
     if (actionSelect) {
         actionSelect.addEventListener("change", saveActionId);
+    }
+    if (actionSearch) {
+        actionSearch.addEventListener("input", () => {
+            catalogFilter = actionSearch.value;
+            renderActionSelect();
+        });
+    }
+    if (resetActionButton) {
+        resetActionButton.addEventListener("click", resetActionSettings);
     }
     if (setupGuideButton) {
         setupGuideButton.addEventListener("click", openSetupGuide);

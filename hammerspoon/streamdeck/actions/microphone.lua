@@ -4,6 +4,7 @@ local helpers = require("streamdeck.helpers")
 
 local action_id = "com.brettinternet.hammerspoon.microphone-toggle"
 local default_value = "default"
+local ptt_state_by_instance = {}
 
 local function require_audio_api(method_name)
   if type(hs) ~= "table"
@@ -137,9 +138,63 @@ local function discover_input_device_options()
   }
 end
 
--- Populate the editor choices when the action module is loaded, while runtime
--- resolution below still follows devices that are currently connected.
-local input_device_options_at_load = discover_input_device_options()
+local function settings_schema()
+  return {
+    {
+      type = "select",
+      key = "inputDevice",
+      label = "Input device",
+      description = "Choose the current default input or a specific connected microphone.",
+      options = discover_input_device_options(),
+      refreshable = true,
+    },
+    {
+      type = "select",
+      key = "mode",
+      label = "Control mode",
+      description = "Toggle on press, or stay live only while a key or pedal is held.",
+      options = {
+        { value = "toggle", label = "Toggle mute" },
+        { value = "pushToTalk", label = "Push to talk" },
+      },
+      default = "toggle",
+    },
+    {
+      type = "boolean",
+      key = "muteMeetingApps",
+      label = "Integrate meeting apps",
+      description = "Also send mute shortcuts to selected running meeting apps.",
+      default = false,
+    },
+    {
+      type = "boolean",
+      key = "muteZoom",
+      label = "Zoom",
+      description = "Send Zoom's mute shortcut with microphone changes.",
+      default = true,
+      visibleWhen = { key = "muteMeetingApps", equals = true },
+      section = "Meeting apps",
+    },
+    {
+      type = "boolean",
+      key = "muteTeams",
+      label = "Microsoft Teams",
+      description = "Send Teams' mute shortcut with microphone changes.",
+      default = true,
+      visibleWhen = { key = "muteMeetingApps", equals = true },
+      section = "Meeting apps",
+    },
+    {
+      type = "boolean",
+      key = "muteSlack",
+      label = "Slack",
+      description = "Send Slack's mute shortcut with microphone changes.",
+      default = true,
+      visibleWhen = { key = "muteMeetingApps", equals = true },
+      section = "Meeting apps",
+    },
+  }
+end
 
 local function settings_for(context)
   local settings
@@ -148,14 +203,15 @@ local function settings_for(context)
   elseif context then
     settings = context.settings
   end
-  if type(settings) ~= "table" then
-    return default_value, false
-  end
+  if type(settings) ~= "table" then settings = {} end
   local selected = settings.inputDevice
-  if type(selected) ~= "string" or selected == "" then
-    selected = default_value
-  end
-  return selected, settings.muteMeetingApps == true
+  if type(selected) ~= "string" or selected == "" then selected = default_value end
+  local mode = settings.mode == "pushToTalk" and "pushToTalk" or "toggle"
+  return selected, settings.muteMeetingApps == true, mode, {
+    Zoom = settings.muteZoom ~= false,
+    ["Microsoft Teams"] = settings.muteTeams ~= false,
+    Slack = settings.muteSlack ~= false,
+  }
 end
 
 local function resolve_input_device(selected)
@@ -232,7 +288,7 @@ local function running_application(bundle_id)
   return application
 end
 
-local function send_meeting_shortcuts()
+local function send_meeting_shortcuts(enabled_apps)
   require_application_api("get")
   if type(hs) ~= "table"
     or type(hs.eventtap) ~= "table"
@@ -243,6 +299,9 @@ local function send_meeting_shortcuts()
   local teams_sent = false
   for _, app_info in ipairs(meeting_apps) do
     if app_info.name ~= "Microsoft Teams" or not teams_sent then
+    if enabled_apps[app_info.name] ~= true then
+      goto continue
+    end
       local application = running_application(app_info.bundle_id)
       if application then
         local ok, cause = pcall(
@@ -265,6 +324,7 @@ local function send_meeting_shortcuts()
         end
       end
     end
+    ::continue::
   end
 end
 
@@ -284,8 +344,26 @@ local muted_svg = [[
 </svg>
 ]]
 
+local function microphone_badge(name)
+  local badge = ""
+  for word in name:gmatch("[%w]+") do
+    badge = badge .. word:sub(1, 1):upper()
+    if #badge >= 4 then break end
+  end
+  return badge ~= "" and badge or "MIC"
+end
+
+local function restore_push_to_talk(instance_id)
+  local state = ptt_state_by_instance[instance_id]
+  if state == nil then return end
+  ptt_state_by_instance[instance_id] = nil
+  if not state.restoreMuted then return end
+  set_microphone_muted(state.device, true)
+  if state.muteApps then send_meeting_shortcuts(state.enabledApps) end
+end
+
 local function appearance_for(context)
-  local selected = settings_for(context)
+  local selected, mute_apps, mode = settings_for(context)
   local device = resolve_input_device(selected)
   if not device then
     return {
@@ -297,47 +375,62 @@ local function appearance_for(context)
   end
   local name = device_name(device)
   local muted = microphone_muted(device)
+  local svg = muted and muted_svg or live_svg
+  if mute_apps then
+    svg = svg:gsub("#102318", "#24152E"):gsub("#281315", "#2E1824")
+  end
   return {
-    title = name .. " — " .. (muted and "Muted" or "Live"),
+    title = name .. " — " .. (mode == "pushToTalk" and (muted and "Hold to talk" or "Live") or (muted and "Muted" or "Live")),
     state = muted and "active" or "inactive",
     appearanceVersion = 1,
-    icon = helpers.svg(muted and muted_svg or live_svg),
+    badge = microphone_badge(name),
+    icon = helpers.svg(svg),
   }
+end
+
+local function apply_press(context)
+  local selected, mute_apps, mode, enabled_apps = settings_for(context)
+  local device = resolve_input_device(selected)
+  if not device then error("no input device available") end
+  local muted = microphone_muted(device)
+  if mode == "pushToTalk" then
+    ptt_state_by_instance[context.instanceId] = {
+      device = device,
+      restoreMuted = muted,
+      muteApps = muted and mute_apps,
+      enabledApps = enabled_apps,
+    }
+    if muted then
+      set_microphone_muted(device, false)
+      if mute_apps then send_meeting_shortcuts(enabled_apps) end
+    end
+    context:success("Microphone live", 800)
+    return
+  end
+  set_microphone_muted(device, not muted)
+  if mute_apps then send_meeting_shortcuts(enabled_apps) end
+  context:success(not muted and "Microphone muted" or "Microphone live", 900)
 end
 
 return {
   id = action_id,
   name = "Microphone mute",
-  description = "Toggle the selected input microphone and optionally mute supported meeting apps.",
+  description = "Toggle a selected microphone or use push-to-talk, with optional meeting-app shortcuts.",
+  category = "Audio",
+  gesture = "Toggle mode: press to mute · Push-to-talk: hold to speak",
   settingsSchemaVersion = 1,
-  settingsSchema = {
-    {
-      type = "select",
-      key = "inputDevice",
-      label = "Input device",
-      description = "Choose the current default input or a specific connected microphone.",
-      options = input_device_options_at_load,
-    },
-    {
-      type = "boolean",
-      key = "muteMeetingApps",
-      label = "Mute meeting apps",
-      description = "Also send mute shortcuts to running Zoom, Microsoft Teams, and Slack.",
-      default = false,
-    },
-  },
+  settingsSchemaProvider = settings_schema,
+  appear = function(context)
+    ptt_state_by_instance[context.instanceId] = nil
+  end,
+  disappear = function(context)
+    restore_push_to_talk(context.instanceId)
+  end,
   appearance = appearance_for,
-  press = function(context)
-    local selected, mute_apps = settings_for(context)
-    local device = resolve_input_device(selected)
-    if not device then
-      error("no input device available")
-    end
-    local muted = microphone_muted(device)
-    set_microphone_muted(device, not muted)
-    if mute_apps then
-      send_meeting_shortcuts()
-    end
+  push = apply_press,
+  press = apply_press,
+  release = function(context)
+    restore_push_to_talk(context.instanceId)
   end,
 }
 

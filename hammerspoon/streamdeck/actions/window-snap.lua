@@ -2,10 +2,11 @@
 -- Press repeatedly for left half, right half, and full screen; layout state is independent per key.
 
 local action_id = "com.brettinternet.hammerspoon.window-snap"
+local helpers = require("streamdeck.helpers")
 local layouts = {
-  { title = "Left half", unit = { x = 0, y = 0, w = 0.5, h = 1 } },
-  { title = "Right half", unit = { x = 0.5, y = 0, w = 0.5, h = 1 } },
-  { title = "Full screen", unit = { x = 0, y = 0, w = 1, h = 1 } },
+  { title = "Left half", icon = "snap-left", unit = { x = 0, y = 0, w = 0.5, h = 1 } },
+  { title = "Right half", icon = "snap-right", unit = { x = 0.5, y = 0, w = 0.5, h = 1 } },
+  { title = "Full screen", icon = "maximize", unit = { x = 0, y = 0, w = 1, h = 1 } },
 }
 local layout_by_instance = {}
 
@@ -19,37 +20,39 @@ return {
   id = action_id,
   name = "Snap focused window",
   description = "Cycle the focused window through left-half, right-half, and full-screen layouts.",
+  category = "Windows",
+  gesture = "Press: cycle left, right, and full-screen layouts",
 
   appear = function(context)
     layout_by_instance[context.instanceId] = 0
   end,
 
   appearance = function(context)
-    if not focused_window_api_available() then
-      return {
-        title = "Window unavailable",
-        state = "inactive",
-      }
-    end
-
-    if not hs.window.focusedWindow() then
-      return {
-        title = "No window",
-        state = "inactive",
-      }
-    end
-
+    local available = focused_window_api_available()
+    local window = available and hs.window.focusedWindow() or nil
     local layout_index = layout_by_instance[context.instanceId] or 0
+    if not window then
+      return {
+        title = available and "No window" or "Window unavailable",
+        state = "inactive",
+        appearanceVersion = 1,
+        icon = helpers.icon("snap-left", { foregroundColor = helpers.colors.inactive }),
+      }
+    end
     if layout_index == 0 then
       return {
         title = "Snap window",
         state = "inactive",
+        appearanceVersion = 1,
+        icon = helpers.icon("snap-left", { foregroundColor = helpers.colors.accent }),
       }
     end
-
     return {
       title = layouts[layout_index].title,
       state = "active",
+      appearanceVersion = 1,
+      presentationState = layout_index - 1,
+      icon = helpers.icon(layouts[layout_index].icon, { foregroundColor = helpers.colors.accent }),
     }
   end,
 
@@ -75,6 +78,7 @@ return {
     end
 
     layout_by_instance[instance_id] = next_index
+    context:success(layouts[next_index].title, 850)
   end,
 
   disappear = function(context)

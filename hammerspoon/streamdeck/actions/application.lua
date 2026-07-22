@@ -270,6 +270,8 @@ return {
   id = action_id,
   name = "Hide/show application",
   description = "Toggle the configured application's hidden state, or track the frontmost app when no bundle ID is set.",
+  category = "Applications",
+  gesture = "Press: hide or show · Hold: close application",
   settingsSchemaVersion = 1,
   settingsSchema = {
     { type = "text", key = "bundleID", label = "Application bundle ID", maxLength = 128, description = "Optional bundle ID; find it with osascript -e 'id of app \"App Name\"'." },
@@ -337,6 +339,7 @@ return {
         restore_fallback_application(context, application)
       end
     end
+    context:success("Application toggled", 900)
   end,
   longPress = function(context)
     local application, bundle_id = application_for(context)
@@ -353,6 +356,7 @@ return {
     if bundle_id == nil then
       target_by_instance[key] = nil
     end
+    context:success("Application closed", 900)
   end,
 }
 

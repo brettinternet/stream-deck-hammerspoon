@@ -17,6 +17,9 @@ local snapshot = {
   running = false,
   playing = false,
   track = nil,
+  artist = nil,
+  position = 0,
+  duration = 0,
   volume = 0,
 }
 
@@ -90,6 +93,9 @@ local function sample_spotify()
       playing = false,
       track = nil,
       volume = 0,
+      artist = nil,
+      position = 0,
+      duration = 0,
     }
     request_artwork(nil)
     return
@@ -97,8 +103,11 @@ local function sample_spotify()
 
   for _, method_name in ipairs({
     "getCurrentTrack",
+    "getCurrentArtist",
     "getCurrentTrackArtworkURL",
     "getVolume",
+    "getPosition",
+    "getDuration",
     "isPlaying",
   }) do
     require_spotify(method_name)
@@ -109,10 +118,22 @@ local function sample_spotify()
     volume = 0
   end
   volume = math.max(0, math.min(100, volume))
+  local duration = spotify.getDuration()
+  if type(duration) ~= "number" or duration ~= duration or duration <= 0 or duration == math.huge then
+    duration = 0
+  end
+  local position = spotify.getPosition()
+  if type(position) ~= "number" or position ~= position or position < 0 or position == math.huge then
+    position = 0
+  end
+  if duration > 0 then position = math.min(position, duration) else position = 0 end
   snapshot = {
     running = true,
     playing = spotify.isPlaying() == true,
     track = spotify.getCurrentTrack(),
+    artist = spotify.getCurrentArtist(),
+    position = position,
+    duration = duration,
     volume = volume,
   }
   request_artwork(spotify.getCurrentTrackArtworkURL())
@@ -149,26 +170,53 @@ local function dial_mode(context)
   return "volume"
 end
 
+local function truncate_title(value, maximum)
+  if type(value) ~= "string" or value == "" then return nil end
+  local length = utf8.len(value)
+  if length == nil or length <= maximum then return value end
+  local offset = utf8.offset(value, maximum + 1)
+  return value:sub(1, offset - 1) .. "…"
+end
+
 local function title_for_snapshot()
-  if not snapshot.running then
-    return "Spotify closed"
-  end
-  if type(snapshot.track) == "string" and snapshot.track ~= "" then
-    return snapshot.track
-  end
-  return "Spotify"
+  if not snapshot.running then return "Spotify unavailable" end
+  local track = truncate_title(snapshot.track, 22)
+  local artist = truncate_title(snapshot.artist, 18)
+  if artist and track then return artist .. "\n" .. track end
+  return track or artist or "Spotify"
 end
 
 local function appearance_for(context)
   local artwork_icon = artwork_icon_for(context)
+  local icon = artwork_icon or helpers.icon(
+    "spotify",
+    { foregroundColor = snapshot.running and "#1DB954" or helpers.colors.inactive }
+  )
+  local progress = snapshot.duration > 0 and snapshot.position / snapshot.duration or 0
   local device = type(context.getDevice) == "function" and context:getDevice() or nil
   local is_encoder = type(device) == "table" and device.controllerType == "encoder"
+  if not snapshot.running then
+    return {
+      title = "Spotify unavailable",
+      state = "inactive",
+      appearanceVersion = 1,
+      badge = "OFF",
+      backgroundColor = "#1F2937",
+      foregroundColor = helpers.colors.foreground,
+      icon = icon,
+      progress = 0,
+    }
+  end
   if not is_encoder then
     return {
       title = title_for_snapshot(),
       state = snapshot.playing and "active" or "inactive",
       appearanceVersion = 1,
-      icon = artwork_icon,
+      icon = icon,
+      badge = snapshot.playing and "Ⅱ" or "▶",
+      progress = progress,
+      backgroundColor = "#102A1B",
+      foregroundColor = helpers.colors.foreground,
     }
   end
 
@@ -179,7 +227,7 @@ local function appearance_for(context)
       appearanceVersion = 1,
       value = "Previous / Next",
       indicator = 50,
-      icon = artwork_icon,
+      icon = icon,
     }
   end
 
@@ -189,7 +237,7 @@ local function appearance_for(context)
     appearanceVersion = 1,
     value = string.format("%d%%", math.floor(snapshot.volume + 0.5)),
     indicator = snapshot.volume,
-    icon = artwork_icon,
+    icon = icon,
   }
 end
 
@@ -205,6 +253,8 @@ return {
   id = action_id,
   name = "Spotify controls",
   description = "Press a key or encoder to play or pause Spotify, with artwork and playback state shown; rotate an encoder for volume or track changes.",
+  category = "Media",
+  gesture = "Press: play or pause · Dial: volume or track control",
   settingsSchemaVersion = 1,
   settingsSchema = {
     {
@@ -212,6 +262,7 @@ return {
       key = "dialControl",
       label = "Dial control",
       description = "Choose whether encoder rotation adjusts volume or moves to the previous or next track.",
+      controllers = { "encoder" },
       options = {
         { value = "volume", label = "Volume" },
         { value = "tracks", label = "Previous / next track" },
@@ -248,12 +299,21 @@ return {
 
   appearance = appearance_for,
 
-  press = function()
+  press = function(context)
     local spotify = require_spotify("isRunning")
     local was_running = spotify.isRunning()
     require_spotify("playpause").playpause()
     if was_running then
       sample_spotify()
+      context:success(snapshot.playing and "Playing" or "Paused", 900)
+      return
+    end
+    context:success("Opening Spotify", 1000)
+    if type(hs) == "table" and type(hs.timer) == "table" and type(hs.timer.doAfter) == "function" then
+      hs.timer.doAfter(0.75, function()
+        sample_spotify()
+        refresh_visible_contexts()
+      end)
     end
   end,
 

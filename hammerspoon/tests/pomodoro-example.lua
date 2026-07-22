@@ -40,23 +40,30 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       shortBreakMinutes = 1,
       longBreakMinutes = 3,
       cycles = 2,
+      completionSound = true,
     })
 
     assertEqual(action.id, "com.brettinternet.hammerspoon.pomodoro")
     assertEqual(action.settingsSchemaVersion, 1)
-    assertEqual(#action.settingsSchema, 4)
+    assertEqual(#action.settingsSchema, 5)
     assertEqual(action.settingsSchema[1].key, "focusMinutes")
     assertEqual(action.settingsSchema[1].default, 25)
     assertTrue(action.settingsSchema[1].description ~= "")
     assertEqual(action.settingsSchema[2].key, "shortBreakMinutes")
     assertEqual(action.settingsSchema[2].default, 5)
     assertTrue(action.settingsSchema[2].description ~= "")
+    assertEqual(action.settingsSchema[2].section, "Schedule")
     assertEqual(action.settingsSchema[3].key, "longBreakMinutes")
     assertEqual(action.settingsSchema[3].default, 15)
     assertTrue(action.settingsSchema[3].description ~= "")
+    assertEqual(action.settingsSchema[3].section, "Schedule")
     assertEqual(action.settingsSchema[4].key, "cycles")
     assertEqual(action.settingsSchema[4].default, 4)
     assertTrue(action.settingsSchema[4].description ~= "")
+    assertEqual(action.settingsSchema[4].section, "Schedule")
+    assertEqual(action.settingsSchema[5].key, "completionSound")
+    assertFalse(action.settingsSchema[5].default)
+    assertEqual(action.settingsSchema[5].section, "Schedule")
 
     local ready = action.appearance(pomodoro)
     assertEqual(ready.title, "Start")
@@ -114,16 +121,25 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(complete.state, "inactive")
     assertEqual(complete.progress, 1)
     assertEqual(completed_timer.stop_calls, 1, "completion must stop the refresh timer")
+    assertEqual(#pomodoro.sounds, 4, "enabled completion sound must play after each phase")
 
     action.press(pomodoro)
     local reset_timer = scheduled
     assertEqual(action.appearance(pomodoro).title, "02:00")
     action.press(pomodoro)
-    assertEqual(reset_timer.stop_calls, 1, "pressing a running session must stop its timer")
-    assertEqual(pomodoro.refreshes, 8, "reset must refresh immediately")
-    local refreshes_after_reset = pomodoro.refreshes
+    assertEqual(reset_timer.stop_calls, 1, "pressing a running session must pause its timer")
+    assertEqual(pomodoro.refreshes, 8, "pause must refresh immediately")
+    assertTrue(action.appearance(pomodoro).title:find("Paused", 1, true) ~= nil)
+    local refreshes_after_pause = pomodoro.refreshes
     reset_timer.callback()
-    assertEqual(pomodoro.refreshes, refreshes_after_reset, "stale reset callbacks must be ignored")
+    assertEqual(pomodoro.refreshes, refreshes_after_pause, "stale paused callbacks must be ignored")
+
+    action.press(pomodoro)
+    local resumed_timer = scheduled
+    assertEqual(action.appearance(pomodoro).title, "02:00")
+    action.longPress(pomodoro)
+    assertEqual(resumed_timer.stop_calls, 1, "long press must stop and reset the session")
+    assertEqual(action.appearance(pomodoro).title, "Start")
 
     action.press(pomodoro)
     local disappearing_timer = scheduled

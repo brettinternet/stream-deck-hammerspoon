@@ -397,11 +397,18 @@ type TrackedInstance = {
 type RequestStateMessage = {
   type: "requestState";
 };
+type RefreshActionsMessage = {
+  type: "refreshActions";
+};
 
 
 function isRequestStateMessage(value: JsonValue): value is RequestStateMessage {
   return typeof value === "object" && value !== null && !Array.isArray(value) && value.type === "requestState";
 }
+function isRefreshActionsMessage(value: JsonValue): value is RefreshActionsMessage {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && value.type === "refreshActions";
+}
+
 
 type HammerspoonActionOptions = {
   clearTimeout?: (handle: unknown) => void;
@@ -453,16 +460,17 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       void this.sendBridgeState();
     });
     this.bridge.on("actions", () => {
-      void this.sendBridgeState();
+      void this.sendBridgeState(streamDeck.ui.action?.id);
     });
-    streamDeck.ui.onDidAppear(() => {
-      void this.sendBridgeState();
+    streamDeck.ui.onDidAppear((event) => {
+      void this.sendBridgeState(event?.action?.id ?? streamDeck.ui.action?.id);
     });
     this.bridge.on("appearance", (appearance) => {
       void this.enqueueRender(appearance.instanceId, () => this.renderAppearance(appearance));
     });
     this.bridge.on("feedback", (feedback) => {
       void this.enqueueRender(feedback.instanceId, () => this.renderFeedback(feedback));
+      void this.sendInspectorFeedback(feedback);
     });
     this.bridge.on("protocolError", (error) => {
       if (error.instanceId) {
@@ -660,8 +668,12 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   }
 
   public override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, HammerspoonActionSettings>): Promise<void> {
+    if (isRefreshActionsMessage(ev.payload)) {
+      this.bridge.requestActions();
+      return;
+    }
     if (isRequestStateMessage(ev.payload)) {
-      await this.sendBridgeState();
+      await this.sendBridgeState(ev.action?.id ?? streamDeck.ui.action?.id);
     }
   }
   private targetState(appearance: BridgeAppearance): PresentationState {
@@ -764,6 +776,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       }
       instance.lastAppearance = appearance;
       this.synchronized.add(appearance.instanceId);
+      await this.sendPreviewState(appearance.instanceId);
       return;
     }
     const image = appearanceImage(
@@ -789,6 +802,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     instance.lastAppearance = appearance;
     this.synchronized.add(appearance.instanceId);
     await this.setActionTitle(instance.action, appearance.title, instance.renderingProfile);
+    await this.sendPreviewState(appearance.instanceId);
   }
 
   private async renderFeedback(feedback: BridgeFeedback): Promise<void> {
@@ -1041,12 +1055,47 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
   }
 
-  private async sendBridgeState(): Promise<void> {
+  private async sendPreviewState(instanceId: string): Promise<void> {
+    const instance = this.instances.get(instanceId);
+    if (!instance || streamDeck.ui.action?.id !== instanceId) {
+      return;
+    }
+    await streamDeck.ui.sendToPropertyInspector({
+      type: "previewState",
+      controller: isDialAction(instance.action) ? "encoder" : "keypad",
+      ...(instance.lastAppearance === undefined
+        ? {}
+        : { appearance: cloneJsonValue(instance.lastAppearance as unknown as JsonObject) }),
+    });
+  }
+
+  private async sendInspectorFeedback(feedback: BridgeFeedback): Promise<void> {
+    if (streamDeck.ui.action?.id !== feedback.instanceId) {
+      return;
+    }
+    await streamDeck.ui.sendToPropertyInspector({
+      type: "inspectorFeedback",
+      kind: feedback.kind,
+      message: feedback.message,
+      durationMs: feedback.durationMs,
+    });
+  }
+
+  private async sendBridgeState(instanceId = streamDeck.ui.action?.id): Promise<void> {
     const actions = this.bridge.actions.map((action) => {
       const copy: JsonObject = {
         actionId: action.actionId,
         name: action.name,
       };
+      if (action.description !== undefined) {
+        copy.description = action.description;
+      }
+      if (action.category !== undefined) {
+        copy.category = action.category;
+      }
+      if (action.gesture !== undefined) {
+        copy.gesture = action.gesture;
+      }
       if (action.settingsSchema) {
         copy.settingsSchema = action.settingsSchema.map(cloneJsonValue);
       }
@@ -1055,11 +1104,20 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       }
       return copy;
     });
+    const instance = instanceId === undefined ? undefined : this.instances.get(instanceId);
     await streamDeck.ui.sendToPropertyInspector({
       type: "bridgeState",
       status: this.bridge.status,
       actions,
+      ...(instance === undefined
+        ? {}
+        : {
+            controller: isDialAction(instance.action) ? "encoder" : "keypad",
+            ...(instance.lastAppearance === undefined
+              ? {}
+              : { preview: cloneJsonValue(instance.lastAppearance as unknown as JsonObject) }),
+          }),
       ...(this.bridge.status === "disconnected" ? { diagnostics: safeDiagnosticsSnapshot(this.bridge.diagnostics) } : {}),
     });
-}
+  }
 }

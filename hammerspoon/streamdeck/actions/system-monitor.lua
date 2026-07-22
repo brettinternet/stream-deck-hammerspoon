@@ -268,6 +268,8 @@ return {
   id = action_id,
   name = "System monitor",
   description = "View live CPU and RAM usage; press to switch metrics.",
+  category = "System",
+  gesture = "Press: switch between CPU and memory",
 
   appear = function(context)
     local instance_id = context.instanceId
@@ -309,6 +311,7 @@ return {
     else
       metric_by_instance[instance_id] = "ram"
     end
+    context:success(metric_by_instance[instance_id] == "ram" and "Showing memory" or "Showing CPU", 850)
   end,
 
   disappear = function(context)

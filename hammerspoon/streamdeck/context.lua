@@ -258,6 +258,7 @@ function context.new(options)
       return table.pack(callback(self, table.unpack(args, 1, args.n)))
     end, callbackTraceback)
     if not ok then
+      emitFeedback("error", "Action failed", 1200)
       reportCallbackFailure()
       return false
     end

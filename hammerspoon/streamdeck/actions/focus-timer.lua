@@ -15,6 +15,8 @@ return {
   id = "com.brettinternet.hammerspoon.focus-timer",
   name = "Focus timer",
   description = "Start a 25-minute focus timer, or cancel it while running.",
+  category = "Productivity",
+  gesture = "Press: start or cancel the focus timer",
 
   appear = function(context)
     state_by_instance[context.instanceId] = {
@@ -52,6 +54,7 @@ return {
     if state.running then
       stop_timer(state)
       state.running = false
+      context:success("Focus cancelled", 850)
       return
     end
 
@@ -66,6 +69,7 @@ return {
 
       state.timer = nil
       state.running = false
+      context:success("Focus complete", 1000)
       context:refresh()
     end)
     if not ok then
@@ -77,6 +81,7 @@ return {
 
     state.timer = timer_or_error
     state.running = true
+    context:success("Focus started", 850)
   end,
 
   disappear = function(context)

@@ -909,7 +909,17 @@ local function isAppearanceIcon(value)
 end
 local function validateSettingsField(field, seenKeys)
   local kind = rawget(field, "type")
-  local allowed = { type = true, key = true, label = true, description = true, required = true, default = true }
+  local allowed = {
+    type = true,
+    key = true,
+    label = true,
+    description = true,
+    required = true,
+    default = true,
+    controllers = true,
+    visibleWhen = true,
+    section = true,
+  }
   if kind == "text" then
     allowed.minLength = true
     allowed.maxLength = true
@@ -919,6 +929,7 @@ local function validateSettingsField(field, seenKeys)
     allowed.step = true
   elseif kind == "select" then
     allowed.options = true
+    allowed.refreshable = true
   elseif kind ~= "boolean" then
     return false
   end
@@ -928,6 +939,28 @@ local function validateSettingsField(field, seenKeys)
   if rawget(field, "label") ~= nil and not boundedString(rawget(field, "label"), MAX_SETTINGS_LABEL_LENGTH) then return false end
   if rawget(field, "description") ~= nil and not boundedString(rawget(field, "description"), MAX_DESCRIPTION_LENGTH) then return false end
   if rawget(field, "required") ~= nil and type(rawget(field, "required")) ~= "boolean" then return false end
+  local controllers = rawget(field, "controllers")
+  if controllers ~= nil then
+    if not isArray(controllers) or #controllers < 1 or #controllers > 2 then return false end
+    local seenControllers = {}
+    for _, controller in ipairs(controllers) do
+      if (controller ~= "keypad" and controller ~= "encoder") or seenControllers[controller] then return false end
+      seenControllers[controller] = true
+    end
+  end
+  local visibility = rawget(field, "visibleWhen")
+  if visibility ~= nil then
+    if not isObject(visibility)
+        or not boundedString(rawget(visibility, "key"), MAX_SETTINGS_KEY_LENGTH)
+        or rawget(visibility, "key") == rawget(field, "key") then return false end
+    for key in next, visibility do
+      if key ~= "key" and key ~= "equals" then return false end
+    end
+    local expected = rawget(visibility, "equals")
+    if type(expected) ~= "string" and type(expected) ~= "boolean" and not isFiniteNumber(expected) then return false end
+  end
+  if rawget(field, "section") ~= nil and not boundedString(rawget(field, "section"), 64) then return false end
+  if rawget(field, "refreshable") ~= nil and type(rawget(field, "refreshable")) ~= "boolean" then return false end
   local fieldKey = rawget(field, "key")
   if seenKeys[fieldKey] then return false end
   seenKeys[fieldKey] = true
@@ -977,6 +1010,10 @@ local function validateSettingsSchema(settingsSchema, version)
     for _, field in ipairs(settingsSchema) do
       if not validateSettingsField(field, seenKeys) then return false end
     end
+    for _, field in ipairs(settingsSchema) do
+      local visibility = rawget(field, "visibleWhen")
+      if visibility ~= nil and not seenKeys[rawget(visibility, "key")] then return false end
+    end
   end
   return true
 end
@@ -994,6 +1031,19 @@ local function validateActions(actions)
       return false, "INVALID_FIELD"
     end
     if rawget(action, "description") ~= nil and not boundedString(rawget(action, "description"), MAX_DESCRIPTION_LENGTH) then
+      return false, "INVALID_FIELD"
+    end
+    local category = rawget(action, "category")
+    if category ~= nil
+        and category ~= "Applications"
+        and category ~= "Audio"
+        and category ~= "Productivity"
+        and category ~= "Windows"
+        and category ~= "System"
+        and category ~= "Media" then
+      return false, "INVALID_FIELD"
+    end
+    if rawget(action, "gesture") ~= nil and not boundedString(rawget(action, "gesture"), MAX_DESCRIPTION_LENGTH) then
       return false, "INVALID_FIELD"
     end
     local settingsSchema = rawget(action, "settingsSchema")

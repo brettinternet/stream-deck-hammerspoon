@@ -42,8 +42,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local appearance = action.appearance(first_context)
     assertEqual(appearance.title, "Allow sleep")
     assertEqual(appearance.state, "inactive")
-    assertEqual(appearance.icon, nil, "Stream Deck must own the toggle state icons")
-    assertEqual(appearance.appearanceVersion, nil)
+    assertEqual(appearance.icon.kind, "custom")
+    assertEqual(appearance.badge, nil)
+    assertEqual(appearance.appearanceVersion, 1)
     action.press(first_context)
     assertEqual(toggle_calls[1], "displayIdle")
     assertTrue(display_idle, "first toggle must prevent display idle sleep")
@@ -54,7 +55,8 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     appearance = action.appearance(first_context)
     assertEqual(appearance.title, "Awake")
     assertEqual(appearance.state, "active")
-    assertEqual(appearance.icon, nil, "Stream Deck must own the toggle state icons")
+    assertEqual(appearance.icon.kind, "custom")
+    assertEqual(appearance.badge, "ON")
 
 
     action.press(second_context)

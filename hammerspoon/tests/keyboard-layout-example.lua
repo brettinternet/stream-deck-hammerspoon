@@ -34,22 +34,25 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local action = streamdeck.registrations[1]
     assertEqual(action.id, "com.brettinternet.hammerspoon.keyboard-layout")
     assertEqual(action.description, "Switch between two enabled keyboard layouts.")
-    assertEqual(#action.settingsSchema, 2)
-    assertEqual(action.settingsSchema[1].key, "firstLayout")
-    assertEqual(action.settingsSchema[2].key, "secondLayout")
-    assertEqual(action.settingsSchema[1].type, "select")
-    assertEqual(action.settingsSchema[2].type, "select")
-    assertTrue(action.settingsSchema[1].description ~= "")
-    assertTrue(action.settingsSchema[2].description ~= "")
-    local options = action.settingsSchema[1].options
+    local schema = action.settingsSchemaProvider()
+    assertEqual(#schema, 2)
+    assertEqual(schema[1].key, "firstLayout")
+    assertEqual(schema[2].key, "secondLayout")
+    assertEqual(schema[1].type, "select")
+    assertEqual(schema[2].type, "select")
+    assertTrue(schema[1].description ~= "")
+    assertTrue(schema[2].description ~= "")
+    assertTrue(schema[1].refreshable)
+    assertTrue(schema[2].refreshable)
+    local options = schema[1].options
     assertEqual(#options, 4, "layout choices must be deduplicated")
     assertEqual(options[1].value, "__not_configured__")
     assertEqual(options[1].label, "Not configured")
     assertEqual(options[2].value, "Colemak")
     assertEqual(options[3].value, "Dvorak")
     assertEqual(options[4].value, "U.S.")
-    assertEqual(action.settingsSchema[1].default, "U.S.")
-    assertEqual(action.settingsSchema[2].default, "Colemak")
+    assertEqual(schema[1].default, "U.S.")
+    assertEqual(schema[2].default, "Colemak")
 
     local layout_context = context("keyboard", {
       firstLayout = "U.S.",
@@ -108,14 +111,15 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     })
     local action = streamdeck.registrations[1]
-    local first_field = action.settingsSchema[1]
-    local second_field = action.settingsSchema[2]
+    local capped_schema = action.settingsSchemaProvider()
+    local first_field = capped_schema[1]
+    local second_field = capped_schema[2]
 
     assertEqual(#first_field.options, 64)
     assertEqual(#second_field.options, 64)
     assertEqual(first_field.default, "Zulu")
     assertEqual(second_field.default, "Layout 01")
-    for _, field in ipairs(action.settingsSchema) do
+    for _, field in ipairs(capped_schema) do
       assertEqual(field.type, "select")
       assertTrue(#field.options <= 64)
       local default_advertised = false
@@ -170,8 +174,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         end,
       },
     })
-    assertEqual(#empty.registrations[1].settingsSchema[1].options, 1)
-    assertEqual(empty.registrations[1].settingsSchema[1].default, "__not_configured__")
+    local empty_schema = empty.registrations[1].settingsSchemaProvider()
+    assertEqual(#empty_schema[1].options, 1)
+    assertEqual(empty_schema[1].default, "__not_configured__")
     assertError(function()
       empty.registrations[1].appearance(context("empty"))
     end, "no enabled keyboard layouts available")
@@ -180,7 +185,8 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
   test("keyboard layout reports unavailable APIs", function()
     local unavailable = load_fixture("hammerspoon/streamdeck/actions/keyboard-layout.lua", {})
     local unavailable_context = context("unavailable")
-    assertEqual(#unavailable.registrations[1].settingsSchema[1].options, 1)
+    local unavailable_schema = unavailable.registrations[1].settingsSchemaProvider()
+    assertEqual(#unavailable_schema[1].options, 1)
     assertError(function()
       unavailable.registrations[1].appearance(unavailable_context)
     end, "keyboard layout unavailable")

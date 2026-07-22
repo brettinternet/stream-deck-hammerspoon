@@ -117,16 +117,23 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(action.name, "Microphone mute")
     assertTrue(type(action.description) == "string" and action.description ~= "")
     assertEqual(action.settingsSchemaVersion, 1)
-    assertEqual(action.settingsSchema[1].type, "select")
-    assertEqual(action.settingsSchema[1].options[1].value, "default")
-    assertEqual(action.settingsSchema[1].options[1].label, "Default input — MacBook Microphone")
-    assertEqual(action.settingsSchema[1].options[2].value, "builtin-uid")
-    assertEqual(action.settingsSchema[1].options[2].label, "MacBook Microphone")
-    assertEqual(action.settingsSchema[1].options[3].value, "usb-uid")
-    assertEqual(action.settingsSchema[1].options[3].label, "USB Microphone")
-    assertTrue(type(action.settingsSchema[1].description) == "string")
-    assertEqual(action.settingsSchema[2].type, "boolean")
-    assertTrue(type(action.settingsSchema[2].description) == "string")
+    local schema = action.settingsSchemaProvider()
+    assertEqual(schema[1].type, "select")
+    assertEqual(schema[1].options[1].value, "default")
+    assertEqual(schema[1].options[1].label, "Default input — MacBook Microphone")
+    assertEqual(schema[1].options[2].value, "builtin-uid")
+    assertEqual(schema[1].options[2].label, "MacBook Microphone")
+    assertEqual(schema[1].options[3].value, "usb-uid")
+    assertEqual(schema[1].options[3].label, "USB Microphone")
+    assertTrue(type(schema[1].description) == "string")
+    assertTrue(schema[1].refreshable)
+    assertEqual(schema[2].key, "mode")
+    assertEqual(schema[2].type, "select")
+    assertEqual(schema[3].key, "muteMeetingApps")
+    assertEqual(schema[3].type, "boolean")
+    assertTrue(type(schema[3].description) == "string")
+    assertEqual(schema[4].visibleWhen.key, "muteMeetingApps")
+    assertTrue(schema[4].visibleWhen.equals)
 
     local default_context = context("default", {})
     local appearance = action.appearance(default_context)
@@ -191,6 +198,45 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     action.press(meeting_context)
     assertEqual(#shortcut_calls, shortcut_count, "unavailable apps must not receive shortcuts")
 
+    local push_to_talk = context("push-to-talk", {
+      inputDevice = "usb-uid",
+      mode = "pushToTalk",
+    })
+    local set_count = #set_calls
+    assertTrue(usb.muted_state)
+    action.press(push_to_talk)
+    assertFalse(usb.muted_state, "push-to-talk must unmute while held")
+    push_to_talk.settings.inputDevice = "default"
+    action.release(push_to_talk)
+    assertTrue(usb.muted_state, "push-to-talk must restore the exact held microphone")
+    assertEqual(#set_calls, set_count + 2)
+    push_to_talk.settings.inputDevice = "usb-uid"
+    usb.muted_state = false
+    set_count = #set_calls
+    action.press(push_to_talk)
+    action.release(push_to_talk)
+    assertFalse(usb.muted_state, "push-to-talk must preserve an already-live microphone")
+    assertEqual(#set_calls, set_count, "already-live push-to-talk must not write redundant mute state")
+    applications["us.zoom.xos"].running = true
+    usb.muted_state = true
+    local disappearing_push_to_talk = context("disappearing-push-to-talk", {
+      inputDevice = "usb-uid",
+      mode = "pushToTalk",
+      muteMeetingApps = true,
+      muteZoom = true,
+      muteTeams = false,
+      muteSlack = false,
+    })
+    shortcut_count = #shortcut_calls
+    action.press(disappearing_push_to_talk)
+    assertFalse(usb.muted_state, "push-to-talk must unmute before disappearance")
+    action.disappear(disappearing_push_to_talk)
+    assertTrue(usb.muted_state, "disappearance must restore a held microphone")
+    assertEqual(#shortcut_calls, shortcut_count + 2, "disappearance must restore meeting-app mute")
+    action.release(disappearing_push_to_talk)
+    assertEqual(#shortcut_calls, shortcut_count + 2, "release after disappearance must not restore twice")
+    applications["us.zoom.xos"].running = false
+
     failure = "muted-throws"
     assertError(function()
       action.appearance(default_context)
@@ -239,7 +285,8 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     })
     local action = streamdeck.registrations[1]
-    assertEqual(action.settingsSchema[1].options[1].label, "Default input — No input device")
+    local no_device_schema = action.settingsSchemaProvider()
+    assertEqual(no_device_schema[1].options[1].label, "Default input — No input device")
     local no_device_context = context("no-device")
     local appearance = action.appearance(no_device_context)
     assertEqual(appearance.title, "No mic")
@@ -255,7 +302,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       local streamdeck = load_fixture("hammerspoon/streamdeck/actions/microphone.lua", fake_hs)
       assertEqual(#streamdeck.registrations, 1, "microphone must register after discovery failure")
       local action = streamdeck.registrations[1]
-      local options = action.settingsSchema[1].options
+      local options = action.settingsSchemaProvider()[1].options
       assertEqual(#options, 1, "discovery fallback must contain only the synthetic default")
       assertEqual(options[1].value, "default")
       assertEqual(options[1].label, "Default input — unavailable")
@@ -330,7 +377,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     })
     local action = streamdeck.registrations[1]
-    local options = action.settingsSchema[1].options
+    local options = action.settingsSchemaProvider()[1].options
     assertEqual(#options, 64, "synthetic default plus specific choices must fit schema-v1 bounds")
     assertEqual(options[1].label, "Default input — Microphone 64")
     assertEqual(options[2].label, "Microphone 01")

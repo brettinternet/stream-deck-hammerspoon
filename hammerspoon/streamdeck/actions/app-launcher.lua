@@ -4,6 +4,7 @@
 local action_id = "com.brettinternet.hammerspoon.app-launcher"
 local default_app = "Hammerspoon"
 local default_label = "Launch app"
+local helpers = require("streamdeck.helpers")
 
 local function settings_for(context)
   local settings = nil
@@ -66,11 +67,34 @@ local function frontmost_application()
   return name
 end
 
+local function application_icon(context, app_name)
+  if type(hs) ~= "table"
+      or type(hs.application) ~= "table"
+      or type(hs.application.find) ~= "function"
+      or type(hs.image) ~= "table"
+      or type(hs.image.imageFromAppBundle) ~= "function" then
+    return helpers.icon("rocket", { foregroundColor = helpers.colors.accent })
+  end
+  local ok, application = pcall(hs.application.find, app_name)
+  if not ok or application == nil or type(application.bundleID) ~= "function" then
+    return helpers.icon("rocket", { foregroundColor = helpers.colors.accent })
+  end
+  local bundle_ok, bundle_id = pcall(application.bundleID, application)
+  if not bundle_ok or type(bundle_id) ~= "string" or bundle_id == "" then
+    return helpers.icon("rocket", { foregroundColor = helpers.colors.accent })
+  end
+  local image_ok, image = pcall(hs.image.imageFromAppBundle, bundle_id)
+  return image_ok and helpers.png(context, image)
+    or helpers.icon("rocket", { foregroundColor = helpers.colors.accent })
+end
+
 
 return {
   id = action_id,
   name = "Launch or focus app",
   description = "Launch or focus the configured macOS application.",
+  category = "Applications",
+  gesture = "Press: launch or focus the configured application",
   settingsSchemaVersion = 1,
   settingsSchema = {
     { type = "text", key = "app", maxLength = 128, description = "macOS application name shown in Applications or the app's menu; defaults to Hammerspoon." },
@@ -83,6 +107,8 @@ return {
     return {
       title = label,
       state = frontmost_name == app and "active" or "inactive",
+      appearanceVersion = 1,
+      icon = application_icon(context, app),
     }
   end,
 
@@ -97,6 +123,7 @@ return {
     if result ~= true then
       error("failed to launch or focus app")
     end
+    context:success("Opened " .. app, 900)
 
   end,
 }

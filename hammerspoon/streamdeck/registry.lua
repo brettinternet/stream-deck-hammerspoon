@@ -5,8 +5,11 @@ local allowedFields = {
   id = true,
   name = true,
   description = true,
+  category = true,
+  gesture = true,
   settingsSchema = true,
   settingsSchemaVersion = true,
+  settingsSchemaProvider = true,
   appearance = true,
   press = true,
   release = true,
@@ -82,6 +85,15 @@ local MAX_SETTINGS_OPTIONS = 64
 local MAX_SETTINGS_OPTION_VALUE_LENGTH = 256
 local MIN_GESTURE_THRESHOLD_MS = 100
 local MAX_GESTURE_THRESHOLD_MS = 10000
+local ACTION_CATEGORIES = {
+  Applications = true,
+  Audio = true,
+  Productivity = true,
+  Windows = true,
+  System = true,
+  Media = true,
+}
+local MAX_SETTINGS_SECTION_LENGTH = 64
 
 local function isInteger(value)
   return type(value) == "number" and value == math.floor(value)
@@ -108,6 +120,9 @@ local function validateSettingsField(field, fieldIndex, seenKeys)
     description = true,
     required = true,
     default = true,
+    controllers = true,
+    visibleWhen = true,
+    section = true,
   }
   if kind == "text" then
     allowed.minLength = true
@@ -118,6 +133,7 @@ local function validateSettingsField(field, fieldIndex, seenKeys)
     allowed.step = true
   elseif kind == "select" then
     allowed.options = true
+    allowed.refreshable = true
   elseif kind ~= "boolean" then
     error("Stream Deck action settingsSchema field " .. fieldIndex .. " has an invalid type", 4)
   end
@@ -143,6 +159,46 @@ local function validateSettingsField(field, fieldIndex, seenKeys)
   end
   if rawget(field, "required") ~= nil and type(rawget(field, "required")) ~= "boolean" then
     error("Stream Deck action settingsSchema field " .. fieldIndex .. " required must be boolean", 4)
+  end
+  local controllers = rawget(field, "controllers")
+  if controllers ~= nil then
+    if type(controllers) ~= "table" or #controllers < 1 or #controllers > 2 then
+      error("Stream Deck action settingsSchema field " .. fieldIndex .. " controllers must be a bounded array", 4)
+    end
+    local seenControllers = {}
+    for index, controller in ipairs(controllers) do
+      if (controller ~= "keypad" and controller ~= "encoder") or seenControllers[controller] then
+        error("Stream Deck action settingsSchema field " .. fieldIndex .. " controllers are invalid", 4)
+      end
+      seenControllers[controller] = true
+      if rawget(controllers, index) == nil then
+        error("Stream Deck action settingsSchema field " .. fieldIndex .. " controllers must be dense", 4)
+      end
+    end
+  end
+  local visibility = rawget(field, "visibleWhen")
+  if visibility ~= nil then
+    if type(visibility) ~= "table"
+        or not isBoundedString(rawget(visibility, "key"), MAX_SETTINGS_KEY_LENGTH)
+        or rawget(visibility, "key") == fieldKey then
+      error("Stream Deck action settingsSchema field " .. fieldIndex .. " visibleWhen is invalid", 4)
+    end
+    for key in pairs(visibility) do
+      if key ~= "key" and key ~= "equals" then
+        error("Stream Deck action settingsSchema field " .. fieldIndex .. " visibleWhen has unknown keys", 4)
+      end
+    end
+    local expected = rawget(visibility, "equals")
+    if type(expected) ~= "string" and type(expected) ~= "boolean" and not isFiniteNumber(expected) then
+      error("Stream Deck action settingsSchema field " .. fieldIndex .. " visibleWhen equals is invalid", 4)
+    end
+  end
+  if rawget(field, "section") ~= nil
+      and not isBoundedString(rawget(field, "section"), MAX_SETTINGS_SECTION_LENGTH) then
+    error("Stream Deck action settingsSchema field " .. fieldIndex .. " section must be non-empty and bounded", 4)
+  end
+  if rawget(field, "refreshable") ~= nil and type(rawget(field, "refreshable")) ~= "boolean" then
+    error("Stream Deck action settingsSchema field " .. fieldIndex .. " refreshable must be boolean", 4)
   end
 
   if kind == "text" then
@@ -253,9 +309,26 @@ local function validateSettingsSchema(settingsSchema, version)
     for index, field in ipairs(settingsSchema) do
       validateSettingsField(field, index, seenKeys)
     end
+    for index, field in ipairs(settingsSchema) do
+      local visibility = rawget(field, "visibleWhen")
+      if visibility ~= nil and not seenKeys[rawget(visibility, "key")] then
+        error("Stream Deck action settingsSchema field " .. index .. " visibleWhen references an unknown key", 4)
+      end
+    end
   end
 end
 
+
+local function settingsSchemaFor(definition)
+  if definition.settingsSchemaProvider == nil then
+    return definition.settingsSchema
+  end
+  local ok, schema = pcall(definition.settingsSchemaProvider)
+  if not ok then
+    error("Stream Deck action settingsSchemaProvider failed: " .. tostring(schema), 3)
+  end
+  return schema
+end
 
 local function validateDefinition(definition)
   if type(definition) ~= "table" then
@@ -277,14 +350,27 @@ local function validateDefinition(definition)
   if definition.description ~= nil and not isBoundedString(definition.description, MAX_DESCRIPTION_LENGTH) then
     error("Stream Deck action description must be non-empty and bounded", 3)
   end
+  if definition.category ~= nil and not ACTION_CATEGORIES[definition.category] then
+    error("Stream Deck action category is invalid", 3)
+  end
+  if definition.gesture ~= nil and not isBoundedString(definition.gesture, MAX_DESCRIPTION_LENGTH) then
+    error("Stream Deck action gesture must be non-empty and bounded", 3)
+  end
+  if definition.settingsSchemaProvider ~= nil and type(definition.settingsSchemaProvider) ~= "function" then
+    error("Stream Deck action settingsSchemaProvider must be a function", 3)
+  end
+  if definition.settingsSchema ~= nil and definition.settingsSchemaProvider ~= nil then
+    error("Stream Deck action cannot define both settingsSchema and settingsSchemaProvider", 3)
+  end
   local version = definition.settingsSchemaVersion
   if version ~= nil and (not isInteger(version) or version < 1 or version > 16) then
     error("Stream Deck action settingsSchemaVersion must be a bounded positive integer", 3)
   end
-  if definition.settingsSchema ~= nil then
-    validateSettingsSchema(definition.settingsSchema, version)
+  local settingsSchema = settingsSchemaFor(definition)
+  if settingsSchema ~= nil then
+    validateSettingsSchema(settingsSchema, version)
   elseif version ~= nil then
-    error("Stream Deck action settingsSchemaVersion requires settingsSchema", 3)
+    error("Stream Deck action settingsSchemaVersion requires settingsSchema or settingsSchemaProvider", 3)
   end
   if type(definition.appearance) ~= "function" then
     error("Stream Deck action appearance must be a function", 3)
@@ -373,8 +459,16 @@ function registry.new()
       if definition.description ~= nil then
         action.description = definition.description
       end
-      if definition.settingsSchema ~= nil then
-        action.settingsSchema = definition.settingsSchema
+      if definition.category ~= nil then
+        action.category = definition.category
+      end
+      if definition.gesture ~= nil then
+        action.gesture = definition.gesture
+      end
+      local settingsSchema = settingsSchemaFor(definition)
+      if settingsSchema ~= nil then
+        validateSettingsSchema(settingsSchema, definition.settingsSchemaVersion)
+        action.settingsSchema = settingsSchema
       end
       if definition.settingsSchemaVersion ~= nil then
         action.settingsSchemaVersion = definition.settingsSchemaVersion

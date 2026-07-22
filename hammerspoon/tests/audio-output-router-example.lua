@@ -46,24 +46,27 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     })
     local action = streamdeck.registrations[1]
-    assertEqual(action.description, "Cycle through configured audio output devices.")
-    assertEqual(#action.settingsSchema, 4)
-    for index, field in ipairs(action.settingsSchema) do
+    assertEqual(action.description, "Cycle outputs on a key, or select with a dial and press to confirm.")
+    local schema = action.settingsSchemaProvider()
+    assertEqual(#schema, 4)
+    for index, field in ipairs(schema) do
       assertEqual(field.type, "select")
       assertEqual(field.key, "output" .. index)
       assertTrue(type(field.description) == "string" and field.description ~= "")
       assertEqual(field.options[1].value, "__not_configured__")
       assertEqual(field.options[1].label, "Not configured")
+      assertTrue(field.refreshable)
+      assertEqual(field.section, index > 2 and "More outputs" or nil)
     end
-    local options = action.settingsSchema[1].options
+    local options = schema[1].options
     assertEqual(#options, 5, "duplicate UIDs must be removed")
     assertEqual(options[2].label, "AirPods")
     assertEqual(options[2].value, "uid-airpods")
     assertEqual(options[3].label, "Headphones")
     assertEqual(options[4].label, "MacBook Pro Speakers")
     assertEqual(options[5].label, "Studio Display")
-    assertEqual(action.settingsSchema[1].default, "uid-speakers")
-    assertEqual(action.settingsSchema[2].default, "__not_configured__")
+    assertEqual(schema[1].default, "uid-speakers")
+    assertEqual(schema[2].default, "__not_configured__")
 
     local router = context("router", {
       output1 = "uid-speakers",
@@ -72,17 +75,19 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       output4 = "uid-airpods",
     })
     local appearance = action.appearance(router)
-    assertEqual(appearance.title, "MacBook Pro Speakers")
+    assertTrue(appearance.title:find("MacBook Pro Speakers", 1, true) == 1)
     assertEqual(appearance.state, "inactive")
     assertEqual(appearance.appearanceVersion, 1)
     assertEqual(appearance.presentationState, 0)
+    assertEqual(appearance.badge, "MPS")
+    assertEqual(appearance.icon.kind, "custom")
 
     for presentation_state, uid in ipairs({ "uid-headphones", "uid-display", "uid-airpods" }) do
       action.press(router)
       assertEqual(set_calls[presentation_state], uid)
       assertEqual(router.refreshes, presentation_state)
       appearance = action.appearance(router)
-      assertEqual(appearance.title, devices[uid].name())
+      assertTrue(appearance.title:find(devices[uid].name(), 1, true) == 1)
       assertEqual(appearance.state, "active")
       assertEqual(appearance.presentationState, presentation_state)
     end
@@ -93,7 +98,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
 
     current_uid = "uid-other"
     appearance = action.appearance(router)
-    assertEqual(appearance.title, "Other")
+    assertTrue(appearance.title:find("Other", 1, true) == 1)
     assertEqual(appearance.state, "inactive")
     assertEqual(appearance.presentationState, 0)
     current_uid = "uid-headphones"
@@ -103,7 +108,20 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     })
     action.press(explicit_unconfigured_router)
     assertEqual(set_calls[5], "uid-headphones")
+
+    current_uid = "uid-speakers"
+    local dial = context("dial", router.settings, { controllerType = "encoder" })
+    appearance = action.appearance(dial)
+    assertEqual(appearance.value, "Rotate to select")
+    action.rotate(dial, 1)
+    appearance = action.appearance(dial)
+    assertTrue(appearance.title:find("MacBook Pro Speakers → Headphones", 1, true) ~= nil)
+    assertEqual(appearance.value, "Press to confirm")
+    action.push(dial)
+    assertEqual(current_uid, "uid-headphones")
+    assertEqual(action.appearance(dial).value, "Rotate to select")
   end)
+
 
   test("audio output router resolves legacy saved names", function()
     local current_uid = "uid-speakers"
@@ -223,8 +241,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     })
     local empty_action = empty.registrations[1]
-    assertEqual(#empty_action.settingsSchema[1].options, 1)
-    assertEqual(empty_action.settingsSchema[1].default, "__not_configured__")
+    local empty_schema = empty_action.settingsSchemaProvider()
+    assertEqual(#empty_schema[1].options, 1)
+    assertEqual(empty_schema[1].default, "__not_configured__")
     assertEqual(empty_action.appearance(context("empty")).title, "No output")
     assertError(function()
       empty_action.press(context("empty"))

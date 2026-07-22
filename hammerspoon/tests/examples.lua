@@ -84,7 +84,18 @@ local function load_fixture(path, fake_hs)
     for key, value in pairs(definition) do
       registered[key] = value
     end
-    for _, field in ipairs({ "appearance", "press", "longPress", "appear", "disappear", "rotate" }) do
+    for _, field in ipairs({
+      "appearance",
+      "press",
+      "release",
+      "push",
+      "longPress",
+      "appear",
+      "disappear",
+      "rotate",
+      "touchTap",
+      "settingsSchemaProvider",
+    }) do
       if type(definition[field]) == "function" then
         local callback = definition[field]
         registered[field] = function(...)
@@ -144,6 +155,8 @@ local function context(instance_id, settings, device)
     settings = settings,
     device = device,
     refreshes = 0,
+    sounds = {},
+    feedbacks = {},
     getSettings = function(self)
       return self.settings
     end,
@@ -152,6 +165,17 @@ local function context(instance_id, settings, device)
     end,
     refresh = function(self)
       self.refreshes = self.refreshes + 1
+    end,
+    success = function(self, message, duration_ms)
+      self.feedbacks[#self.feedbacks + 1] = {
+        kind = "success",
+        message = message,
+        durationMs = duration_ms,
+      }
+    end,
+    playSound = function(self, spec)
+      self.sounds[#self.sounds + 1] = spec
+      return true
     end,
   }
 end

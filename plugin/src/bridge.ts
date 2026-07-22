@@ -29,6 +29,7 @@ import {
   sanitizeDeviceMetadata,
   serializeClientMessage,
   type AppearanceFields,
+  type ActionCategory,
   type ClientMessage,
   type DeviceMetadata,
   type FeedbackKind,
@@ -60,6 +61,8 @@ export interface BridgeAction {
   actionId: string;
   name: string;
   description?: string;
+  category?: ActionCategory;
+  gesture?: string;
   settingsSchema?: JsonValue[];
   settingsSchemaVersion?: number;
 }
@@ -242,6 +245,8 @@ function copyAction(action: BridgeAction): BridgeAction {
     actionId: action.actionId,
     name: action.name,
     ...(action.description === undefined ? {} : { description: action.description }),
+    ...(action.category === undefined ? {} : { category: action.category }),
+    ...(action.gesture === undefined ? {} : { gesture: action.gesture }),
     ...(action.settingsSchema === undefined
       ? {}
       : { settingsSchema: action.settingsSchema.map(copyJsonValue) }),

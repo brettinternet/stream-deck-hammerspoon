@@ -18,6 +18,8 @@ return {
   id = action_id,
   name = "Lock screen",
   description = "Lock the screen.",
+  category = "System",
+  gesture = "Press: lock the screen",
   sound = sound.press(),
   -- The shared policy plays the default press cue only after this callback succeeds.
 
@@ -31,7 +33,7 @@ return {
     }
   end,
 
-  press = function(_context)
+  press = function(context)
     local caffeinate = caffeinate_api()
     local ok, result = pcall(caffeinate.lockScreen)
     if not ok then
@@ -40,6 +42,7 @@ return {
     if result ~= nil and result ~= true then
       error("failed to lock screen: expected true or nil result")
     end
+    context:success("Screen locked", 850)
   end,
 }
 

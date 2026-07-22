@@ -3,6 +3,7 @@
 
 local NOT_CONFIGURED = "__not_configured__"
 local NOT_CONFIGURED_LABEL = "Not configured"
+local helpers = require("streamdeck.helpers")
 
 local function keycodes_api()
   if type(hs) ~= "table"
@@ -82,23 +83,20 @@ local function discover_layout_options()
   return options, current, query_error
 end
 
-local LAYOUT_OPTIONS, CURRENT_LAYOUT, LAYOUT_QUERY_ERROR = discover_layout_options()
-
-local function layout_defaults()
-  local first = CURRENT_LAYOUT
+local function layout_defaults(options, current)
+  local first = current
   if first == nil then
-    for index = 2, #LAYOUT_OPTIONS do
-      local value = LAYOUT_OPTIONS[index].value
+    for index = 2, #options do
+      local value = options[index].value
       if value ~= NOT_CONFIGURED then
         first = value
         break
       end
     end
   end
-
   local second
-  for index = 2, #LAYOUT_OPTIONS do
-    local value = LAYOUT_OPTIONS[index].value
+  for index = 2, #options do
+    local value = options[index].value
     if value ~= NOT_CONFIGURED and value ~= first then
       second = value
       break
@@ -107,7 +105,30 @@ local function layout_defaults()
   return first or NOT_CONFIGURED, second or NOT_CONFIGURED
 end
 
-local DEFAULT_FIRST_LAYOUT, DEFAULT_SECOND_LAYOUT = layout_defaults()
+local function settings_schema()
+  local options, current = discover_layout_options()
+  local first, second = layout_defaults(options, current)
+  return {
+    {
+      type = "select",
+      key = "firstLayout",
+      label = "First layout",
+      description = "Layout selected after the second layout.",
+      options = options,
+      default = first,
+      refreshable = true,
+    },
+    {
+      type = "select",
+      key = "secondLayout",
+      label = "Second layout",
+      description = "Layout selected after the first layout.",
+      options = options,
+      default = second,
+      refreshable = true,
+    },
+  }
+end
 
 local function settings_for(context)
   local settings = nil
@@ -120,15 +141,17 @@ local function settings_for(context)
   if type(settings) ~= "table" then
     settings = {}
   end
+  local options, current = discover_layout_options()
+  local default_first, default_second = layout_defaults(options, current)
 
   local first_layout = settings.firstLayout
   if type(first_layout) ~= "string" or first_layout == "" then
-    first_layout = DEFAULT_FIRST_LAYOUT
+    first_layout = default_first
   end
 
   local second_layout = settings.secondLayout
   if type(second_layout) ~= "string" or second_layout == "" then
-    second_layout = DEFAULT_SECOND_LAYOUT
+    second_layout = default_second
   end
 
   return first_layout, second_layout
@@ -147,29 +170,15 @@ return {
   id = "com.brettinternet.hammerspoon.keyboard-layout",
   name = "Keyboard layout",
   description = "Switch between two enabled keyboard layouts.",
+  category = "System",
+  gesture = "Press: switch to the other configured layout",
   settingsSchemaVersion = 1,
-  settingsSchema = {
-    {
-      type = "select",
-      key = "firstLayout",
-      label = "First layout",
-      description = "Layout selected after the second layout.",
-      options = LAYOUT_OPTIONS,
-      default = DEFAULT_FIRST_LAYOUT,
-    },
-    {
-      type = "select",
-      key = "secondLayout",
-      label = "Second layout",
-      description = "Layout selected after the first layout.",
-      options = LAYOUT_OPTIONS,
-      default = DEFAULT_SECOND_LAYOUT,
-    },
-  },
+  settingsSchemaProvider = settings_schema,
 
   appearance = function(context)
-    if LAYOUT_QUERY_ERROR ~= nil and #LAYOUT_OPTIONS == 1 then
-      error(LAYOUT_QUERY_ERROR)
+    local options, _, query_error = discover_layout_options()
+    if query_error ~= nil and #options == 1 then
+      error(query_error)
     end
     local first_layout, second_layout = settings_for(context)
     local layout = current_layout()
@@ -177,15 +186,23 @@ return {
       layout = first_layout
     end
 
+    local badge = layout:match("[%w]+") or "KEY"
+    badge = badge:sub(1, 4):upper()
     return {
       title = layout,
       state = layout == second_layout and "active" or "inactive",
+      appearanceVersion = 1,
+      badge = badge,
+      backgroundColor = helpers.colors.background,
+      foregroundColor = helpers.colors.foreground,
+      icon = helpers.icon("keyboard", { foregroundColor = helpers.colors.accent }),
     }
   end,
 
   press = function(context)
-    if LAYOUT_QUERY_ERROR ~= nil and #LAYOUT_OPTIONS == 1 then
-      error(LAYOUT_QUERY_ERROR)
+    local options, _, query_error = discover_layout_options()
+    if query_error ~= nil and #options == 1 then
+      error(query_error)
     end
     local first_layout, second_layout = settings_for(context)
     local layout = current_layout()
@@ -201,5 +218,6 @@ return {
     if result ~= true then
       error("failed to switch keyboard layout")
     end
+    context:success("Layout: " .. target, 1000)
   end,
 }

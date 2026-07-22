@@ -133,6 +133,8 @@ return {
   id = action_id,
   name = "Switch to last application",
   description = "Switch to the previously active application.",
+  category = "Applications",
+  gesture = "Press: switch to the previously active application",
 
   appear = function(context)
     visible_contexts[context.instanceId] = context
@@ -189,6 +191,7 @@ return {
       error("failed to activate previous application")
     end
 
+    context:success("Opened " .. application_name(target), 900)
   end,
 }
 

@@ -1,5 +1,5 @@
 -- Stream Deck action: a per-key Pomodoro session with timed work and breaks.
--- Press to run the configured focus cycles; press again to reset the current phase.
+-- Press to pause or resume the configured focus cycles; hold to reset.
 
 local action_id = "com.brettinternet.hammerspoon.pomodoro"
 local refresh_interval = 1
@@ -18,6 +18,8 @@ local settings_bounds = {
 }
 
 local helpers = require("streamdeck.helpers")
+local sound = require("streamdeck.sound")
+local completion_sound = sound.system("Glass", { volume = 0.65 })
 local tomato_icon = helpers.svg([[
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><ellipse cx="36" cy="42" rx="24" ry="21" fill="#E84C3D"/><path fill="#2F8F46" d="M36 23 L36 13 L32 10 L40 10 L36 13 L45 17 L43 22 L36 19 L29 22 L27 17 Z"/><path fill="#FFFFFF" d="M28 35 C31 29 40 28 45 34 C42 31 34 31 28 35 Z" fill-opacity="0.55"/></svg>
 ]])
@@ -31,6 +33,8 @@ local function new_state()
     phase_end_at = nil,
     timer = nil,
     generation = 0,
+    paused = false,
+    remaining = nil,
   }
 end
 
@@ -92,6 +96,7 @@ local function session_settings(context)
     end
     settings[key] = value
   end
+  settings.completionSound = type(configured) == "table" and configured.completionSound == true
   return settings
 end
 
@@ -111,6 +116,8 @@ local function set_phase(state, phase, cycle, at)
   state.phase = phase
   state.cycle = cycle
   state.phase_started_at = at
+  state.paused = false
+  state.remaining = nil
   state.phase_end_at = at + phase_duration(state)
 end
 
@@ -118,7 +125,10 @@ local function refresh(context)
   context:refresh()
 end
 
-local function finish_phase(state, instance_id, at)
+local function finish_phase(context, state, at)
+  if state.settings.completionSound then
+    context:playSound(completion_sound)
+  end
   if state.phase == "focus" then
     if state.cycle < state.settings.cycles then
       set_phase(state, "short-break", state.cycle, at)
@@ -141,7 +151,7 @@ local function finish_phase(state, instance_id, at)
     return
   end
 
-  if state_by_instance[instance_id] == state then
+  if state_by_instance[context.instanceId] == state then
     stop_timer(state)
   end
 end
@@ -162,7 +172,7 @@ local function start_refresh_timer(context, state)
     if state.phase_end_at and at >= state.phase_end_at then
       while state.phase_end_at and at >= state.phase_end_at do
         local phase_end_at = state.phase_end_at
-        finish_phase(state, instance_id, phase_end_at)
+        finish_phase(context, state, phase_end_at)
         if state.phase == "complete" then
           break
         end
@@ -184,6 +194,8 @@ local function start_session(context, state)
   local settings = session_settings(context)
   state.settings = settings
   set_phase(state, "focus", 1, at)
+  state.paused = false
+  state.remaining = nil
 
   local ok, err = pcall(function()
     start_refresh_timer(context, state)
@@ -206,7 +218,27 @@ local function reset_session(context, state)
   state.settings = nil
   state.phase_started_at = nil
   state.phase_end_at = nil
+  state.paused = false
+  state.remaining = nil
 end
+local function pause_session(state)
+  local at = clock_now()
+  state.remaining = math.max(0, state.phase_end_at - at)
+  state.paused = true
+  stop_timer(state)
+end
+
+local function resume_session(context, state)
+  local at = clock_now()
+  local duration = phase_duration(state)
+  local remaining = math.max(0, math.min(duration, state.remaining or duration))
+  state.phase_end_at = at + remaining
+  state.phase_started_at = state.phase_end_at - duration
+  state.paused = false
+  state.remaining = nil
+  start_refresh_timer(context, state)
+end
+
 
 local function format_remaining(seconds)
   local remaining = math.max(0, math.ceil(seconds))
@@ -223,18 +255,20 @@ local function appearance_for(context, state)
   }
 
   if state.phase == "focus" or state.phase == "short-break" or state.phase == "long-break" then
-    local at = clock_now()
+    local at = state.paused and nil or clock_now()
     local duration = phase_duration(state)
-    local elapsed = math.max(0, math.min(duration, at - state.phase_started_at))
+    local remaining = state.paused and (state.remaining or duration) or math.max(0, state.phase_end_at - at)
+    local elapsed = math.max(0, math.min(duration, duration - remaining))
     local progress = duration > 0 and elapsed / duration or 0
     local focus = state.phase == "focus"
-    local badge = focus and ("F" .. tostring(state.cycle))
-      or (state.phase == "short-break" and ("B" .. tostring(state.cycle)) or ("L" .. tostring(state.cycle)))
-    appearance.title = format_remaining(state.phase_end_at - at)
-    appearance.state = "active"
+    local badge = state.paused and "PAUS"
+      or (focus and ("F" .. tostring(state.cycle))
+      or (state.phase == "short-break" and ("B" .. tostring(state.cycle)) or ("L" .. tostring(state.cycle))))
+    appearance.title = state.paused and ("Paused\n" .. format_remaining(remaining)) or format_remaining(remaining)
+    appearance.state = state.paused and "inactive" or "active"
     appearance.badge = badge
     appearance.progress = progress
-    appearance.backgroundColor = focus and "#D94B4B" or "#3F9B66"
+    appearance.backgroundColor = state.paused and "#475569" or (focus and "#D94B4B" or "#3F9B66")
     appearance.foregroundColor = "#FFFFFF"
     return appearance
   end
@@ -259,6 +293,8 @@ return {
   id = action_id,
   name = "Pomodoro session",
   description = "Run focus cycles with timed breaks.",
+  category = "Productivity",
+  gesture = "Press: pause or resume · Hold: reset",
   settingsSchemaVersion = 1,
   settingsSchema = {
     {
@@ -280,6 +316,7 @@ return {
       min = 1,
       max = 60,
       step = 1,
+      section = "Schedule",
     },
     {
       type = "number",
@@ -290,6 +327,7 @@ return {
       min = 1,
       max = 120,
       step = 1,
+      section = "Schedule",
     },
     {
       type = "number",
@@ -300,9 +338,17 @@ return {
       min = 1,
       max = 12,
       step = 1,
+      section = "Schedule",
+    },
+    {
+      type = "boolean",
+      key = "completionSound",
+      label = "Completion sound",
+      description = "Play a sound when each focus or break phase completes.",
+      default = false,
+      section = "Schedule",
     },
   },
-
   appear = function(context)
     local state = state_for(context)
     stop_timer(state)
@@ -311,6 +357,8 @@ return {
     state.settings = nil
     state.phase_started_at = nil
     state.phase_end_at = nil
+    state.paused = false
+    state.remaining = nil
   end,
 
   appearance = function(context)
@@ -319,15 +367,25 @@ return {
 
   press = function(context)
     local state = state_for(context)
-    if state.phase == "focus"
-      or state.phase == "short-break"
-      or state.phase == "long-break" then
-      reset_session(context, state)
+    if state.phase == "focus" or state.phase == "short-break" or state.phase == "long-break" then
+      if state.paused then
+        resume_session(context, state)
+        context:success("Pomodoro resumed", 900)
+      else
+        pause_session(state)
+        context:success("Pomodoro paused", 900)
+      end
       return
     end
-
     start_session(context, state)
+    context:success("Focus started", 900)
   end,
+
+  longPress = function(context)
+    reset_session(context, state_for(context))
+    context:success("Pomodoro reset", 900)
+  end,
+  longPressThresholdMs = 650,
 
   disappear = function(context)
     local state = state_by_instance[context.instanceId]

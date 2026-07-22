@@ -2,6 +2,7 @@
 -- Press the key to keep the window's size while moving it to the center of the screen it occupies.
 
 local action_id = "com.brettinternet.hammerspoon.window-center"
+local helpers = require("streamdeck.helpers")
 
 local function focused_window()
   if type(hs) ~= "table"
@@ -78,18 +79,18 @@ return {
   id = action_id,
   name = "Center window",
   description = "Center the focused window without changing its size.",
+  category = "Windows",
+  gesture = "Press: center the focused window",
 
   appearance = function(_context)
-    if focused_window() == nil then
-      return {
-        title = "No window",
-        state = "inactive",
-      }
-    end
-
+    local available = focused_window() ~= nil
     return {
-      title = "Center",
-      state = "active",
+      title = available and "Center" or "No window",
+      state = available and "active" or "inactive",
+      appearanceVersion = 1,
+      icon = helpers.icon("center", {
+        foregroundColor = available and helpers.colors.accent or helpers.colors.inactive,
+      }),
     }
   end,
 
@@ -122,7 +123,7 @@ return {
     if not result then
       error("failed to set focused window frame: expected successful result")
     end
-
+    context:success("Window centered", 850)
   end,
 }
 

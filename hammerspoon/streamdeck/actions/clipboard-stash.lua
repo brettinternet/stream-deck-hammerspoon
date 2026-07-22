@@ -2,6 +2,7 @@
 -- The first press stores text for that key instance; the next press restores it and clears the stash.
 
 local action_id = "com.brettinternet.hammerspoon.clipboard-stash"
+local helpers = require("streamdeck.helpers")
 local state_by_instance = {}
 
 local function pasteboard_api(method)
@@ -29,22 +30,24 @@ return {
   id = action_id,
   name = "Clipboard stash",
   description = "Save clipboard text on first press and restore it on the next.",
+  category = "Productivity",
+  gesture = "Press: stash clipboard · Press again: restore",
 
   appear = function(context)
     state_by_instance[context.instanceId] = nil
   end,
 
   appearance = function(context)
-    if state_by_instance[context.instanceId] ~= nil then
-      return {
-        title = "Stashed",
-        state = "active",
-      }
-    end
-
+    local stashed = state_by_instance[context.instanceId] ~= nil
     return {
-      title = "Empty",
-      state = "inactive",
+      title = stashed and "Stashed" or "Empty",
+      state = stashed and "active" or "inactive",
+      appearanceVersion = 1,
+      badge = stashed and "1" or nil,
+      icon = helpers.icon(
+        stashed and "clipboard-check" or "clipboard",
+        { foregroundColor = stashed and helpers.colors.active or helpers.colors.inactive }
+      ),
     }
   end,
   press = function(context)
@@ -52,6 +55,7 @@ return {
     local stashed = state_by_instance[instance_id]
     if stashed == nil then
       state_by_instance[instance_id] = capture_clipboard()
+      context:success("Clipboard stashed", 850)
       return
     end
 
@@ -65,6 +69,7 @@ return {
     end
 
     state_by_instance[instance_id] = nil
+    context:success("Clipboard restored", 850)
   end,
 
   disappear = function(context)

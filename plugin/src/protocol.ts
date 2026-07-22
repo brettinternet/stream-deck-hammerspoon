@@ -181,12 +181,22 @@ export interface ListActionsMessage extends AuthenticatedClientMessage {
   requestId: string;
 }
 
+export type ActionCategory = "Applications" | "Audio" | "Productivity" | "Windows" | "System" | "Media";
+export type SettingsController = "keypad" | "encoder";
+export interface SettingsVisibility {
+  key: string;
+  equals: string | number | boolean;
+}
+
 export interface SettingsFieldBase {
   type: "text" | "number" | "boolean" | "select";
   key: string;
   label?: string;
   description?: string;
   required?: boolean;
+  controllers?: SettingsController[];
+  visibleWhen?: SettingsVisibility;
+  section?: string;
 }
 
 export interface TextSettingsField extends SettingsFieldBase {
@@ -213,6 +223,7 @@ export interface SelectSettingsField extends SettingsFieldBase {
   type: "select";
   default?: string;
   options: Array<{ value: string; label: string }>;
+  refreshable?: boolean;
 }
 
 export type SettingsField = TextSettingsField | NumberSettingsField | BooleanSettingsField | SelectSettingsField;
@@ -221,6 +232,8 @@ export interface ActionDefinition {
   actionId: string;
   name: string;
   description?: string;
+  category?: ActionCategory;
+  gesture?: string;
   settingsSchema?: JsonValue[];
   settingsSchemaVersion?: number;
   [key: string]: unknown;
@@ -770,6 +783,18 @@ function validateSettingsSchema(action: ActionDefinition, actionIndex: number): 
     if (!isBoundedDescription(field.description)) {
       throw settingsSchemaError(actionIndex, fieldIndex, "description must be non-empty and at most 512 Unicode code points");
     }
+    if (
+      field.controllers !== undefined &&
+      (new Set(field.controllers).size !== field.controllers.length)
+    ) {
+      throw settingsSchemaError(actionIndex, fieldIndex, "controllers must not contain duplicates");
+    }
+    if (field.visibleWhen !== undefined && field.visibleWhen.key === field.key) {
+      throw settingsSchemaError(actionIndex, fieldIndex, "visibleWhen must reference another field");
+    }
+    if (field.type !== "select" && "refreshable" in field) {
+      throw settingsSchemaError(actionIndex, fieldIndex, "refreshable is only valid for select fields");
+    }
 
     if (field.type === "text") {
       if (
@@ -810,6 +835,11 @@ function validateSettingsSchema(action: ActionDefinition, actionIndex: number): 
       }
     } else if (field.type === "boolean") {
       // Boolean fields have no kind-specific constraints.
+    }
+  });
+  fields.forEach((field, fieldIndex) => {
+    if (field.visibleWhen !== undefined && !keys.has(field.visibleWhen.key)) {
+      throw settingsSchemaError(actionIndex, fieldIndex, `visibleWhen references unknown key "${field.visibleWhen.key}"`);
     }
   });
 }
@@ -1270,6 +1300,15 @@ export function parseServerMessage(data: string): ServerMessage {
     for (const [index, action] of actions.entries()) {
       if (!isBoundedDescription(action.description)) {
         throw new Error(`Invalid server message: action ${index} description must be non-empty and at most 512 Unicode code points.`);
+      }
+      if (
+        action.category !== undefined &&
+        !["Applications", "Audio", "Productivity", "Windows", "System", "Media"].includes(action.category)
+      ) {
+        throw new Error(`Invalid server message: action ${index} category is unsupported.`);
+      }
+      if (!isBoundedDescription(action.gesture)) {
+        throw new Error(`Invalid server message: action ${index} gesture must be non-empty and at most 512 Unicode code points.`);
       }
       validateSettingsSchema(action, index);
       if (actionIds.has(action.actionId)) {
