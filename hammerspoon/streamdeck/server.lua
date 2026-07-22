@@ -623,6 +623,7 @@ function server.new(registry, protocol, contextFactory)
         self.authenticated = false
         self.sessionId = nil
         self.sessionMode = nil
+        self:_resetLanSession()
         return self:_lanError("AUTH_FAILED")
       end
       local expected = isSafeInteger(sequence) and type(payload) == "string"
@@ -633,6 +634,7 @@ function server.new(registry, protocol, contextFactory)
         self.authenticated = false
         self.sessionId = nil
         self.sessionMode = nil
+        self:_resetLanSession()
         return self:_lanError("AUTH_FAILED")
       end
       self.lanReceiveSequence = sequence

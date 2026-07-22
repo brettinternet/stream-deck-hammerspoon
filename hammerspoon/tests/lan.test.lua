@@ -82,6 +82,13 @@ local tampered = encode({ protocolVersion = 1, type = "lanFrame", sequence = 4, 
 local tamperedResponse = decode(http.websocketCallback(tampered))
 assert(tamperedResponse.type == "error" and tamperedResponse.code == "AUTH_FAILED")
 assert(pressed == 1, "tampered LAN frame must not dispatch")
+local tamperedReplay = decode(http.websocketCallback(encode({
+  protocolVersion = 1,
+  type = "lanProof",
+  clientId = "remote",
+  clientProof = Crypto.hexEncode(clientProof),
+})))
+assert(tamperedReplay.type == "error" and tamperedReplay.code == "AUTH_FAILED", "tampered frame must discard its handshake")
 
 local downgrade = decode(http.websocketCallback(encode({ protocolVersion = 1, type = "hello", token = "legacy-token", pluginVersion = "1.0.0" })))
 assert(downgrade.type == "error" and downgrade.code == "AUTH_REQUIRED", "LAN listener must reject v1 hello")
