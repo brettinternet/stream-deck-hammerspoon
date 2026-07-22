@@ -171,7 +171,8 @@ The driving use case: a second Stream Deck, attached to another computer on the 
 
 ### B5 — Add stronger denial-of-service limits
 
-**Status:** Planned; prerequisite of B4, after B3.
+**Status:** In progress 2026-07-21 — B5-T1 defines the bounded LAN listener policy below. Implementation is next.
+
 
 **Product assessment:** Under one authenticated loopback client, the 64 KiB frame/body cap bounds the realistic exposure, and no JSON nesting-depth limit, rate limiter, or connection-admission policy exists (verified). The moment the port is reachable from the LAN, those absences become real: unauthenticated peers can open connections, spray oversized or deeply nested frames, and exhaust the bridge before authentication ever runs. These limits must land before or with B4, not after.
 
@@ -186,7 +187,10 @@ The driving use case: a second Stream Deck, attached to another computer on the 
 
 #### Implementation tasks
 
-- [ ] B5-T1 — Define maximum JSON depth, collection sizes, parse work, and buffering behavior on both sides.
+- [x] B5-T1 — Define maximum JSON depth, collection sizes, parse work, and buffering behavior on both sides.
+  - Decision (2026-07-21): Direct protocol frames are limited to 64 KiB measured as UTF-8 bytes. LAN control frames (`lanHello`, `lanChallenge`, `lanProof`, and `lanReady`) are limited to 4 KiB; a LAN `lanFrame` wrapper remains within 64 KiB and its JSON payload is limited to 48 KiB before MAC verification and inner parsing. Before either runtime decodes untrusted JSON, an iterative structural preflight limits nesting to 16 containers, each container to 128 members/items, and each frame to 2,048 members/items total; its work is bounded by the byte limit and it rejects malformed or over-limit input as `MALFORMED_MESSAGE` without logging input.
+  - Admission and rate decision: each existing `hs.httpserver` listener admits its one supported WebSocket connection only; a listener has one handshake or authenticated session at a time, and B4 must replace this listener-global rule with per-client isolation before adding concurrent clients. Each runtime applies listener/socket-local inbound token buckets before dispatch: unauthenticated control traffic has a burst of 6 and refills at 12 frames/minute; authenticated traffic has a burst of 240 and refills at 120 frames/second. A limit violation invokes no callback, clears authentication/context state, and closes the TypeScript socket or returns only the existing safe protocol error on Lua. The plugin's 250 ms–10 s exponential reconnect schedule remains below the 12/minute sustained budget after its initial burst.
+  - Buffering and diagnostics decision: no application queue is introduced; each frame is fully admitted, structurally bounded, authenticated where required, parsed, validated, and dispatched synchronously or rejected. Existing 64 KiB output validation remains the outbound bound. Diagnostics use stable existing codes only and never include token, session ID, LAN key, MAC, nonce, or rejected bytes.
 - [ ] B5-T2 — Add connection admission and rate limits that preserve legitimate reconnect behavior.
 - [ ] B5-T3 — Enforce limits before callback dispatch and keep rejected payloads out of logs.
 - [ ] B5-T4 — Add deterministic boundary, abuse, and recovery tests.
