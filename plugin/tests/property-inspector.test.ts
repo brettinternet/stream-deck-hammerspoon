@@ -1277,6 +1277,7 @@ describe.serial("property inspector", () => {
       expect(mediaGroup.attributes.get("label")).toBe("Media");
 
       expect(environment.document.actionSettings.children).toHaveLength(2);
+      expect(environment.document.resetActionButton.attributes.has("hidden")).toBe(false);
       let inputWrapper = environment.document.actionSettings
         .children[0] as FakeElement;
       const inputControl = inputWrapper.children[0] as FakeElement;
@@ -1368,6 +1369,7 @@ describe.serial("property inspector", () => {
       environment.document.actionSelect.value = "spotify";
       environment.document.actionSelect.dispatch("change");
       expect(environment.document.actionSettings.children).toHaveLength(0);
+      expect(environment.document.resetActionButton.attributes.get("hidden")).toBe("");
       socket.message(
         JSON.stringify({
           event: "sendToPropertyInspector",
@@ -1386,6 +1388,10 @@ describe.serial("property inspector", () => {
             .children[0] as FakeElement
         ).value,
       ).toBe("volume");
+      environment.document.actionSelect.value = "app";
+      environment.document.actionSelect.dispatch("change");
+      expect(environment.document.actionSettings.children).toHaveLength(0);
+      expect(environment.document.resetActionButton.attributes.get("hidden")).toBe("");
     } finally {
       environment.restore();
       vi.useRealTimers();

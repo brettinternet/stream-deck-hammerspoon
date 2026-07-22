@@ -633,8 +633,10 @@
     function renderSettings() {
         renderActionDescription();
         renderedControls.clear();
-        if (resetActionButton)
+        if (resetActionButton) {
             resetActionButton.disabled = true;
+            resetActionButton.setAttribute("hidden", "");
+        }
         if (!settingsPanel || !documentLike) {
             return;
         }
@@ -675,8 +677,6 @@
             setSettingsStatus("No additional settings.");
             return;
         }
-        if (resetActionButton)
-            resetActionButton.disabled = false;
         const errors = [];
         const sections = new Map();
         for (let fieldIndex = 0; fieldIndex < schema.fields.length; fieldIndex += 1) {
@@ -796,6 +796,10 @@
                 settingsPanel.appendChild(section);
             }
             section.appendChild(wrapper);
+        }
+        if (resetActionButton && renderedControls.size > 0) {
+            resetActionButton.disabled = false;
+            resetActionButton.removeAttribute("hidden");
         }
         setSettingsStatus(errors.length > 0 ? errors.join(" ") : "Settings are ready.");
     }
