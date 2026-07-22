@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { BridgeClient, readLanKeyFile } from "../src/bridge";
+import * as lanCrypto from "../src/lan-crypto";
 import {
   deriveLanFrameKey,
   doubleHmacEqual,
@@ -10,6 +11,21 @@ import {
   lanFrameMac,
   lanProof,
 } from "../src/lan-crypto";
+import { MAX_LAN_PAYLOAD_BYTES } from "../src/protocol";
+
+const realLanCrypto = { ...lanCrypto };
+const macComputations = { count: 0 };
+mock.module("../src/lan-crypto", () => ({
+  ...realLanCrypto,
+  doubleHmacEqual: (...args: Parameters<typeof realLanCrypto.doubleHmacEqual>) => {
+    macComputations.count += 1;
+    return realLanCrypto.doubleHmacEqual(...args);
+  },
+  lanFrameMac: (...args: Parameters<typeof realLanCrypto.lanFrameMac>) => {
+    macComputations.count += 1;
+    return realLanCrypto.lanFrameMac(...args);
+  },
+}));
 
 type Listener = (event?: unknown) => void;
 
@@ -332,6 +348,49 @@ describe("BridgeClient authentication and transport", () => {
 
     expect(wrongSocket.closeCalls).toBe(1);
     wrong.stop();
+  });
+
+  test("LAN rejects oversized frame payloads before any MAC computation", async () => {
+    const sockets: FakeSocket[] = [];
+    const { client, key } = makeLanClient(sockets);
+    client.start();
+    await flush();
+    const socket = sockets[0];
+    socket.open();
+    const hello = frames(socket).at(-1)!;
+    const clientNonce = Buffer.from(hello.clientNonce as string, "hex");
+    const serverNonce = Buffer.alloc(32, 2);
+    macComputations.count = 0;
+    socket.receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "lanChallenge",
+      clientId: "remote",
+      serverNonce: encodeHex(serverNonce),
+      serverProof: encodeHex(lanProof(key, "server", "remote", clientNonce, serverNonce)),
+    }));
+    socket.receive(JSON.stringify({ protocolVersion: 1, type: "lanReady", sessionId: "opaque-session" }));
+    expect(client.status).toBe("connected");
+    expect(macComputations.count).toBeGreaterThan(0);
+
+    macComputations.count = 0;
+    const oversizedPayload = JSON.stringify({
+      protocolVersion: 1,
+      type: "actions",
+      requestId: "oversized",
+      actions: [],
+      padding: "x".repeat(MAX_LAN_PAYLOAD_BYTES),
+    });
+    socket.receive(JSON.stringify({
+      protocolVersion: 1,
+      type: "lanFrame",
+      sequence: 1,
+      payload: oversizedPayload,
+      mac: "00".repeat(32),
+    }));
+    expect(macComputations.count).toBe(0);
+    expect(socket.closeCalls).toBe(1);
+    expect(client.status).toBe("disconnected");
+    client.stop();
   });
 
   test("LAN default credential reader requires an owner-only key file", async () => {
@@ -725,6 +784,60 @@ describe("BridgeClient reconnect and synchronization", () => {
     completeActions(sockets.at(-1)!, requestId);
     sockets.at(-1)!.peerClose();
     expect(timers.delays()[0]).toBe(delays[0]);
+  });
+
+  test("worst-case reconnect schedule stays within the unauthenticated rate budget", async () => {
+    const sockets: FakeSocket[] = [];
+    const timers = new ManualTimers();
+    let nowMs = 0;
+    const client = new BridgeClient({
+      url: "ws://127.0.0.1:17321/stream",
+      tokenPath: "/tmp/streamdeck-token",
+      pluginVersion: "1.0.0",
+      createSocket: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      readToken: async () => "shared-token",
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+      random: () => 0,
+      now: () => new Date(nowMs),
+    });
+
+    // The server-side per-listener bucket for unauthenticated frames: burst 6, refill 12/minute.
+    const bucket = { tokens: 6, atMs: 0 };
+    const admitHello = (): boolean => {
+      bucket.tokens = Math.min(6, bucket.tokens + Math.max(0, nowMs - bucket.atMs) * (12 / 60_000));
+      bucket.atMs = nowMs;
+      if (bucket.tokens < 1) return false;
+      bucket.tokens -= 1;
+      return true;
+    };
+
+    client.start();
+    const delays: number[] = [];
+    const rejectedAttempts: number[] = [];
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await flush();
+      const socket = sockets.at(-1)!;
+      socket.open();
+      expect(frames(socket).at(-1)).toMatchObject({ type: "hello" });
+      if (!admitHello()) rejectedAttempts.push(attempt);
+      socket.receive(JSON.stringify({ protocolVersion: 1, type: "error", code: "AUTH_FAILED", message: "Rejected" }));
+      expect(socket.closeCalls).toBe(1);
+      const delay = timers.delays()[0];
+      expect(delay).toBeDefined();
+      delays.push(delay);
+      nowMs += delay;
+      timers.runNext();
+    }
+
+    expect(rejectedAttempts).toEqual([]);
+    expect(delays.slice(6).every((delay) => delay >= 5_000)).toBe(true);
+    expect(nowMs).toBeGreaterThan(4 * 60_000);
+    client.stop();
   });
 
   test("requests a fresh registry and replays every visible instance after reconnect", async () => {

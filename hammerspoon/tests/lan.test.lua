@@ -216,8 +216,40 @@ local wrongResponse = decode(http.websocketCallback(encode({ protocolVersion = 1
 assert(wrongResponse.type == "error" and wrongResponse.code == "AUTH_FAILED")
 assert(pressed == 3, "wrong-key LAN peer must not dispatch")
 
+now = now + 60
+
+local hmacCalls = 0
+local realHmacSha256 = _G.hs.hash.hmacSHA256
+_G.hs.hash.hmacSHA256 = function(...)
+  hmacCalls = hmacCalls + 1
+  return realHmacSha256(...)
+end
+local oversizedNonce = string.rep("\9", 32)
+local oversizedChallenge = decode(http.websocketCallback(hello("remote", oversizedNonce)))
+local oversizedServerNonce = assert(Crypto.hexDecode(oversizedChallenge.serverNonce, 32))
+local oversizedProof = Crypto.proof(_G.__streamdeckTestHash, rotatedKey, "client", "remote", oversizedNonce, oversizedServerNonce)
+local oversizedReady = decode(http.websocketCallback(encode({ protocolVersion = 1, type = "lanProof", clientId = "remote", clientProof = Crypto.hexEncode(oversizedProof) })))
+assert(oversizedReady.type == "lanReady", "oversized-payload test needs an authenticated session")
+assert(hmacCalls > 0, "instrumented hash must observe handshake MAC work")
+
+hmacCalls = 0
+local oversizedResponse = decode(http.websocketCallback(encode({
+  protocolVersion = 1,
+  type = "lanFrame",
+  sequence = 1,
+  payload = string.rep("a", Protocol.MAX_LAN_PAYLOAD_BYTES + 1),
+  mac = string.rep("00", 32),
+})))
+_G.hs.hash.hmacSHA256 = realHmacSha256
+assert(oversizedResponse.type == "error" and oversizedResponse.code == "AUTH_FAILED", "oversized LAN payload must fail closed")
+assert(hmacCalls == 0, "oversized LAN payload must be rejected before MAC computation")
+assert(pressed == 3, "oversized LAN payload must not dispatch")
+local oversizedSalt = Crypto.kdfSalt("remote", oversizedNonce, oversizedServerNonce)
+local oversizedClientToServer = assert(Crypto.hkdf(_G.__streamdeckTestHash, rotatedKey, oversizedSalt, Crypto.frameInfo("client-to-server"), 32))
+local droppedFollowUp = decode(http.websocketCallback(frame(rotatedPress, oversizedClientToServer, 2, "client-to-server")))
+assert(droppedFollowUp.type == "error" and droppedFollowUp.code == "AUTH_REQUIRED", "oversized LAN payload must retire the session")
 
 server:stop()
 os.remove(tokenPath)
 os.remove(keyPath)
-return 4
+return 5
