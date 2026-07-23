@@ -523,7 +523,10 @@ return {
   description = "Toggle a selected microphone or use push-to-talk, with optional meeting-app shortcuts.",
   category = "Audio",
   gesture = "Toggle mode: press to mute · Push-to-talk: hold to speak",
-  sound = sound.toggle(),
+  sound = sound.toggle({
+    on = sound.system("Glass", { volume = 0.65 }),
+    off = sound.system("Basso", { volume = 0.65 }),
+  }),
   settingsSchemaVersion = 1,
   settingsSchemaProvider = settings_schema,
   appear = function(context)

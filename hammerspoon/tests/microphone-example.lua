@@ -133,6 +133,8 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(action.name, "Microphone mute")
     assertTrue(type(action.description) == "string" and action.description ~= "")
     assertEqual(action.sound.kind, "toggle")
+    assertEqual(action.sound.on.volume, 0.65)
+    assertEqual(action.sound.off.volume, 0.65)
     assertEqual(action.settingsSchemaVersion, 1)
     local schema = action.settingsSchemaProvider()
     assertEqual(schema[1].type, "select")

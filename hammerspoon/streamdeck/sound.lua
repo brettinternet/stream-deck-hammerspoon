@@ -238,15 +238,14 @@ local function defaultProvider(spec)
     objects[spec.value] = object
     -- Loop state is configured on every replay below so cached sounds can switch.
   end
-  if spec.loop ~= nil then
-    local loopSound = safeMethod(object, "loopSound")
-    if loopSound ~= nil then pcall(loopSound, object, spec.loop) end
-  end
-  if spec.volume ~= nil then
-    local volume = safeMethod(object, "volume")
-    if volume == nil then return false end
-    local ok = pcall(volume, object, spec.volume)
+  local loopSound = safeMethod(object, "loopSound")
+  if loopSound ~= nil then pcall(loopSound, object, spec.loop == true) end
+  local volume = safeMethod(object, "volume")
+  if volume ~= nil then
+    local ok = pcall(volume, object, spec.volume or 1)
     if not ok then return false end
+  elseif spec.volume ~= nil then
+    return false
   end
   local stopSetting = spec.stopOnReload
   if stopSetting == nil then stopSetting = stopOnReload end
@@ -254,7 +253,15 @@ local function defaultProvider(spec)
     local stopOnReloadMethod = safeMethod(object, "stopOnReload")
     if stopOnReloadMethod ~= nil then pcall(stopOnReloadMethod, object, stopSetting) end
   end
-  if spec.loop then
+  local shouldStop = spec.loop == true
+  if not shouldStop then
+    local isPlaying = safeMethod(object, "isPlaying")
+    if isPlaying ~= nil then
+      local ok, playing = pcall(isPlaying, object)
+      shouldStop = ok and playing == true
+    end
+  end
+  if shouldStop then
     local stop = safeMethod(object, "stop")
     if stop ~= nil then pcall(stop, object) end
   end

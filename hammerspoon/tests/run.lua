@@ -142,16 +142,18 @@ local function fakeSound(kind, value)
   local key = kind .. ":" .. value
   local object = fakeSoundObjects[key]
   if object ~= nil then return object end
-  object = { kind = kind, value = value, looping = false }
+  object = { kind = kind, value = value, looping = false, replaySuppressed = value == "Glass" }
   function object:loopSound(value)
     self.looping = value
     return true
   end
   function object:volume(value)
+    self.volumeLevel = value
     fakeSoundVolumes[#fakeSoundVolumes + 1] = { kind = kind, value = self.value, volume = value }
     return true
   end
   function object:stop()
+    self.playing = false
     fakeSoundStops[#fakeSoundStops + 1] = key
     return true
   end
@@ -159,7 +161,12 @@ local function fakeSound(kind, value)
     fakeSoundReloadStops[#fakeSoundReloadStops + 1] = { key = key, value = value }
     return true
   end
+  function object:isPlaying()
+    return self.replaySuppressed and self.playing or false
+  end
   function object:play()
+    if self.replaySuppressed and self.playing then return false end
+    self.playing = true
     fakeSoundPlays[#fakeSoundPlays + 1] = key
     if fakeSoundPlayFailures[key] then return false end
     return true
@@ -490,6 +497,35 @@ test("sound specs cache default playback and restart repeat cues", function()
   _G.hs.sound = nil
   assertFalse(Sound.play(Sound.system("Missing")))
   _G.hs.sound = savedSound
+end)
+
+test("sound restarts an active cue after a rapid off-to-on toggle", function()
+  Sound._resetForTests()
+  local playCount = #fakeSoundPlays
+  local stopCount = #fakeSoundStops
+  local onSpec = Sound.system("Glass")
+  local offSpec = Sound.system("Basso")
+
+  assertTrue(Sound.play(onSpec))
+  assertTrue(Sound.play(offSpec))
+  assertTrue(Sound.play(onSpec), "rapidly returning to an active cue must restart it")
+  assertEqual(#fakeSoundPlays, playCount + 3)
+  assertEqual(#fakeSoundStops, stopCount + 1)
+end)
+
+test("cached sound playback options do not leak between specs", function()
+  Sound._resetForTests()
+  local softLoop = Sound.system("Shared", { volume = 0.65, loop = true })
+  local defaultSpec = Sound.system("Shared")
+
+  assertTrue(Sound.play(softLoop))
+  assertTrue(Sound.play(defaultSpec))
+  local object = fakeSoundObjects["name:Shared"]
+  assertEqual(object.volumeLevel, 1)
+  assertFalse(object.looping)
+  local silentSpec = Sound.system("Silent", { volume = 0 })
+  assertTrue(Sound.play(silentSpec))
+  assertEqual(fakeSoundObjects["name:Silent"].volumeLevel, 0)
 end)
 
 test("sound configuration validates and custom providers are authoritative", function()
