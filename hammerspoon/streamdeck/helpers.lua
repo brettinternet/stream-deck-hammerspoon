@@ -27,6 +27,7 @@ function helpers.svg(svg)
   if type(svg) ~= "string" then
     error("Stream Deck SVG helper expects a string", 2)
   end
+  svg = svg:match("^%s*(.-)%s*$")
   return {
     kind = "custom",
     mediaType = "image/svg+xml",

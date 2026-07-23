@@ -2100,6 +2100,7 @@ test("SVG helper wraps canonical base64 custom icons", function()
     { "f", "Zg==" },
     { "fo", "Zm8=" },
     { "foo", "Zm9v" },
+    { "\nfoo\n", "Zm9v" },
   }
   for _, vector in ipairs(vectors) do
     local icon = Helpers.svg(vector[1])
@@ -2107,6 +2108,11 @@ test("SVG helper wraps canonical base64 custom icons", function()
     assertEqual(icon.mediaType, "image/svg+xml")
     assertEqual(icon.dataBase64, vector[2])
   end
+  local svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"></svg>'
+  local trimmed = Helpers.svg(svg)
+  assertEqual(Helpers.svg("\n" .. svg .. "\n").dataBase64, trimmed.dataBase64,
+    "SVG wire data must not retain leading or trailing whitespace")
+  assertTrue(Protocol.validateAppearanceIcon(trimmed), "trimmed SVG must pass wire validation")
   assertFalse(pcall(Helpers.svg, 123), "SVG helper must reject non-string input")
 end)
 test("PNG helper resizes images to device metadata and canonicalizes validated wire data", function()
