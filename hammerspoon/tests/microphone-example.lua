@@ -7,6 +7,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local shortcut_calls = {}
     local application_calls = {}
     local applications = {}
+    local scheduled_timers = {}
 
     local function make_device(name, uid, muted)
       local device = {
@@ -107,6 +108,20 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
           }
         end,
       },
+      timer = {
+        doAfter = function(seconds, callback)
+          local timer = {
+            seconds = seconds,
+            callback = callback,
+            stopped = false,
+          }
+          function timer:stop()
+            self.stopped = true
+          end
+          scheduled_timers[#scheduled_timers + 1] = timer
+          return timer
+        end,
+      },
     }
 
     local function make_application(bundle_id, running)
@@ -149,6 +164,8 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertTrue(schema[1].refreshable)
     assertEqual(schema[2].key, "mode")
     assertEqual(schema[2].type, "select")
+    assertEqual(schema[2].options[3].value, "toggleAndPushToTalk")
+    assertFalse(type(action.longPress) == "function")
     assertEqual(schema[3].key, "muteMeetingApps")
     assertEqual(schema[3].type, "boolean")
     assertTrue(type(schema[3].description) == "string")
@@ -327,6 +344,35 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     action.release(disappearing_push_to_talk)
     assertEqual(#shortcut_calls, shortcut_count + 2, "release after disappearance must not restore twice")
     applications["us.zoom.xos"].running = false
+
+    local combined_mode = context("combined-mode", {
+      inputDevice = "usb-uid",
+      mode = "toggleAndPushToTalk",
+    })
+    usb.muted_state = true
+    set_count = #set_calls
+    action.press(combined_mode)
+    local tap_timer = scheduled_timers[#scheduled_timers]
+    assertTrue(usb.muted_state, "combined mode must defer a tap until release")
+    local sound_count = #combined_mode.sounds
+    action.release(combined_mode)
+    assertFalse(usb.muted_state, "combined mode must toggle on a short press")
+    assertEqual(#combined_mode.sounds, sound_count + 1, "combined mode must play its toggle cue")
+    assertSame(combined_mode.sounds[#combined_mode.sounds], action.sound.on)
+    assertTrue(tap_timer.stopped, "combined mode must cancel a released hold timer")
+    assertEqual(#set_calls, set_count + 1)
+    usb.muted_state = true
+    action.press(combined_mode)
+    local hold_timer = scheduled_timers[#scheduled_timers]
+    assertEqual(hold_timer.seconds, 0.5)
+    hold_timer.callback()
+    assertFalse(usb.muted_state, "combined mode must unmute while held")
+    action.release(combined_mode)
+    assertTrue(usb.muted_state, "combined mode must restore mute after a hold")
+    action.push(combined_mode)
+    assertFalse(usb.muted_state, "combined mode must support push-to-talk from a pedal or dial")
+    action.release(combined_mode)
+    assertTrue(usb.muted_state, "pedal or dial release must restore mute")
 
     failure = "muted-throws"
     assertError(function()
