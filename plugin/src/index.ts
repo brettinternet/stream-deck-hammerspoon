@@ -6,7 +6,7 @@ import {
   HammerspoonAction,
 } from "./actions/hammerspoon-action.js";
 
-export const PLUGIN_VERSION = "0.1.0";
+export const PLUGIN_VERSION = "0.5.0";
 
 streamDeck.logger.info(`Starting Hammerspoon Stream Deck plugin v${PLUGIN_VERSION}`);
 
