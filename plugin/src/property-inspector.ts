@@ -993,6 +993,11 @@ function renderSettings(): void {
       control.value = String(displayValue);
     }
     renderedControls.set(field.key, control);
+    if (field.type === "text" || field.type === "number") {
+      control.addEventListener("input", () => {
+        saveSettings(schema.fields);
+      });
+    }
     control.addEventListener("change", () => {
       if (saveSettings(schema.fields)) renderSettings();
     });

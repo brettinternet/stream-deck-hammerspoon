@@ -1016,15 +1016,38 @@ describe.serial("property inspector", () => {
       ).toHaveLength(0);
 
       text.value = "ok";
+      text.dispatch("input");
+      expect(textWrapper.children[0]).toBe(text);
+      text.value = "okay";
+      text.dispatch("input");
+      expect(textWrapper.children[0]).toBe(text);
       count.value = "6";
+      count.dispatch("input");
+      count.value = "8";
+      count.dispatch("input");
+      const liveFrames = sentFrames(socket).filter(
+        (frame) => frame.event === "setSettings",
+      );
+      expect(liveFrames.at(-1)).toEqual({
+        action: "com.brettinternet.hammerspoon.action",
+        event: "setSettings",
+        context: "context-01",
+        payload: {
+          actionId: "schema",
+          text: "okay",
+          count: 8,
+          enabled: true,
+          mode: "one",
+          opaque: { keep: true },
+        },
+      });
+
       enabled.checked = false;
       mode.value = "two";
-      text.dispatch("change");
-      count.dispatch("change");
       enabled.dispatch("change");
       mode.dispatch("change");
       const frames = sentFrames(socket).filter(
-        (frame) => (frame as { event?: unknown }).event === "setSettings",
+        (frame) => frame.event === "setSettings",
       );
       expect(frames.at(-1)).toEqual({
         action: "com.brettinternet.hammerspoon.action",
@@ -1032,8 +1055,8 @@ describe.serial("property inspector", () => {
         context: "context-01",
         payload: {
           actionId: "schema",
-          text: "ok",
-          count: 6,
+          text: "okay",
+          count: 8,
           enabled: false,
           mode: "two",
           opaque: { keep: true },
