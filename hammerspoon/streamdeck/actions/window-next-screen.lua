@@ -85,7 +85,7 @@ return {
     if not result then
       error("failed to move focused window")
     end
-    context:success("Moved to next display", 850)
+    context:success("Moved\nto next\ndisplay", 850)
 
   end,
 }

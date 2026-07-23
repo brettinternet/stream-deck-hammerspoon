@@ -77,6 +77,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
 
     javascript_results[1] = "17|2"
     action.press(playback_context)
+    assertEqual(playback_context.feedbacks[#playback_context.feedbacks].message, "YouTube\nplayback\ntoggled")
     assertEqual(#javascript_calls, 1, "an open video tab should be inspected")
     assertEqual(browser_activations, 1, "the video tab's browser must be activated")
     assertEqual(#key_strokes, 1, "the first video tab must receive one shortcut")
@@ -91,6 +92,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       url = "https://youtu.be/example",
     })
     action.press(open_context)
+    assertEqual(open_context.feedbacks[#open_context.feedbacks].message, "YouTube\nopened")
     assertEqual(#javascript_calls, 2, "a missing video tab should open the configured URL")
     assertTrue(string.find(javascript_calls[2], "https://youtu.be/example", 1, true) ~= nil,
       "the configured URL must be passed to Chromium")

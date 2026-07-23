@@ -114,7 +114,7 @@ local function start_timers(context, state, instance_id)
     state.flashing = true
     state.flash_on = true
     start_flash_timer(context, state, instance_id, generation)
-    context:success("Timer complete", 1000)
+    context:success("Timer\ncomplete", 1000)
     context:refresh()
   end)
   if not completion_ok then
@@ -212,7 +212,7 @@ return {
     if state.running then
       stop_timers(state)
       reset_state(state)
-      context:success("Timer cancelled", 850)
+      context:success("Timer\ncancelled", 850)
       return
     end
 
@@ -228,7 +228,7 @@ return {
       reset_state(state)
       error(err, 0)
     end
-    context:success("Timer started", 850)
+    context:success("Timer\nstarted", 850)
   end,
 
   disappear = function(context)

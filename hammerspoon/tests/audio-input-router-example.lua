@@ -47,20 +47,20 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       input3 = "uid-webcam",
     })
     local appearance = action.appearance(router)
-    assertTrue(appearance.title:find("MacBook Microphone", 1, true) == 1)
+    assertTrue(appearance.title:find("MacBook\nMicrophone", 1, true) == 1)
     assertEqual(appearance.badge, "MM")
     assertEqual(appearance.icon.kind, "custom")
 
     action.press(router)
     assertEqual(set_calls[1], "uid-interface")
     assertEqual(router.refreshes, 1)
-    assertTrue(action.appearance(router).title:find("USB Interface", 1, true) == 1)
+    assertTrue(action.appearance(router).title:find("USB\nInterface", 1, true) == 1)
 
     current_uid = "uid-macbook"
     local dial = context("input-dial", router.settings, { controllerType = "encoder" })
     action.rotate(dial, 2)
     appearance = action.appearance(dial)
-    assertTrue(appearance.title:find("MacBook Microphone → Webcam Microphone", 1, true) ~= nil)
+    assertEqual(appearance.title, "MacBook\nMicrophone\n→ Webcam\nMicrophone")
     assertEqual(appearance.value, "Press to confirm")
     action.push(dial)
     assertEqual(current_uid, "uid-webcam")

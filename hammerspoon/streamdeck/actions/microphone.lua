@@ -379,8 +379,9 @@ local function appearance_for(context)
   if mute_apps then
     svg = svg:gsub("#102318", "#24152E"):gsub("#281315", "#2E1824")
   end
+  local status = mode == "pushToTalk" and (muted and "Hold\nto talk" or "Live") or (muted and "Muted" or "Live")
   return {
-    title = name .. " — " .. (mode == "pushToTalk" and (muted and "Hold to talk" or "Live") or (muted and "Muted" or "Live")),
+    title = name:gsub("%s+", "\n") .. "\n" .. status,
     state = muted and "active" or "inactive",
     appearanceVersion = 1,
     badge = microphone_badge(name),
@@ -404,12 +405,12 @@ local function apply_press(context)
       set_microphone_muted(device, false)
       if mute_apps then send_meeting_shortcuts(enabled_apps) end
     end
-    context:success("Microphone live", 800)
+    context:success("Microphone\nlive", 800)
     return
   end
   set_microphone_muted(device, not muted)
   if mute_apps then send_meeting_shortcuts(enabled_apps) end
-  context:success(not muted and "Microphone muted" or "Microphone live", 900)
+  context:success(not muted and "Microphone\nmuted" or "Microphone\nlive", 900)
 end
 
 return {

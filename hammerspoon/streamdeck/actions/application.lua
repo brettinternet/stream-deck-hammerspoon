@@ -339,7 +339,7 @@ return {
         restore_fallback_application(context, application)
       end
     end
-    context:success("Application toggled", 900)
+    context:success("Application\ntoggled", 900)
   end,
   longPress = function(context)
     local application, bundle_id = application_for(context)
@@ -356,7 +356,7 @@ return {
     if bundle_id == nil then
       target_by_instance[key] = nil
     end
-    context:success("Application closed", 900)
+    context:success("Application\nclosed", 900)
   end,
 }
 

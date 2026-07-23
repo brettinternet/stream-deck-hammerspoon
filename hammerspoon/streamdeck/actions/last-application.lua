@@ -191,7 +191,7 @@ return {
       error("failed to activate previous application")
     end
 
-    context:success("Opened " .. application_name(target), 900)
+    context:success("Opened\n" .. application_name(target):gsub("%s+", "\n"), 900)
   end,
 }
 

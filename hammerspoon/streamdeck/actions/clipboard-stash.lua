@@ -55,7 +55,7 @@ return {
     local stashed = state_by_instance[instance_id]
     if stashed == nil then
       state_by_instance[instance_id] = capture_clipboard()
-      context:success("Clipboard stashed", 850)
+      context:success("Clipboard\nstashed", 850)
       return
     end
 
@@ -69,7 +69,7 @@ return {
     end
 
     state_by_instance[instance_id] = nil
-    context:success("Clipboard restored", 850)
+    context:success("Clipboard\nrestored", 850)
   end,
 
   disappear = function(context)

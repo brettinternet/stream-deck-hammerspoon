@@ -42,7 +42,7 @@ return {
     if result ~= nil and result ~= true then
       error("failed to lock screen: expected true or nil result")
     end
-    context:success("Screen locked", 850)
+    context:success("Screen\nlocked", 850)
   end,
 }
 

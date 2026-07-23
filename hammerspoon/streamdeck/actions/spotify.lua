@@ -308,7 +308,7 @@ return {
       context:success(snapshot.playing and "Playing" or "Paused", 900)
       return
     end
-    context:success("Opening Spotify", 1000)
+    context:success("Opening\nSpotify", 1000)
     if type(hs) == "table" and type(hs.timer) == "table" and type(hs.timer.doAfter) == "function" then
       hs.timer.doAfter(0.75, function()
         sample_spotify()

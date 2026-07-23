@@ -365,20 +365,20 @@ return {
     if state.phase == "focus" or state.phase == "short-break" or state.phase == "long-break" then
       if state.paused then
         resume_session(context, state)
-        context:success("Pomodoro resumed", 900)
+        context:success("Pomodoro\nresumed", 900)
       else
         pause_session(state)
-        context:success("Pomodoro paused", 900)
+        context:success("Pomodoro\npaused", 900)
       end
       return
     end
     start_session(context, state)
-    context:success("Focus started", 900)
+    context:success("Focus\nstarted", 900)
   end,
 
   longPress = function(context)
     reset_session(context, state_for(context))
-    context:success("Pomodoro reset", 900)
+    context:success("Pomodoro\nreset", 900)
   end,
   longPressThresholdMs = 650,
 

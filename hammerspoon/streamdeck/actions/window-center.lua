@@ -123,7 +123,7 @@ return {
     if not result then
       error("failed to set focused window frame: expected successful result")
     end
-    context:success("Window centered", 850)
+    context:success("Window\ncentered", 850)
   end,
 }
 

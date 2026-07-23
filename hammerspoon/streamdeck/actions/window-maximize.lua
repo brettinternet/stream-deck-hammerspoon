@@ -66,7 +66,7 @@ return {
     end
 
     zoomed_by_instance[context.instanceId] = not zoomed_by_instance[context.instanceId]
-    context:success(zoomed_by_instance[context.instanceId] and "Window maximized" or "Window restored", 850)
+    context:success(zoomed_by_instance[context.instanceId] and "Window\nmaximized" or "Window\nrestored", 850)
   end,
 
   disappear = function(context)

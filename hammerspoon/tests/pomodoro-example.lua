@@ -73,6 +73,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
 
     action.appear(pomodoro)
     action.press(pomodoro)
+    assertEqual(pomodoro.feedbacks[#pomodoro.feedbacks].message, "Focus\nstarted")
     assertEqual(scheduled.seconds, 1, "the visible refresh timer must run once per second")
     assertEqual(pomodoro.refreshes, 1, "starting must refresh immediately")
 
@@ -126,6 +127,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local reset_timer = scheduled
     assertEqual(action.appearance(pomodoro).title, "02:00")
     action.press(pomodoro)
+    assertEqual(pomodoro.feedbacks[#pomodoro.feedbacks].message, "Pomodoro\npaused")
     assertEqual(reset_timer.stop_calls, 1, "pressing a running session must pause its timer")
     assertEqual(pomodoro.refreshes, 8, "pause must refresh immediately")
     assertTrue(action.appearance(pomodoro).title:find("Paused", 1, true) ~= nil)
@@ -134,9 +136,11 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(pomodoro.refreshes, refreshes_after_pause, "stale paused callbacks must be ignored")
 
     action.press(pomodoro)
+    assertEqual(pomodoro.feedbacks[#pomodoro.feedbacks].message, "Pomodoro\nresumed")
     local resumed_timer = scheduled
     assertEqual(action.appearance(pomodoro).title, "02:00")
     action.longPress(pomodoro)
+    assertEqual(pomodoro.feedbacks[#pomodoro.feedbacks].message, "Pomodoro\nreset")
     assertEqual(resumed_timer.stop_calls, 1, "long press must stop and reset the session")
     assertEqual(action.appearance(pomodoro).title, "Start")
 

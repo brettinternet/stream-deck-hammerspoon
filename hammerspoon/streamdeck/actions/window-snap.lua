@@ -78,7 +78,7 @@ return {
     end
 
     layout_by_instance[instance_id] = next_index
-    context:success((layouts[next_index].title:gsub("\n", " ")), 850)
+    context:success(layouts[next_index].title, 850)
   end,
 
   disappear = function(context)

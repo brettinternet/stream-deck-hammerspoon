@@ -60,7 +60,7 @@ return {
     if type(enabled) ~= "boolean" then
       error("failed to toggle display idle prevention: expected boolean result")
     end
-    context:success(enabled and "Keeping display awake" or "Display may sleep", 900)
+    context:success(enabled and "Keeping\ndisplay\nawake" or "Display\nmay sleep", 900)
 
     -- Report the boolean produced by hs.caffeinate.toggle; sound never infers it from appearance.
     return enabled and sound.ON or sound.OFF

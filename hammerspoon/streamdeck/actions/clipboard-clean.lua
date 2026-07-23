@@ -62,7 +62,7 @@ return {
     if not hs.pasteboard.setContents(trim(contents)) then
       error("failed to update clipboard")
     end
-    context:success("Clipboard cleaned", 850)
+    context:success("Clipboard\ncleaned", 850)
   end,
 }
 

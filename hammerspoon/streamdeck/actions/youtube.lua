@@ -188,12 +188,12 @@ return {
 
     local browser = browser_application()
     if browser and play_pause_first_youtube_tab(browser) then
-      context:success("YouTube playback toggled", 850)
+      context:success("YouTube\nplayback\ntoggled", 850)
       return
     end
 
     open_youtube_url(url)
-    context:success("YouTube opened", 900)
+    context:success("YouTube\nopened", 900)
   end,
 }
 

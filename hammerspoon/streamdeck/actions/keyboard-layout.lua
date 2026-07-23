@@ -218,6 +218,6 @@ return {
     if result ~= true then
       error("failed to switch keyboard layout")
     end
-    context:success("Layout: " .. target, 1000)
+    context:success("Layout:\n" .. target:gsub("%s+", "\n"), 1000)
   end,
 }

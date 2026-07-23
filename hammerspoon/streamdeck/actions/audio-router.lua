@@ -220,6 +220,10 @@ function router.new(kind)
   if mode == nil then error("unknown audio router kind: " .. tostring(kind)) end
   local pending_uid_by_instance = {}
 
+  local function title_name(name)
+    return name:gsub("%s+", "\n")
+  end
+
   local function appearance_for(context)
     local audio = audio_api(mode)
     local devices = configured_devices(mode, context)
@@ -240,7 +244,8 @@ function router.new(kind)
       local selected = devices[selected_index]
       local selected_name = selected and selected.name or current_name
       return {
-        title = selected_name == current_name and current_name or (current_name .. " → " .. selected_name),
+        title = selected_name == current_name and title_name(current_name)
+          or (title_name(current_name) .. "\n→ " .. title_name(selected_name)),
         state = selected_name == current_name and "inactive" or "active",
         appearanceVersion = 1,
         value = selected_name == current_name and "Rotate to select" or "Press to confirm",
@@ -251,7 +256,7 @@ function router.new(kind)
 
     local next_device = devices[((current_index or 0) % math.max(1, #devices)) + 1]
     return {
-      title = current_name .. (next_device and ("\n→ " .. next_device.name) or ""),
+      title = title_name(current_name) .. (next_device and ("\n→ " .. title_name(next_device.name)) or ""),
       state = current_index ~= nil and current_index > 1 and "active" or "inactive",
       appearanceVersion = 1,
       presentationState = current_index and current_index - 1 or 0,
@@ -288,7 +293,7 @@ function router.new(kind)
       local current = default_device(mode, audio)
       local target = devices[((current_device_index(mode, current, devices) or 0) % #devices) + 1]
       set_default_device(mode, target)
-      context:success("Using " .. target.name, 1100)
+      context:success("Using\n" .. title_name(target.name), 1100)
     end,
 
     rotate = function(context, ticks)
@@ -319,7 +324,7 @@ function router.new(kind)
       end
       set_default_device(mode, target)
       pending_uid_by_instance[context.instanceId] = nil
-      context:success("Using " .. target.name, 1100)
+      context:success("Using\n" .. title_name(target.name), 1100)
     end,
   }
 end

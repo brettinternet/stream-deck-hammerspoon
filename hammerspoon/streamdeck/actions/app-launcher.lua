@@ -123,7 +123,7 @@ return {
     if result ~= true then
       error("failed to launch or focus app")
     end
-    context:success("Opened " .. app, 900)
+    context:success("Opened\n" .. app:gsub("%s+", "\n"), 900)
 
   end,
 }
