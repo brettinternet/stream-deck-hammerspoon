@@ -105,14 +105,13 @@ function actions.register(streamdeck, selected)
   end
 
   local refresh_generation = 0
-  local function refresh_all()
+  local function refresh_action(action_id)
     refresh_generation = refresh_generation + 1
-    for _, definition in ipairs(definitions) do
-      streamdeck.refresh(definition.id)
-    end
+    streamdeck.refresh(action_id)
   end
 
   for _, definition in ipairs(definitions) do
+    local action_id = definition.id
     for _, field in ipairs(callback_fields) do
       local callback = definition[field]
       if callback then
@@ -120,7 +119,7 @@ function actions.register(streamdeck, selected)
           local generation = refresh_generation
           local results = table.pack(callback(context, ...))
           if generation == refresh_generation then
-            refresh_all()
+            refresh_action(action_id)
           end
           return table.unpack(results, 1, results.n)
         end

@@ -341,6 +341,35 @@ describe("HammerspoonAction", () => {
     ]);
   });
 
+  test("diagnostics update the inspector without reloading action titles", async () => {
+    const bridge = new FakeBridge();
+    bridge.status = "connected";
+    const adapter = makeAction(bridge);
+    const action = new FakeAction("diagnostics");
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(action, { actionId: "action.id" }));
+    bridge.emit("appearance", {
+      type: "appearance",
+      protocolVersion: 1,
+      instanceId: action.id,
+      actionId: "action.id",
+      title: "Ready",
+      state: 1,
+    });
+    await flush();
+    const callsBeforeDiagnostics = structuredClone(action.calls);
+
+    bridge.emit("diagnostics");
+    await flush();
+
+    expect(action.calls).toEqual(callsBeforeDiagnostics);
+    expect(propertyInspectorMessages.at(-1)).toEqual({
+      type: "bridgeState",
+      status: "connected",
+      actions: [],
+    });
+  });
+
   test("selects bounded multi-state presentation images with binary fallback", async () => {
     const bridge = new FakeBridge();
     bridge.status = "connected";

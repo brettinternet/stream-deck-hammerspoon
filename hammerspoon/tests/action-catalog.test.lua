@@ -1,5 +1,5 @@
 return function(test, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
-  test("action catalog registers selected actions and refreshes them together", function()
+  test("action catalog refreshes only the invoked action", function()
     local previous_hs = _G.hs
     local display_idle = false
     local toggle_error = false
@@ -51,15 +51,14 @@ return function(test, context, assertTrue, assertFalse, assertEqual, assertSame,
     assertSame(registrations[1].press(action_context), sound.ON,
       "catalog wrappers must preserve action callback returns")
     assertEqual(action_context.refreshes, 0, "catalog refresh must be the only synchronous refresh path")
-    assertEqual(#refreshes, 2, "a successful action must refresh every registered library action")
+    assertEqual(#refreshes, 1, "a successful action must refresh only its own action type")
     assertEqual(refreshes[1], registrations[1].id)
-    assertEqual(refreshes[2], registrations[2].id)
 
     toggle_error = true
     assertError(function()
       registrations[1].press(action_context)
     end, "toggle failed")
-    assertEqual(#refreshes, 2, "failed callbacks must not refresh the catalog")
+    assertEqual(#refreshes, 1, "failed callbacks must not refresh the catalog")
 
     _G.hs = previous_hs
   end)

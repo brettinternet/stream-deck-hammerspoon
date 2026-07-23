@@ -561,7 +561,6 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       void this.sendBridgeState();
     });
     this.bridge.on("diagnostics", () => {
-      this.renderStatus();
       void this.sendBridgeState();
     });
     this.bridge.on("actions", () => {
