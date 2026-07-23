@@ -124,6 +124,14 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     }
 
+    local function run_scheduled(timer)
+      local previous_hs = _G.hs
+      _G.hs = fake_hs
+      local ok, cause = pcall(timer.callback)
+      _G.hs = previous_hs
+      return ok, cause
+    end
+
     local function make_application(bundle_id, running)
       local application = {
         bundle_id = bundle_id,
@@ -263,7 +271,14 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
 
 
     local meeting_context = context("meeting", { muteMeetingApps = true })
+    local meeting_refreshes = meeting_context.refreshes
     action.press(meeting_context)
+    assertEqual(meeting_context.refreshes, meeting_refreshes + 1,
+      "the changed microphone appearance must refresh before meeting shortcuts")
+    assertEqual(#shortcut_calls, 0, "meeting shortcuts must run after the microphone refresh")
+    local meeting_timer = scheduled_timers[#scheduled_timers]
+    assertEqual(meeting_timer.seconds, 0)
+    assertTrue(run_scheduled(meeting_timer))
     assertEqual(#shortcut_calls, 4, "one shortcut per running meeting app and no duplicate Teams delivery")
     assertEqual(shortcut_calls[1].key, "a")
     assertEqual(shortcut_calls[1].application, applications["us.zoom.xos"])
@@ -296,12 +311,14 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     applications["com.hnc.Discord"].running = false
     local shortcut_count = #shortcut_calls
     action.press(meeting_context)
+    assertTrue(run_scheduled(scheduled_timers[#scheduled_timers]))
     assertEqual(#shortcut_calls, shortcut_count, "unavailable apps must not receive shortcuts")
     applications["com.hnc.Discord"].running = true
     action.press(context("discord-disabled", {
       muteMeetingApps = true,
       muteDiscord = false,
     }))
+    assertTrue(run_scheduled(scheduled_timers[#scheduled_timers]))
     assertEqual(#shortcut_calls, shortcut_count, "disabled Discord integration must not send a shortcut")
     applications["com.hnc.Discord"].running = false
 
@@ -337,9 +354,13 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     })
     shortcut_count = #shortcut_calls
     action.press(disappearing_push_to_talk)
+    local ptt_start_timer = scheduled_timers[#scheduled_timers]
     assertFalse(usb.muted_state, "push-to-talk must unmute before disappearance")
     action.disappear(disappearing_push_to_talk)
+    local ptt_restore_timer = scheduled_timers[#scheduled_timers]
     assertTrue(usb.muted_state, "disappearance must restore a held microphone")
+    assertTrue(run_scheduled(ptt_start_timer))
+    assertTrue(run_scheduled(ptt_restore_timer))
     assertEqual(#shortcut_calls, shortcut_count + 2, "disappearance must restore meeting-app mute")
     action.release(disappearing_push_to_talk)
     assertEqual(#shortcut_calls, shortcut_count + 2, "release after disappearance must not restore twice")
@@ -391,17 +412,19 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       action.press(default_context)
     end, "expected true result")
     failure = "application-get-throws"
-    assertError(function()
-      action.press(meeting_context)
-    end, "failed to find application")
+    action.press(meeting_context)
+    local application_failure_timer = scheduled_timers[#scheduled_timers]
+    local application_callback_ok = run_scheduled(application_failure_timer)
+    assertTrue(application_callback_ok, "deferred application failures must not escape the timer callback")
+    assertEqual(meeting_context.feedbacks[#meeting_context.feedbacks].kind, "error")
+    assertEqual(meeting_context.feedbacks[#meeting_context.feedbacks].message, "Meeting app mute failed")
     failure = "shortcut-throws"
     applications["us.zoom.xos"].running = true
-    local ok, shortcut_error = pcall(function()
-      action.press(meeting_context)
-    end)
-    assertFalse(ok)
-    assertTrue(string.find(tostring(shortcut_error), "failed to send Zoom mute shortcut", 1, true) ~= nil)
-    assertTrue(string.find(tostring(shortcut_error), "keyStroke exploded", 1, true) ~= nil)
+    action.press(meeting_context)
+    local shortcut_failure_timer = scheduled_timers[#scheduled_timers]
+    local shortcut_callback_ok = run_scheduled(shortcut_failure_timer)
+    assertTrue(shortcut_callback_ok, "deferred shortcut failures must not escape the timer callback")
+    assertEqual(meeting_context.feedbacks[#meeting_context.feedbacks].kind, "error")
 
     failure = nil
     local missing_context = context("missing", { inputDevice = "missing-uid" })

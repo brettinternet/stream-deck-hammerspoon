@@ -350,6 +350,21 @@ local function send_meeting_shortcuts(enabled_apps)
   end
 end
 
+local function schedule_meeting_shortcuts(context, enabled_apps)
+  if type(hs) == "table"
+    and type(hs.timer) == "table"
+    and type(hs.timer.doAfter) == "function" then
+    local scheduled, timer = pcall(hs.timer.doAfter, 0, function()
+      local sent = pcall(send_meeting_shortcuts, enabled_apps)
+      if not sent and type(context.error) == "function" then
+        context:error("Meeting app mute failed", 1200)
+      end
+    end)
+    if scheduled and timer ~= nil then return end
+  end
+  send_meeting_shortcuts(enabled_apps)
+end
+
 local live_svg = [[
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72">
 <rect width="72" height="72" rx="12" fill="#102318"/>
@@ -375,14 +390,15 @@ local function microphone_badge(name)
   return badge ~= "" and badge or "MIC"
 end
 
-local function restore_push_to_talk(instance_id)
+local function restore_push_to_talk(context)
+  local instance_id = context.instanceId
   local state = ptt_state_by_instance[instance_id]
   if state == nil then return end
   ptt_state_by_instance[instance_id] = nil
   if not state.restoreMuted then return end
   set_microphone_muted(state.device, true)
   record_watched_input_state(state.device, true)
-  if state.muteApps then send_meeting_shortcuts(state.enabledApps) end
+  if state.muteApps then schedule_meeting_shortcuts(context, state.enabledApps) end
 end
 
 local function stop_combined_hold(state)
@@ -393,12 +409,13 @@ local function stop_combined_hold(state)
   end
 end
 
-local function cancel_combined_hold(instance_id)
+local function cancel_combined_hold(context)
+  local instance_id = context.instanceId
   local state = combined_state_by_instance[instance_id]
   if state == nil then return end
   combined_state_by_instance[instance_id] = nil
   stop_combined_hold(state)
-  if state.pttActive then restore_push_to_talk(instance_id) end
+  if state.pttActive then restore_push_to_talk(context) end
 end
 
 local function refresh_visible_contexts()
@@ -548,7 +565,7 @@ local function start_push_to_talk(context, device, mute_apps, enabled_apps)
   if muted then
     set_microphone_muted(device, false)
     record_watched_input_state(device, false)
-    if mute_apps then send_meeting_shortcuts(enabled_apps) end
+    if mute_apps then schedule_meeting_shortcuts(context, enabled_apps) end
   end
   context:success("Microphone\nlive", 800)
 end
@@ -563,7 +580,7 @@ local function toggle_microphone(context, device, mute_apps, enabled_apps)
   local muted = microphone_muted(device)
   set_microphone_muted(device, not muted)
   record_watched_input_state(device, not muted)
-  if mute_apps then send_meeting_shortcuts(enabled_apps) end
+  if mute_apps then schedule_meeting_shortcuts(context, enabled_apps) end
   context:success(not muted and "Microphone\nmuted" or "Microphone\nlive", 900)
   return not muted and sound.OFF or sound.ON
 end
@@ -579,7 +596,7 @@ local function begin_combined_hold(context)
   local device = resolve_input_device(selected)
   if not device then error("no input device available") end
   local instance_id = context.instanceId
-  cancel_combined_hold(instance_id)
+  cancel_combined_hold(context)
   local state = {
     device = device,
     muteApps = mute_apps,
@@ -607,7 +624,7 @@ local function release_combined_hold(context)
   combined_state_by_instance[instance_id] = nil
   stop_combined_hold(state)
   if state.pttActive then
-    restore_push_to_talk(instance_id)
+    restore_push_to_talk(context)
   else
     local cue = toggle_microphone(context, state.device, state.muteApps, state.enabledApps)
     local spec = cue == sound.ON and microphone_sound.on or microphone_sound.off
@@ -645,14 +662,14 @@ return {
   settingsSchemaVersion = 1,
   settingsSchemaProvider = settings_schema,
   appear = function(context)
-    cancel_combined_hold(context.instanceId)
+    cancel_combined_hold(context)
     ptt_state_by_instance[context.instanceId] = nil
     visible_contexts[context.instanceId] = context
     synchronize_input_watchers()
   end,
   disappear = function(context)
-    cancel_combined_hold(context.instanceId)
-    restore_push_to_talk(context.instanceId)
+    cancel_combined_hold(context)
+    restore_push_to_talk(context)
     visible_contexts[context.instanceId] = nil
     synchronize_input_watchers()
   end,
@@ -661,7 +678,7 @@ return {
   press = apply_press,
   release = function(context)
     if not release_combined_hold(context) then
-      restore_push_to_talk(context.instanceId)
+      restore_push_to_talk(context)
     end
   end,
 }

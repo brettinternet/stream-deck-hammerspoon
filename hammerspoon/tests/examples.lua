@@ -173,6 +173,13 @@ local function context(instance_id, settings, device)
         durationMs = duration_ms,
       }
     end,
+    error = function(self, message, duration_ms)
+      self.feedbacks[#self.feedbacks + 1] = {
+        kind = "error",
+        message = message,
+        durationMs = duration_ms,
+      }
+    end,
     playSound = function(self, spec)
       self.sounds[#self.sounds + 1] = spec
       return true
