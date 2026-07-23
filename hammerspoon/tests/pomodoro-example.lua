@@ -69,8 +69,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(ready.title, "Start")
     assertEqual(ready.state, "inactive")
     assertEqual(ready.progress, 0)
-    assertEqual(ready.icon.kind, "custom")
-    assertEqual(ready.icon.mediaType, "image/svg+xml")
+    assertEqual(ready.icon, nil, "timer text must not be covered by an inner icon")
 
     action.appear(pomodoro)
     action.press(pomodoro)
@@ -82,7 +81,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(focus.badge, "F1")
     assertEqual(focus.progress, 0)
     assertEqual(focus.backgroundColor, "#D94B4B")
-    assertEqual(focus.icon.kind, "custom")
+    assertEqual(focus.icon, nil, "running timer text must remain unobscured")
 
     now = now + 1
     run_timer()

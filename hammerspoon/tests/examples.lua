@@ -581,22 +581,32 @@ test("application example toggles focused and configured applications", function
 end)
 
 
-test("focus timer example covers lifecycle, completion, stopping, and unavailable timers", function()
-  local scheduled
+test("focus timer example shows a live countdown and cleans up its timers", function()
+  local now = 1000
+  local completion_timer
+  local refresh_timer
+  local function timer(seconds, callback)
+    local scheduled = {
+      seconds = seconds,
+      callback = callback,
+      stop_calls = 0,
+    }
+    function scheduled:stop()
+      self.stop_calls = self.stop_calls + 1
+      return true
+    end
+    return scheduled
+  end
   local fake_hs = {
     timer = {
+      secondsSinceEpoch = function() return now end,
       doAfter = function(seconds, callback)
-        local timer = {
-          seconds = seconds,
-          callback = callback,
-          stop_calls = 0,
-        }
-        function timer:stop()
-          self.stop_calls = self.stop_calls + 1
-          return true
-        end
-        scheduled = timer
-        return timer
+        completion_timer = timer(seconds, callback)
+        return completion_timer
+      end,
+      doEvery = function(seconds, callback)
+        refresh_timer = timer(seconds, callback)
+        return refresh_timer
       end,
     },
   }
@@ -609,27 +619,48 @@ test("focus timer example covers lifecycle, completion, stopping, and unavailabl
   assertEqual(action.appearance(focus).state, "inactive")
   action.appear(focus)
   action.press(focus)
-  assertEqual(scheduled.seconds, 25 * 60, "focus timer must use a 25-minute duration")
+  assertEqual(completion_timer.seconds, 25 * 60, "focus timer must use a 25-minute duration")
+  assertEqual(refresh_timer.seconds, 1, "visible countdown must refresh once per second")
   assertEqual(focus.refreshes, 1, "starting a focus timer must refresh")
-  assertEqual(action.appearance(focus).title, "Focus")
-  assertEqual(action.appearance(focus).state, "active")
+  local running = action.appearance(focus)
+  assertEqual(running.title, "25:00")
+  assertEqual(running.state, "active")
+  assertEqual(running.progress, 0)
+  assertEqual(running.backgroundColor, "#7F1D1D")
 
-  scheduled.callback()
-  assertEqual(focus.refreshes, 2, "timer completion must refresh")
+  now = now + 1
+  refresh_timer.callback()
+  running = action.appearance(focus)
+  assertEqual(running.title, "24:59")
+  assertEqual(running.progress, 1 - (1499 / (25 * 60)))
+  assertEqual(focus.refreshes, 2, "each tick must refresh the visible countdown")
+
+  now = now + 2000
+  running = action.appearance(focus)
+  assertEqual(running.title, "00:00", "overdue appearances must remain valid before completion runs")
+  assertEqual(running.progress, 1)
+
+  completion_timer.callback()
+  assertEqual(focus.refreshes, 3, "timer completion must refresh")
+  assertEqual(refresh_timer.stop_calls, 1, "completion must stop countdown refreshes")
   assertEqual(action.appearance(focus).title, "Ready")
   assertEqual(action.appearance(focus).state, "inactive")
 
   action.press(focus)
-  local running_timer = scheduled
+  local running_completion = completion_timer
+  local running_refresh = refresh_timer
   action.press(focus)
-  assertEqual(running_timer.stop_calls, 1, "pressing a running timer must stop it")
-  assertEqual(focus.refreshes, 4, "stopping a focus timer must refresh")
+  assertEqual(running_completion.stop_calls, 1, "pressing a running timer must stop completion")
+  assertEqual(running_refresh.stop_calls, 1, "pressing a running timer must stop refreshes")
+  assertEqual(focus.refreshes, 5, "stopping a focus timer must refresh")
   assertEqual(action.appearance(focus).state, "inactive")
 
   action.press(focus)
-  local disappearing_timer = scheduled
+  local disappearing_completion = completion_timer
+  local disappearing_refresh = refresh_timer
   action.disappear(focus)
-  assertEqual(disappearing_timer.stop_calls, 1, "disappearing must stop the timer")
+  assertEqual(disappearing_completion.stop_calls, 1, "disappearing must stop completion")
+  assertEqual(disappearing_refresh.stop_calls, 1, "disappearing must stop refreshes")
   action.appear(focus)
   assertEqual(action.appearance(focus).title, "Ready", "reappearing must reset timer state")
 
@@ -966,6 +997,8 @@ dofile("hammerspoon/tests/keep-awake-example.lua")(
 dofile("hammerspoon/tests/last-application-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/app-launcher-example.lua")(
+  test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
+dofile("hammerspoon/tests/audio-input-router-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/audio-output-router-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)

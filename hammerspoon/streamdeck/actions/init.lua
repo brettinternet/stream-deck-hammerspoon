@@ -3,6 +3,7 @@ local actions = {}
 local modules = {
   ["app-launcher"] = "streamdeck.actions.app-launcher",
   application = "streamdeck.actions.application",
+  ["audio-input-router"] = "streamdeck.actions.audio-input-router",
   ["audio-output-router"] = "streamdeck.actions.audio-output-router",
   ["clipboard-clean"] = "streamdeck.actions.clipboard-clean",
   ["clipboard-stash"] = "streamdeck.actions.clipboard-stash",
@@ -27,6 +28,7 @@ local modules = {
 local names = {
   "app-launcher",
   "application",
+  "audio-input-router",
   "audio-output-router",
   "clipboard-clean",
   "clipboard-stash",

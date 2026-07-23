@@ -16,13 +16,9 @@ local settings_bounds = {
   longBreakMinutes = { min = 1, max = 120 },
   cycles = { min = 1, max = 12 },
 }
-
-local helpers = require("streamdeck.helpers")
 local sound = require("streamdeck.sound")
 local completion_sound = sound.system("Glass", { volume = 0.65 })
-local tomato_icon = helpers.svg([[
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"><ellipse cx="36" cy="42" rx="24" ry="21" fill="#E84C3D"/><path fill="#2F8F46" d="M36 23 L36 13 L32 10 L40 10 L36 13 L45 17 L43 22 L36 19 L29 22 L27 17 Z"/><path fill="#FFFFFF" d="M28 35 C31 29 40 28 45 34 C42 31 34 31 28 35 Z" fill-opacity="0.55"/></svg>
-]])
+
 
 local function new_state()
   return {
@@ -250,7 +246,6 @@ end
 local function appearance_for(context, state)
   local appearance = {
     appearanceVersion = 1,
-    icon = tomato_icon,
     progress = 0,
   }
 

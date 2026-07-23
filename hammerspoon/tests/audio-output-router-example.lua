@@ -81,6 +81,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(appearance.presentationState, 0)
     assertEqual(appearance.badge, "MPS")
     assertEqual(appearance.icon.kind, "custom")
+    local speaker_icon = appearance.icon.dataBase64
 
     for presentation_state, uid in ipairs({ "uid-headphones", "uid-display", "uid-airpods" }) do
       action.press(router)
@@ -90,6 +91,10 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       assertTrue(appearance.title:find(devices[uid].name(), 1, true) == 1)
       assertEqual(appearance.state, "active")
       assertEqual(appearance.presentationState, presentation_state)
+      if presentation_state == 1 then
+        assertFalse(appearance.icon.dataBase64 == speaker_icon,
+          "headphone outputs must retain their distinct icon")
+      end
     end
 
     action.press(router)
