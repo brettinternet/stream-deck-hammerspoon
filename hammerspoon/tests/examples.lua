@@ -707,7 +707,7 @@ test("configurable timer counts down, flashes on completion, and cleans up timer
   end, "timer unavailable")
 end)
 
-test("system monitor samples bounded shared CPU/RAM history and isolates toggles", function()
+test("system monitor samples bounded shared CPU/memory history and uses per-key settings", function()
   local scheduled = {}
   local timer_count = 0
   local tick_count = 0
@@ -775,6 +775,13 @@ test("system monitor samples bounded shared CPU/RAM history and isolates toggles
 
   assertEqual(action.id, "com.brettinternet.hammerspoon.system-monitor")
   assertEqual(action.name, "System monitor")
+  assertEqual(action.settingsSchemaVersion, 1)
+  local metric_setting = action.settingsSchema[1]
+  assertEqual(metric_setting.type, "select")
+  assertEqual(metric_setting.key, "metric")
+  assertEqual(metric_setting.default, "cpu")
+  assertEqual(metric_setting.options[1].value, "cpu")
+  assertEqual(metric_setting.options[2].value, "memory")
   action.appear(first)
   assertEqual(scheduled.seconds, 1, "system monitor must sample once per second")
   assertEqual(timer_count, 1, "first visible instance must start one timer")
@@ -826,12 +833,12 @@ test("system monitor samples bounded shared CPU/RAM history and isolates toggles
   active_delta = 10
   idle_delta = 90
   tick()
-  action.press(first)
-  assertEqual(action.appearance(first).title, "RAM 4%", "press must toggle only this key")
-  assertEqual(action.appearance(second).title, "CPU 10%", "another key must keep its metric")
+  first.settings = { metric = "memory" }
+  assertEqual(action.appearance(first).title, "Memory 4%", "settings must select memory for this key")
+  assertEqual(action.appearance(second).title, "CPU 10%", "another key must keep its configured metric")
   ram_active_pages = 90
   tick()
-  assertEqual(action.appearance(first).title, "RAM 92%")
+  assertEqual(action.appearance(first).title, "Memory 92%")
   local ram_warning_options = chart_options[#chart_options]
   assertEqual(ram_warning_options.backgroundColor, "#2B1114")
   assertEqual(ram_warning_options.fillColor, "#FF453A")
@@ -844,7 +851,7 @@ test("system monitor samples bounded shared CPU/RAM history and isolates toggles
   end
   local rolled_over = action.appearance(first)
   assertEqual(chart_lengths[#chart_lengths], 120, "history must retain at most 120 samples")
-  assertEqual(rolled_over.title, "RAM 4%")
+  assertEqual(rolled_over.title, "Memory 4%")
 
   action.disappear(first)
   local old_callback = scheduled.callback
@@ -855,17 +862,17 @@ test("system monitor samples bounded shared CPU/RAM history and isolates toggles
   old_callback()
   assertEqual(second.refreshes, second_refreshes, "stale timer callbacks must not refresh removed keys")
 
+  first.settings = {}
   action.appear(first)
   assertEqual(timer_count, 2, "a new visible period must start a fresh timer")
   assertEqual(action.appearance(first).title, "CPU 0%", "final cleanup must reset metric and CPU baseline")
-  local replacement = context("system-first")
-  action.press(first)
+  local replacement = context("system-first", { metric = "memory" })
   action.appear(replacement)
-  assertEqual(action.appearance(replacement).title, "CPU 0%")
+  assertEqual(action.appearance(replacement).title, "Memory 0%")
   local replacement_refreshes = replacement.refreshes
-  action.press(first)
-  assertEqual(action.appearance(replacement).title, "CPU 0%",
-    "a stale context must not toggle its replacement")
+  action.disappear(first)
+  assertEqual(action.appearance(replacement).title, "Memory 0%",
+    "a stale context must not remove its replacement")
   assertEqual(replacement.refreshes, replacement_refreshes,
     "a stale context must not refresh its replacement")
   action.disappear(replacement)

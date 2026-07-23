@@ -1,4 +1,4 @@
--- Stream Deck action: a shared live CPU and RAM history for every visible key.
+-- Stream Deck action: shared live CPU and memory histories for every visible key.
 
 local helpers = require("streamdeck.helpers")
 
@@ -14,7 +14,6 @@ local warning_fill_color = "#FF453A"
 local warning_stroke_color = "#A61B1B"
 
 local visible_contexts = {}
-local metric_by_instance = {}
 local cpu_history = {}
 local ram_history = {}
 local monitor_timer
@@ -29,6 +28,19 @@ local function finite_number(value)
     and value == value
     and value ~= math.huge
     and value ~= -math.huge
+end
+
+local function metric_for(context)
+  local settings = nil
+  if context and type(context.getSettings) == "function" then
+    settings = context:getSettings()
+  elseif context then
+    settings = context.settings
+  end
+  if type(settings) == "table" and settings.metric == "memory" then
+    return "memory"
+  end
+  return "cpu"
 end
 
 local function require_system_monitor_apis()
@@ -216,7 +228,6 @@ local function stop_timer_and_reset()
     pcall(timer.stop, timer)
   end
   reset_measurements()
-  metric_by_instance = {}
 end
 
 local function history_values(history)
@@ -232,13 +243,11 @@ local function rounded_percentage(value)
 end
 
 local function appearance_for(context)
-  local instance_id = context.instanceId
-  local metric = metric_by_instance[instance_id] or "cpu"
-  local is_cpu = metric == "cpu"
+  local is_cpu = metric_for(context) == "cpu"
   local value = is_cpu and last_cpu or last_ram
   local title = string.format(
     "%s %d%%",
-    is_cpu and "CPU" or "RAM",
+    is_cpu and "CPU" or "Memory",
     rounded_percentage(value)
   )
   local warning = value > warning_threshold
@@ -267,9 +276,23 @@ end
 return {
   id = action_id,
   name = "System monitor",
-  description = "View live CPU and RAM usage; press to switch metrics.",
+  description = "View live CPU or memory usage selected in action settings.",
   category = "System",
-  gesture = "Press: switch between CPU and memory",
+  gesture = "Choose CPU or memory in the action settings",
+  settingsSchemaVersion = 1,
+  settingsSchema = {
+    {
+      type = "select",
+      key = "metric",
+      label = "System metric",
+      description = "Metric shown on this key.",
+      options = {
+        { value = "cpu", label = "CPU" },
+        { value = "memory", label = "Memory" },
+      },
+      default = "cpu",
+    },
+  },
 
   appear = function(context)
     local instance_id = context.instanceId
@@ -284,13 +307,11 @@ return {
     end
 
     visible_contexts[instance_id] = context
-    metric_by_instance[instance_id] = "cpu"
 
     if first_instance then
       local ok, err = pcall(start_timer)
       if not ok then
         visible_contexts[instance_id] = nil
-        metric_by_instance[instance_id] = nil
         stop_timer_and_reset()
         error(err, 0)
       end
@@ -301,26 +322,12 @@ return {
     return appearance_for(context)
   end,
 
-  press = function(context)
-    local instance_id = context.instanceId
-    if visible_contexts[instance_id] ~= context then
-      return
-    end
-    if metric_by_instance[instance_id] == "ram" then
-      metric_by_instance[instance_id] = "cpu"
-    else
-      metric_by_instance[instance_id] = "ram"
-    end
-    context:success(metric_by_instance[instance_id] == "ram" and "Showing\nmemory" or "Showing\nCPU", 850)
-  end,
-
   disappear = function(context)
     local instance_id = context.instanceId
     if visible_contexts[instance_id] ~= context then
       return
     end
     visible_contexts[instance_id] = nil
-    metric_by_instance[instance_id] = nil
     if next(visible_contexts) == nil then
       stop_timer_and_reset()
     end
