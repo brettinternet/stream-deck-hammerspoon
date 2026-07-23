@@ -721,6 +721,8 @@ test("system monitor samples visible metrics, summarizes configured windows, and
     battery_power = 0,
     thermal = 0,
     idle = 0,
+    activity_monitor = 0,
+    network_settings = 0,
   }
   local absolute_time = 0
   local active_ticks = 0
@@ -738,6 +740,9 @@ test("system monitor samples visible metrics, summarizes configured windows, and
   local battery_watts = -12.5
   local thermal = "Nominal"
   local user_idle = 0
+  local activity_monitor_result = true
+  local network_settings_result = true
+  local opened_network_settings_url
   local fake_hs = {
     host = {
       cpuUsageTicks = function()
@@ -815,6 +820,20 @@ test("system monitor samples visible metrics, summarizes configured windows, and
       watts = function()
         calls.battery_power = calls.battery_power + 1
         return battery_watts
+      end,
+    },
+    application = {
+      launchOrFocus = function(app)
+        calls.activity_monitor = calls.activity_monitor + 1
+        assertEqual(app, "Activity Monitor")
+        return activity_monitor_result
+      end,
+    },
+    urlevent = {
+      openURL = function(url)
+        calls.network_settings = calls.network_settings + 1
+        opened_network_settings_url = url
+        return network_settings_result
       end,
     },
     timer = {
@@ -916,8 +935,38 @@ test("system monitor samples visible metrics, summarizes configured windows, and
   tick()
   assertEqual(action.appearance(first).title, "CPU 10%", "CPU must use tick deltas")
   action.press(first)
-  assertEqual(first.feedbacks[#first.feedbacks].message, "Configure\nmetric")
+  assertEqual(calls.activity_monitor, 1, "CPU keys must open Activity Monitor")
+  assertEqual(first.feedbacks[#first.feedbacks].message, "Opened\nActivity Monitor")
   assertEqual(action.appearance(first).title, "CPU 10%", "press must not change the selected metric")
+  activity_monitor_result = false
+  assertError(function()
+    action.press(first)
+  end, "failed to launch or focus Activity Monitor")
+  activity_monitor_result = true
+
+  first.settings = { metric = "memory" }
+  action.press(first)
+  first.settings = { metric = "memory_pressure" }
+  action.press(first)
+  assertEqual(calls.activity_monitor, 4, "memory metrics must open Activity Monitor")
+
+  first.settings = { metric = "network" }
+  action.press(first)
+  assertEqual(calls.network_settings, 1, "network keys must open Network settings")
+  assertEqual(opened_network_settings_url, "x-apple.systempreferences:com.apple.Network-Settings.extension")
+  assertEqual(first.feedbacks[#first.feedbacks].message, "Opened\nNetwork settings")
+  network_settings_result = false
+  assertError(function()
+    action.press(first)
+  end, "failed to open Network settings")
+  network_settings_result = true
+
+  local feedback_count = #first.feedbacks
+  first.settings = { metric = "disk" }
+  action.press(first)
+  assertEqual(calls.activity_monitor, 4, "ambiguous metrics must not open Activity Monitor")
+  assertEqual(calls.network_settings, 2, "ambiguous metrics must not open Network settings")
+  assertEqual(#first.feedbacks, feedback_count, "ambiguous metrics must be no-ops")
 
   first.settings = { metric = "memory" }
   second.settings = { metric = "memory" }
@@ -1104,6 +1153,12 @@ test("system monitor requires only timer support before sampling a selected metr
   streamdeck.registrations[1].appear(context("system-no-host-api", { metric = "disk" }))
 
   local unavailable = load_fixture("hammerspoon/streamdeck/actions/system-monitor.lua", {})
+  assertError(function()
+    unavailable.registrations[1].press(context("system-activity-monitor-unavailable", { metric = "cpu" }))
+  end, "Activity Monitor unavailable")
+  assertError(function()
+    unavailable.registrations[1].press(context("system-network-settings-unavailable", { metric = "network" }))
+  end, "Network settings unavailable")
   assertError(function()
     unavailable.registrations[1].appear(context("system-unavailable"))
   end, "hs.timer.doEvery")

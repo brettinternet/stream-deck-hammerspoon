@@ -53,6 +53,12 @@ local metric_kinds = {
   internet = "latest",
   thermal = "latest",
 }
+local activity_monitor_metrics = {
+  cpu = true,
+  memory = true,
+  memory_pressure = true,
+}
+local network_settings_url = "x-apple.systempreferences:com.apple.Network-Settings.extension"
 
 local visible_contexts = {}
 local requested_metrics = {}
@@ -117,6 +123,38 @@ local function require_system_monitor_api()
     or type(hs.timer.doEvery) ~= "function" then
     error("system monitor requires hs.timer.doEvery")
   end
+end
+
+local function open_activity_monitor(context)
+  if type(hs) ~= "table"
+    or type(hs.application) ~= "table"
+    or type(hs.application.launchOrFocus) ~= "function" then
+    error("Activity Monitor unavailable")
+  end
+  local ok, result = pcall(hs.application.launchOrFocus, "Activity Monitor")
+  if not ok then
+    error("failed to launch or focus Activity Monitor: " .. tostring(result))
+  end
+  if result ~= true then
+    error("failed to launch or focus Activity Monitor")
+  end
+  context:success("Opened\nActivity Monitor", 900)
+end
+
+local function open_network_settings(context)
+  if type(hs) ~= "table"
+    or type(hs.urlevent) ~= "table"
+    or type(hs.urlevent.openURL) ~= "function" then
+    error("Network settings unavailable")
+  end
+  local ok, result = pcall(hs.urlevent.openURL, network_settings_url)
+  if not ok then
+    error("failed to open Network settings: " .. tostring(result))
+  end
+  if result ~= true then
+    error("failed to open Network settings")
+  end
+  context:success("Opened\nNetwork settings", 900)
 end
 
 local function clear_history(metric)
@@ -755,9 +793,9 @@ end
 return {
   id = action_id,
   name = "System monitor",
-  description = "View a selected live metric; only visible metric selections are sampled.",
+  description = "View a selected live metric; CPU and memory keys open Activity Monitor, and network opens Network settings.",
   category = "System",
-  gesture = "Press: show metric-setting hint",
+  gesture = "Press: open related details where available",
   settingsSchemaVersion = 1,
   settingsSchema = {
     {
@@ -809,7 +847,12 @@ return {
   end,
 
   press = function(context)
-    context:success("Configure\nmetric", 850)
+    local metric = metric_for(context)
+    if activity_monitor_metrics[metric] then
+      open_activity_monitor(context)
+    elseif metric == "network" then
+      open_network_settings(context)
+    end
   end,
 
   disappear = function(context)
