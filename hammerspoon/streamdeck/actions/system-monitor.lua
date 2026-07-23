@@ -1,4 +1,4 @@
--- Stream Deck action: shared live CPU and memory histories for every visible key.
+-- Stream Deck action: shared live histories sampled only for visible metric selections.
 
 local helpers = require("streamdeck.helpers")
 
@@ -13,14 +13,53 @@ local warning_background_color = "#2B1114"
 local warning_fill_color = "#FF453A"
 local warning_stroke_color = "#A61B1B"
 
+local metric_options = {
+  { value = "cpu", label = "CPU" },
+  { value = "memory", label = "Memory" },
+  { value = "disk", label = "Disk usage" },
+  { value = "network", label = "Network status" },
+  { value = "thermal", label = "Thermal state" },
+  { value = "idle", label = "Idle time" },
+}
+
+local metric_labels = {
+  cpu = "CPU",
+  memory = "Memory",
+  disk = "Disk",
+  network = "Network",
+  thermal = "Thermal",
+  idle = "Idle",
+}
+
 local visible_contexts = {}
-local cpu_history = {}
-local ram_history = {}
+local requested_metrics = {
+  cpu = false,
+  memory = false,
+  disk = false,
+  network = false,
+  thermal = false,
+  idle = false,
+}
+local histories = {
+  cpu = {},
+  memory = {},
+  disk = {},
+  network = {},
+  thermal = {},
+  idle = {},
+}
+local values = {
+  cpu = 0,
+  memory = 0,
+  disk = 0,
+  network = 0,
+  thermal = 0,
+  idle = 0,
+}
+local thermal_state = "Unknown"
 local monitor_timer
 local timer_generation = 0
 local previous_ticks
-local last_cpu = 0
-local last_ram = 0
 local has_valid_cpu = false
 
 local function finite_number(value)
@@ -37,22 +76,16 @@ local function metric_for(context)
   elseif context then
     settings = context.settings
   end
-  if type(settings) == "table" and settings.metric == "memory" then
-    return "memory"
+  if type(settings) == "table" and requested_metrics[settings.metric] ~= nil then
+    return settings.metric
   end
   return "cpu"
 end
 
-local function require_system_monitor_apis()
+local function require_system_monitor_api()
   if type(hs) ~= "table"
-    or type(hs.host) ~= "table"
-    or type(hs.host.cpuUsageTicks) ~= "function" then
-    error("system monitor requires hs.host.cpuUsageTicks")
-  end
-  if type(hs.host.vmStat) ~= "function" then
-    error("system monitor requires hs.host.vmStat")
-  end
-  if type(hs.timer) ~= "table" or type(hs.timer.doEvery) ~= "function" then
+    or type(hs.timer) ~= "table"
+    or type(hs.timer.doEvery) ~= "function" then
     error("system monitor requires hs.timer.doEvery")
   end
 end
@@ -64,16 +97,17 @@ local function append_sample(history, value)
   history[#history + 1] = value
 end
 
+local function record(metric, value)
+  values[metric] = value
+  append_sample(histories[metric], value)
+end
+
 local function tick_totals(snapshot)
   if type(snapshot) ~= "table" then
     return nil
   end
 
-  local ticks = snapshot
-  if type(snapshot.overall) == "table" then
-    ticks = snapshot.overall
-  end
-
+  local ticks = type(snapshot.overall) == "table" and snapshot.overall or snapshot
   local active = 0
   local total = 0
   local has_ticks = false
@@ -134,13 +168,34 @@ local function ram_percentage(snapshot)
   end
 
   local percentage = (active + wired + compressor) * page_size / memory_size * 100
-  if percentage < 0 then
-    return 0
+  return math.max(0, math.min(percentage, 100))
+end
+
+local function disk_percentage(volumes)
+  if type(volumes) ~= "table" then
+    return nil
   end
-  if percentage > 100 then
-    return 100
+  local root = volumes["/"]
+  if type(root) ~= "table" then
+    return nil
   end
-  return percentage
+  local total = root.NSURLVolumeTotalCapacityKey
+  local available = root.NSURLVolumeAvailableCapacityKey
+  if not finite_number(total) or total <= 0
+    or not finite_number(available) or available < 0 then
+    return nil
+  end
+  return math.max(0, math.min((total - available) / total * 100, 100))
+end
+
+local function thermal_percentage(state)
+  local value = ({
+    nominal = 0,
+    fair = 33,
+    serious = 67,
+    critical = 100,
+  })[type(state) == "string" and state:lower() or ""]
+  return value
 end
 
 local function refresh_visible_contexts()
@@ -151,44 +206,146 @@ local function refresh_visible_contexts()
   end
 end
 
+local function selected_metrics()
+  for metric in pairs(requested_metrics) do
+    requested_metrics[metric] = false
+  end
+  for instance_id, context in pairs(visible_contexts) do
+    if visible_contexts[instance_id] == context then
+      requested_metrics[metric_for(context)] = true
+    end
+  end
+  return requested_metrics
+end
+
+local function sample_cpu(hsapi)
+  if type(hsapi.host) ~= "table" or type(hsapi.host.cpuUsageTicks) ~= "function" then
+    return false
+  end
+  local ok, ticks = pcall(hsapi.host.cpuUsageTicks)
+  if not ok then
+    return false
+  end
+  local cpu = cpu_from_ticks(ticks)
+  if cpu ~= nil then
+    values.cpu = cpu
+    has_valid_cpu = true
+  elseif has_valid_cpu then
+    cpu = values.cpu
+  end
+  if cpu == nil then
+    append_sample(histories.cpu, values.cpu)
+    return true
+  end
+  append_sample(histories.cpu, cpu)
+  return true
+end
+
+local function sample_memory(hsapi)
+  if type(hsapi.host) ~= "table" or type(hsapi.host.vmStat) ~= "function" then
+    return false
+  end
+  local ok, vm_stat = pcall(hsapi.host.vmStat)
+  if not ok then
+    return false
+  end
+  local memory = ram_percentage(vm_stat)
+  if memory == nil then
+    return false
+  end
+  record("memory", memory)
+  return true
+end
+
+local function sample_disk(hsapi)
+  if type(hsapi.host) ~= "table" or type(hsapi.host.volumeInformation) ~= "function" then
+    return false
+  end
+  local ok, volumes = pcall(hsapi.host.volumeInformation)
+  if not ok then
+    return false
+  end
+  local disk = disk_percentage(volumes)
+  if disk == nil then
+    return false
+  end
+  record("disk", disk)
+  return true
+end
+
+local function sample_network(hsapi)
+  if type(hsapi.network) ~= "table" or type(hsapi.network.primaryInterfaces) ~= "function" then
+    return false
+  end
+  local ok, ipv4, ipv6 = pcall(hsapi.network.primaryInterfaces)
+  if not ok then
+    return false
+  end
+  record("network", (ipv4 or ipv6) and 100 or 0)
+  return true
+end
+
+local function sample_thermal(hsapi)
+  if type(hsapi.host) ~= "table" or type(hsapi.host.thermalState) ~= "function" then
+    return false
+  end
+  local ok, state = pcall(hsapi.host.thermalState)
+  if not ok then
+    return false
+  end
+  local thermal = thermal_percentage(state)
+  if thermal == nil then
+    return false
+  end
+  thermal_state = state
+  record("thermal", thermal)
+  return true
+end
+
+local function sample_idle(hsapi)
+  if type(hsapi.host) ~= "table" or type(hsapi.host.idleTime) ~= "function" then
+    return false
+  end
+  local ok, idle = pcall(hsapi.host.idleTime)
+  if not ok or not finite_number(idle) or idle < 0 then
+    return false
+  end
+  record("idle", idle)
+  return true
+end
+
+local samplers = {
+  cpu = sample_cpu,
+  memory = sample_memory,
+  disk = sample_disk,
+  network = sample_network,
+  thermal = sample_thermal,
+  idle = sample_idle,
+}
+
 local function sample()
   if monitor_timer == nil or next(visible_contexts) == nil then
     return
   end
 
+  local active = selected_metrics()
+  if not active.cpu and #histories.cpu > 0 then
+    previous_ticks = nil
+    has_valid_cpu = false
+    values.cpu = 0
+    histories.cpu = {}
+  end
+
+  local sampled = false
   local hsapi = hs
-  local ticks_ok, ticks = pcall(function()
-    return hsapi.host.cpuUsageTicks()
-  end)
-  if not ticks_ok then
-    return
+  for metric, sampler in pairs(samplers) do
+    if active[metric] and sampler(hsapi) then
+      sampled = true
+    end
   end
-  local vm_ok, vm_stat = pcall(function()
-    return hsapi.host.vmStat()
-  end)
-  if not vm_ok then
-    return
+  if sampled then
+    refresh_visible_contexts()
   end
-
-  local cpu = cpu_from_ticks(ticks)
-  if cpu ~= nil then
-    last_cpu = cpu
-    has_valid_cpu = true
-  elseif has_valid_cpu then
-    cpu = last_cpu
-  end
-
-  local ram = ram_percentage(vm_stat)
-  if ram == nil then
-    return
-  end
-  last_ram = ram
-
-  if cpu ~= nil then
-    append_sample(cpu_history, cpu)
-  end
-  append_sample(ram_history, ram)
-  refresh_visible_contexts()
 end
 
 local function start_timer()
@@ -213,11 +370,12 @@ end
 
 local function reset_measurements()
   previous_ticks = nil
-  last_cpu = 0
-  last_ram = 0
   has_valid_cpu = false
-  cpu_history = {}
-  ram_history = {}
+  thermal_state = "Unknown"
+  for metric in pairs(histories) do
+    histories[metric] = {}
+    values[metric] = 0
+  end
 end
 
 local function stop_timer_and_reset()
@@ -231,26 +389,51 @@ local function stop_timer_and_reset()
 end
 
 local function history_values(history)
-  local values = {}
+  local values_copy = {}
   for index, value in ipairs(history) do
-    values[index] = value
+    values_copy[index] = value
   end
-  return values
+  return values_copy
 end
 
 local function rounded_percentage(value)
   return math.floor(value + 0.5)
 end
 
+local function idle_label(seconds)
+  if seconds < 60 then
+    return string.format("%ds", math.floor(seconds + 0.5))
+  end
+  return string.format("%dm", math.floor(seconds / 60 + 0.5))
+end
+
+local function history_max(history, minimum)
+  local maximum = minimum
+  for _, value in ipairs(history) do
+    maximum = math.max(maximum, value)
+  end
+  return maximum
+end
+
 local function appearance_for(context)
-  local is_cpu = metric_for(context) == "cpu"
-  local value = is_cpu and last_cpu or last_ram
-  local title = string.format(
-    "%s %d%%",
-    is_cpu and "CPU" or "Memory",
-    rounded_percentage(value)
-  )
+  local metric = metric_for(context)
+  local value = values[metric]
+  local title = string.format("%s %d%%", metric_labels[metric], rounded_percentage(value))
+  local max = 100
   local warning = value > warning_threshold
+
+  if metric == "network" then
+    title = value > 0 and "Network\nUp" or "Network\nDown"
+    warning = value == 0
+  elseif metric == "thermal" then
+    title = "Thermal\n" .. thermal_state
+    warning = value > 33
+  elseif metric == "idle" then
+    title = "Idle\n" .. idle_label(value)
+    max = history_max(histories.idle, 60)
+    warning = false
+  end
+
   local background_color = warning and warning_background_color or healthy_background_color
   local fill_color = warning and warning_fill_color or healthy_fill_color
   local stroke_color = warning and warning_stroke_color or healthy_stroke_color
@@ -261,10 +444,10 @@ local function appearance_for(context)
     appearanceVersion = 1,
     icon = helpers.areaChart(
       context,
-      history_values(is_cpu and cpu_history or ram_history),
+      history_values(histories[metric]),
       {
         min = 0,
-        max = 100,
+        max = max,
         backgroundColor = background_color,
         fillColor = fill_color,
         strokeColor = stroke_color,
@@ -273,23 +456,21 @@ local function appearance_for(context)
     ),
   }
 end
+
 return {
   id = action_id,
   name = "System monitor",
-  description = "View live CPU or memory usage selected in action settings.",
+  description = "View a selected live metric; only visible metric selections are sampled.",
   category = "System",
-  gesture = "Choose CPU or memory in the action settings",
-  settingsSchemaVersion = 1,
+  gesture = "Choose a system metric in the action settings",
+  settingsSchemaVersion = 2,
   settingsSchema = {
     {
       type = "select",
       key = "metric",
       label = "System metric",
-      description = "Metric shown on this key.",
-      options = {
-        { value = "cpu", label = "CPU" },
-        { value = "memory", label = "Memory" },
-      },
+      description = "Metric shown on this key. Disk usage is for the root volume; network status requires a primary IPv4 or IPv6 interface.",
+      options = metric_options,
       default = "cpu",
     },
   },
@@ -302,7 +483,7 @@ return {
 
     local first_instance = next(visible_contexts) == nil
     if first_instance then
-      require_system_monitor_apis()
+      require_system_monitor_api()
       reset_measurements()
     end
 

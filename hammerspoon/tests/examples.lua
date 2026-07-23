@@ -707,19 +707,30 @@ test("configurable timer counts down, flashes on completion, and cleans up timer
   end, "timer unavailable")
 end)
 
-test("system monitor samples bounded shared CPU/memory history and uses per-key settings", function()
+test("system monitor samples only visible metric selections and keeps histories bounded", function()
   local scheduled = {}
   local timer_count = 0
-  local tick_count = 0
+  local calls = {
+    cpu = 0,
+    memory = 0,
+    disk = 0,
+    network = 0,
+    thermal = 0,
+    idle = 0,
+  }
   local active_ticks = 0
   local idle_ticks = 0
   local active_delta = 10
   local idle_delta = 90
   local ram_active_pages = 2
+  local primary_ipv4 = "en0"
+  local primary_ipv6 = false
+  local thermal = "Nominal"
+  local user_idle = 0
   local fake_hs = {
     host = {
       cpuUsageTicks = function()
-        tick_count = tick_count + 1
+        calls.cpu = calls.cpu + 1
         active_ticks = active_ticks + active_delta
         idle_ticks = idle_ticks + idle_delta
         return {
@@ -732,6 +743,7 @@ test("system monitor samples bounded shared CPU/memory history and uses per-key 
         }
       end,
       vmStat = function()
+        calls.memory = calls.memory + 1
         return {
           pagesActive = ram_active_pages,
           pagesWiredDown = 1,
@@ -739,6 +751,29 @@ test("system monitor samples bounded shared CPU/memory history and uses per-key 
           pageSize = 10,
           memSize = 1000,
         }
+      end,
+      volumeInformation = function()
+        calls.disk = calls.disk + 1
+        return {
+          ["/"] = {
+            NSURLVolumeTotalCapacityKey = 1000,
+            NSURLVolumeAvailableCapacityKey = 750,
+          },
+        }
+      end,
+      thermalState = function()
+        calls.thermal = calls.thermal + 1
+        return thermal
+      end,
+      idleTime = function()
+        calls.idle = calls.idle + 1
+        return user_idle
+      end,
+    },
+    network = {
+      primaryInterfaces = function()
+        calls.network = calls.network + 1
+        return primary_ipv4, primary_ipv6
       end,
     },
     timer = {
@@ -775,13 +810,16 @@ test("system monitor samples bounded shared CPU/memory history and uses per-key 
 
   assertEqual(action.id, "com.brettinternet.hammerspoon.system-monitor")
   assertEqual(action.name, "System monitor")
-  assertEqual(action.settingsSchemaVersion, 1)
+  assertEqual(action.settingsSchemaVersion, 2)
   local metric_setting = action.settingsSchema[1]
   assertEqual(metric_setting.type, "select")
   assertEqual(metric_setting.key, "metric")
   assertEqual(metric_setting.default, "cpu")
-  assertEqual(metric_setting.options[1].value, "cpu")
-  assertEqual(metric_setting.options[2].value, "memory")
+  assertEqual(#metric_setting.options, 6)
+  assertEqual(metric_setting.options[3].value, "disk")
+  assertEqual(metric_setting.options[4].value, "network")
+  assertEqual(metric_setting.options[5].value, "thermal")
+  assertEqual(metric_setting.options[6].value, "idle")
   action.appear(first)
   assertEqual(scheduled.seconds, 1, "system monitor must sample once per second")
   assertEqual(timer_count, 1, "first visible instance must start one timer")
@@ -801,57 +839,83 @@ test("system monitor samples bounded shared CPU/memory history and uses per-key 
   end
 
   tick()
-  assertEqual(first.refreshes, 1, "a valid RAM sample must refresh the first key")
-  assertEqual(second.refreshes, 1, "a valid RAM sample must refresh every visible key")
-  assertEqual(action.appearance(first).title, "CPU 0%")
-  assertEqual(action.appearance(second).title, "CPU 0%")
+  assertEqual(calls.cpu, 1, "a CPU key must sample CPU")
+  assertEqual(calls.memory, 0, "inactive memory keys must not call vmStat")
+  assertEqual(calls.disk, 0, "inactive disk keys must not query volumes")
+  assertEqual(calls.network, 0, "inactive network keys must not query interfaces")
+  assertEqual(calls.thermal, 0, "inactive thermal keys must not query thermal state")
+  assertEqual(calls.idle, 0, "inactive idle keys must not query idle time")
+  assertEqual(first.refreshes, 1, "a valid CPU sample must refresh every visible key")
+  assertEqual(second.refreshes, 1, "a valid CPU sample must refresh every visible key")
   tick()
   assertEqual(action.appearance(first).title, "CPU 10%", "CPU must use tick deltas")
-  assertEqual(action.appearance(first).icon.kind, "custom")
-  local healthy_options = chart_options[#chart_options]
-  assertEqual(healthy_options.backgroundColor, "#0D2818")
-  assertEqual(healthy_options.fillColor, "#34C759")
-  assertEqual(healthy_options.strokeColor, "#1B7F3A")
-  assertEqual(healthy_options.strokeWidth, 2)
 
-  active_delta = 80
-  idle_delta = 20
-  tick()
-  assertEqual(action.appearance(second).title, "CPU 80%")
-  local threshold_options = chart_options[#chart_options]
-  assertEqual(threshold_options.fillColor, "#34C759", "the threshold itself must remain healthy")
-  assertEqual(threshold_options.strokeColor, "#1B7F3A")
-
-  active_delta = 81
-  idle_delta = 19
-  tick()
-  assertEqual(action.appearance(second).title, "CPU 81%")
-  local warning_options = chart_options[#chart_options]
-  assertEqual(warning_options.backgroundColor, "#2B1114")
-  assertEqual(warning_options.fillColor, "#FF453A")
-  assertEqual(warning_options.strokeColor, "#A61B1B")
-  active_delta = 10
-  idle_delta = 90
-  tick()
   first.settings = { metric = "memory" }
-  assertEqual(action.appearance(first).title, "Memory 4%", "settings must select memory for this key")
-  assertEqual(action.appearance(second).title, "CPU 10%", "another key must keep its configured metric")
+  second.settings = { metric = "memory" }
+  tick()
+  assertEqual(calls.cpu, 2, "CPU sampling must stop when no CPU key is visible")
+  assertEqual(calls.memory, 1, "a memory key must sample vmStat")
+  assertEqual(action.appearance(first).title, "Memory 4%")
   ram_active_pages = 90
   tick()
   assertEqual(action.appearance(first).title, "Memory 92%")
-  local ram_warning_options = chart_options[#chart_options]
-  assertEqual(ram_warning_options.backgroundColor, "#2B1114")
-  assertEqual(ram_warning_options.fillColor, "#FF453A")
-  assertEqual(ram_warning_options.strokeColor, "#A61B1B")
+  local memory_warning = chart_options[#chart_options]
+  assertEqual(memory_warning.fillColor, "#FF453A")
   ram_active_pages = 2
-  tick()
 
-  for _ = 1, 119 do
+  first.settings = { metric = "disk" }
+  second.settings = { metric = "disk" }
+  tick()
+  assertEqual(calls.memory, 2, "memory sampling must stop when no memory key is visible")
+  assertEqual(calls.disk, 1, "a disk key must query root-volume capacity")
+  assertEqual(action.appearance(first).title, "Disk 25%")
+
+  first.settings = { metric = "network" }
+  second.settings = { metric = "network" }
+  tick()
+  assertEqual(calls.network, 1, "a network key must query primary interfaces")
+  assertEqual(action.appearance(first).title, "Network\nUp")
+  primary_ipv4 = false
+  tick()
+  assertEqual(action.appearance(first).title, "Network\nDown")
+  local network_warning = chart_options[#chart_options]
+  assertEqual(network_warning.fillColor, "#FF453A")
+  primary_ipv6 = "en1"
+  tick()
+  assertEqual(action.appearance(first).title, "Network\nUp", "an IPv6 primary interface must report network up")
+
+  first.settings = { metric = "thermal" }
+  second.settings = { metric = "thermal" }
+  thermal = "Serious"
+  tick()
+  assertEqual(calls.thermal, 1, "a thermal key must query thermal state")
+  assertEqual(action.appearance(first).title, "Thermal\nSerious")
+  local thermal_warning = chart_options[#chart_options]
+  assertEqual(thermal_warning.fillColor, "#FF453A")
+
+  first.settings = { metric = "idle" }
+  second.settings = { metric = "idle" }
+  user_idle = 125
+  tick()
+  assertEqual(calls.idle, 1, "an idle key must query idle time")
+  assertEqual(action.appearance(first).title, "Idle\n2m")
+  local idle_options = chart_options[#chart_options]
+  assertEqual(idle_options.max, 125, "idle charts must fit the observed duration")
+
+  first.settings = { metric = "memory" }
+  second.settings = { metric = "memory" }
+  for _ = 1, 120 do
     tick()
   end
   local rolled_over = action.appearance(first)
   assertEqual(chart_lengths[#chart_lengths], 120, "history must retain at most 120 samples")
   assertEqual(rolled_over.title, "Memory 4%")
+  first.settings = { metric = "cpu" }
+  second.settings = { metric = "cpu" }
+  tick()
+  action.appearance(first)
+  assertEqual(chart_lengths[#chart_lengths], 1,
+    "CPU history must restart when CPU becomes selected after another metric")
 
   action.disappear(first)
   local old_callback = scheduled.callback
@@ -865,13 +929,13 @@ test("system monitor samples bounded shared CPU/memory history and uses per-key 
   first.settings = {}
   action.appear(first)
   assertEqual(timer_count, 2, "a new visible period must start a fresh timer")
-  assertEqual(action.appearance(first).title, "CPU 0%", "final cleanup must reset metric and CPU baseline")
-  local replacement = context("system-first", { metric = "memory" })
+  assertEqual(action.appearance(first).title, "CPU 0%", "final cleanup must reset CPU baseline")
+  local replacement = context("system-first", { metric = "disk" })
   action.appear(replacement)
-  assertEqual(action.appearance(replacement).title, "Memory 0%")
+  assertEqual(action.appearance(replacement).title, "Disk 0%")
   local replacement_refreshes = replacement.refreshes
   action.disappear(first)
-  assertEqual(action.appearance(replacement).title, "Memory 0%",
+  assertEqual(action.appearance(replacement).title, "Disk 0%",
     "a stale context must not remove its replacement")
   assertEqual(replacement.refreshes, replacement_refreshes,
     "a stale context must not refresh its replacement")
@@ -879,27 +943,22 @@ test("system monitor samples bounded shared CPU/memory history and uses per-key 
   helpers.areaChart = original_area_chart
 end)
 
-test("system monitor validates required APIs on first appearance", function()
-  local unavailable = {
-    {
-      hs = { host = { cpuUsageTicks = function() end }, timer = { doEvery = function() end } },
-      message = "hs.host.vmStat",
+test("system monitor requires only timer support before sampling a selected metric", function()
+  local streamdeck = load_fixture("hammerspoon/streamdeck/actions/system-monitor.lua", {
+    timer = {
+      doEvery = function()
+        return {
+          stop = function() end,
+        }
+      end,
     },
-    {
-      hs = { host = { vmStat = function() end }, timer = { doEvery = function() end } },
-      message = "hs.host.cpuUsageTicks",
-    },
-    {
-      hs = { host = { cpuUsageTicks = function() end, vmStat = function() end } },
-      message = "hs.timer.doEvery",
-    },
-  }
-  for _, fixture in ipairs(unavailable) do
-    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/system-monitor.lua", fixture.hs)
-    assertError(function()
-      streamdeck.registrations[1].appear(context("system-unavailable"))
-    end, fixture.message)
-  end
+  })
+  streamdeck.registrations[1].appear(context("system-no-host-api", { metric = "disk" }))
+
+  local unavailable = load_fixture("hammerspoon/streamdeck/actions/system-monitor.lua", {})
+  assertError(function()
+    unavailable.registrations[1].appear(context("system-unavailable"))
+  end, "hs.timer.doEvery")
 end)
 
 test("window zoom example covers appearance, lifecycle, toggling, and errors", function()

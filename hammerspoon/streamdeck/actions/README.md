@@ -81,13 +81,15 @@ Use **Hammerspoon Toggle** when an action reports meaningful inactive and active
 | `microphone`           | `com.brettinternet.hammerspoon.microphone-toggle`    | Toggle / Pedal | Toggles a selected input or provides push-to-talk, with optional per-app Zoom, Teams, and Slack mute shortcuts.             |
 | `pomodoro`             | `com.brettinternet.hammerspoon.pomodoro`             | Toggle         | Press pauses or resumes the focus schedule, hold resets it, and the live phase countdown updates every second.               |
 | `spotify`              | `com.brettinternet.hammerspoon.spotify`              | Toggle / Dial  | Press launches or toggles playback; artwork shows artist, track, progress, and state while dial rotation controls volume or tracks. |
-| `system-monitor`       | `com.brettinternet.hammerspoon.system-monitor`       | Button         | Displays a live 120-second CPU or memory chart selected per key from a dropdown. Uses green below or at 80% and red above 80%. |
+| `system-monitor`       | `com.brettinternet.hammerspoon.system-monitor`       | Button         | Displays a live 120-second chart for CPU, memory, root-disk usage, primary-network status, thermal state, or idle time. Only metrics selected by visible keys are sampled. |
 | `url-launcher`         | `com.brettinternet.hammerspoon.url-launcher`         | Button         | Opens the configured URL and uses its website favicon when Hammerspoon can load it.                                         |
 | `youtube`              | `com.brettinternet.hammerspoon.youtube`              | Button         | Plays or pauses the first YouTube video in Chromium, or opens the configured URL. Requires Chromium automation permission. |
 | `window-center`        | `com.brettinternet.hammerspoon.window-center`        | Toggle         | Centers the focused window without resizing it. Requires Accessibility permission.                                         |
 | `window-maximize`      | `com.brettinternet.hammerspoon.window-maximize`      | Toggle         | Toggles the focused window's zoom state independently for each key. Requires Accessibility permission.                     |
 | `window-next-screen`   | `com.brettinternet.hammerspoon.window-next-screen`   | Button         | Moves the focused window to the next display while preserving its relative frame. Requires Accessibility permission.       |
 | `window-snap`          | `com.brettinternet.hammerspoon.window-snap`          | Toggle         | Cycles the focused window through left, right, and full-screen layouts. Requires Accessibility permission.                 |
+
+`Network status` reports whether macOS has a primary IPv4 or IPv6 interface; it does not measure upload/download throughput. Disk activity and network byte rates are intentionally excluded because Hammerspoon has no native counter for either and polling command-line tools would add avoidable overhead.
 
 The property inspector groups these actions by category and supports search, gesture help, conditional sections, per-field and per-action reset, and refreshable system dropdowns. A saved device that is disconnected remains selected as `Unavailable — Device Name` instead of being silently replaced.
 
