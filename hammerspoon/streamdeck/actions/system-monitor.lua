@@ -793,7 +793,7 @@ end
 return {
   id = action_id,
   name = "System monitor",
-  description = "View a selected live metric; CPU and memory keys open Activity Monitor, and network opens Network settings.",
+  description = "View a selected live metric; CPU, memory, and memory-pressure keys open Activity Monitor, and network opens Network settings.",
   category = "System",
   gesture = "Press: open related details where available",
   settingsSchemaVersion = 1,
