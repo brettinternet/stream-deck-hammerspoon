@@ -581,10 +581,11 @@ test("application example toggles focused and configured applications", function
 end)
 
 
-test("focus timer example shows a live countdown and cleans up its timers", function()
+test("configurable timer counts down, flashes on completion, and cleans up timers", function()
   local now = 1000
   local completion_timer
   local refresh_timer
+  local flash_timer
   local function timer(seconds, callback)
     local scheduled = {
       seconds = seconds,
@@ -605,71 +606,105 @@ test("focus timer example shows a live countdown and cleans up its timers", func
         return completion_timer
       end,
       doEvery = function(seconds, callback)
-        refresh_timer = timer(seconds, callback)
-        return refresh_timer
+        local scheduled = timer(seconds, callback)
+        if seconds == 1 then
+          refresh_timer = scheduled
+        else
+          flash_timer = scheduled
+        end
+        return scheduled
       end,
     },
   }
-  local streamdeck = load_fixture("hammerspoon/streamdeck/actions/focus-timer.lua", fake_hs)
+  local function invoke_timer(callback)
+    local previous_hs = _G.hs
+    _G.hs = fake_hs
+    local ok, err = xpcall(callback, debug.traceback)
+    _G.hs = previous_hs
+    if not ok then
+      error(err, 0)
+    end
+  end
+  local streamdeck = load_fixture("hammerspoon/streamdeck/actions/timer.lua", fake_hs)
   local action = streamdeck.registrations[1]
-  local focus = context("focus")
+  local timer_context = context("timer", { durationMinutes = 10 })
 
-  assertEqual(action.id, "com.brettinternet.hammerspoon.focus-timer")
-  assertEqual(action.appearance(focus).title, "Ready")
-  assertEqual(action.appearance(focus).state, "inactive")
-  action.appear(focus)
-  action.press(focus)
-  assertEqual(completion_timer.seconds, 25 * 60, "focus timer must use a 25-minute duration")
+  assertEqual(action.id, "com.brettinternet.hammerspoon.timer")
+  assertEqual(action.name, "Timer")
+  assertEqual(action.settingsSchemaVersion, 1)
+  assertEqual(action.settingsSchema[1].key, "durationMinutes")
+  assertEqual(action.appearance(timer_context).title, "Start")
+  assertEqual(action.appearance(timer_context).state, "inactive")
+  action.appear(timer_context)
+  action.press(timer_context)
+  assertEqual(completion_timer.seconds, 10 * 60, "timer must use the configured duration")
   assertEqual(refresh_timer.seconds, 1, "visible countdown must refresh once per second")
-  assertEqual(focus.refreshes, 1, "starting a focus timer must refresh")
-  local running = action.appearance(focus)
-  assertEqual(running.title, "25:00")
+  assertEqual(timer_context.refreshes, 1, "starting a timer must refresh")
+  local running = action.appearance(timer_context)
+  assertEqual(running.title, "10:00")
   assertEqual(running.state, "active")
   assertEqual(running.progress, 0)
   assertEqual(running.backgroundColor, "#7F1D1D")
 
   now = now + 1
   refresh_timer.callback()
-  running = action.appearance(focus)
-  assertEqual(running.title, "24:59")
-  assertEqual(running.progress, 1 - (1499 / (25 * 60)))
-  assertEqual(focus.refreshes, 2, "each tick must refresh the visible countdown")
+  running = action.appearance(timer_context)
+  assertEqual(running.title, "09:59")
+  assertEqual(running.progress, 1 - (599 / (10 * 60)))
+  assertEqual(timer_context.refreshes, 2, "each tick must refresh the visible countdown")
 
   now = now + 2000
-  running = action.appearance(focus)
+  running = action.appearance(timer_context)
   assertEqual(running.title, "00:00", "overdue appearances must remain valid before completion runs")
   assertEqual(running.progress, 1)
 
-  completion_timer.callback()
-  assertEqual(focus.refreshes, 3, "timer completion must refresh")
+  invoke_timer(completion_timer.callback)
+  assertEqual(timer_context.refreshes, 3, "timer completion must refresh")
   assertEqual(refresh_timer.stop_calls, 1, "completion must stop countdown refreshes")
-  assertEqual(action.appearance(focus).title, "Ready")
-  assertEqual(action.appearance(focus).state, "inactive")
+  assertEqual(flash_timer.seconds, 0.5, "completion must schedule a background flash")
+  local complete = action.appearance(timer_context)
+  assertEqual(complete.title, "Done")
+  assertEqual(complete.backgroundColor, "#FACC15")
 
-  action.press(focus)
+  flash_timer.callback()
+  assertEqual(timer_context.refreshes, 4, "each flash transition must refresh")
+  assertEqual(action.appearance(timer_context).backgroundColor, "#111827",
+    "completion flash must alternate with the idle background")
+  flash_timer.callback()
+  assertEqual(action.appearance(timer_context).backgroundColor, "#FACC15",
+    "completion flash must return to its alert background")
+
+  action.press(timer_context)
+  assertEqual(flash_timer.stop_calls, 1, "starting a new timer must stop completion flashes")
+  assertEqual(completion_timer.seconds, 10 * 60)
   local running_completion = completion_timer
   local running_refresh = refresh_timer
-  action.press(focus)
-  assertEqual(running_completion.stop_calls, 1, "pressing a running timer must stop completion")
-  assertEqual(running_refresh.stop_calls, 1, "pressing a running timer must stop refreshes")
-  assertEqual(focus.refreshes, 5, "stopping a focus timer must refresh")
-  assertEqual(action.appearance(focus).state, "inactive")
+  action.press(timer_context)
+  assertEqual(running_completion.stop_calls, 1, "cancelling a timer must stop completion")
+  assertEqual(running_refresh.stop_calls, 1, "cancelling a timer must stop refreshes")
+  assertEqual(action.appearance(timer_context).title, "Start")
 
-  action.press(focus)
+  action.press(timer_context)
   local disappearing_completion = completion_timer
   local disappearing_refresh = refresh_timer
-  action.disappear(focus)
+  action.disappear(timer_context)
   assertEqual(disappearing_completion.stop_calls, 1, "disappearing must stop completion")
   assertEqual(disappearing_refresh.stop_calls, 1, "disappearing must stop refreshes")
-  action.appear(focus)
-  assertEqual(action.appearance(focus).title, "Ready", "reappearing must reset timer state")
+  action.appear(timer_context)
+  assertEqual(action.appearance(timer_context).title, "Start", "reappearing must reset timer state")
 
-  local unavailable = load_fixture("hammerspoon/streamdeck/actions/focus-timer.lua", {})
+  action.press(timer_context)
+  invoke_timer(completion_timer.callback)
+  local disappearing_flash = flash_timer
+  action.disappear(timer_context)
+  assertEqual(disappearing_flash.stop_calls, 1, "disappearing must stop completion flashes")
+
+  local unavailable = load_fixture("hammerspoon/streamdeck/actions/timer.lua", {})
   local unavailable_context = context("unavailable")
   unavailable.registrations[1].appear(unavailable_context)
   assertError(function()
     unavailable.registrations[1].press(unavailable_context)
-  end, "focus timer unavailable")
+  end, "timer unavailable")
 end)
 
 test("system monitor samples bounded shared CPU/RAM history and isolates toggles", function()
