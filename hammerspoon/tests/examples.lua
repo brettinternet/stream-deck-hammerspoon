@@ -829,11 +829,19 @@ test("system monitor samples visible metrics, summarizes configured windows, and
         return activity_monitor_result
       end,
     },
-    urlevent = {
-      openURL = function(url)
+    task = {
+      new = function(path, callback, stream_callback, arguments)
         calls.network_settings = calls.network_settings + 1
-        opened_network_settings_url = url
-        return network_settings_result and url:find("://", 1, true) ~= nil
+        assertEqual(path, "/usr/bin/open")
+        assertEqual(callback, nil)
+        assertEqual(stream_callback, nil)
+        assertEqual(#arguments, 1)
+        opened_network_settings_url = arguments[1]
+        return {
+          start = function()
+            return network_settings_result
+          end,
+        }
       end,
     },
     timer = {
@@ -953,7 +961,7 @@ test("system monitor samples visible metrics, summarizes configured windows, and
   first.settings = { metric = "network" }
   action.press(first)
   assertEqual(calls.network_settings, 1, "network keys must open Network settings")
-  assertEqual(opened_network_settings_url, "x-apple.systempreferences://com.apple.Network-Settings.extension")
+  assertEqual(opened_network_settings_url, "x-apple.systempreferences:com.apple.Network-Settings.extension")
   assertEqual(first.feedbacks[#first.feedbacks].message, "Opened\nNetwork settings")
   network_settings_result = false
   assertError(function()

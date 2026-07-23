@@ -58,7 +58,7 @@ local activity_monitor_metrics = {
   memory = true,
   memory_pressure = true,
 }
-local network_settings_url = "x-apple.systempreferences://com.apple.Network-Settings.extension"
+local network_settings_url = "x-apple.systempreferences:com.apple.Network-Settings.extension"
 
 local visible_contexts = {}
 local requested_metrics = {}
@@ -81,6 +81,7 @@ local has_valid_cpu = false
 local fallback_timestamp = 0
 local last_sample_timestamp = 0
 local internet_reachability
+local network_settings_task
 
 local function finite_number(value)
   return type(value) == "number"
@@ -143,15 +144,29 @@ end
 
 local function open_network_settings(context)
   if type(hs) ~= "table"
-    or type(hs.urlevent) ~= "table"
-    or type(hs.urlevent.openURL) ~= "function" then
+    or type(hs.task) ~= "table"
+    or type(hs.task.new) ~= "function" then
     error("Network settings unavailable")
   end
-  local ok, result = pcall(hs.urlevent.openURL, network_settings_url)
-  if not ok then
+  local created, task_or_error = pcall(
+    hs.task.new,
+    "/usr/bin/open",
+    nil,
+    nil,
+    { network_settings_url }
+  )
+  if not created then
+    error("failed to create Network settings task: " .. tostring(task_or_error))
+  end
+  if task_or_error == nil or type(task_or_error.start) ~= "function" then
+    error("failed to create Network settings task")
+  end
+  network_settings_task = task_or_error
+  local started, result = pcall(task_or_error.start, task_or_error)
+  if not started then
     error("failed to open Network settings: " .. tostring(result))
   end
-  if result ~= true then
+  if result == false then
     error("failed to open Network settings")
   end
   context:success("Opened\nNetwork settings", 900)
