@@ -197,6 +197,15 @@ local function settings_schema()
       visibleWhen = { key = "muteMeetingApps", equals = true },
       section = "Meeting apps",
     },
+    {
+      type = "boolean",
+      key = "muteDiscord",
+      label = "Discord",
+      description = "Send Discord's mute shortcut with microphone changes.",
+      default = true,
+      visibleWhen = { key = "muteMeetingApps", equals = true },
+      section = "Meeting apps",
+    },
   }
 end
 
@@ -215,6 +224,7 @@ local function settings_for(context)
     Zoom = settings.muteZoom ~= false,
     ["Microsoft Teams"] = settings.muteTeams ~= false,
     Slack = settings.muteSlack ~= false,
+    Discord = settings.muteDiscord ~= false,
   }
 end
 
@@ -263,6 +273,7 @@ local meeting_apps = {
   { name = "Microsoft Teams", bundle_id = "com.microsoft.teams2", key = "m" },
   { name = "Microsoft Teams", bundle_id = "com.microsoft.teams", key = "m" },
   { name = "Slack", bundle_id = "com.tinyspeck.slackmacgap", key = "space" },
+  { name = "Discord", bundle_id = "com.hnc.Discord", key = "m" },
 }
 
 local function require_application_api(method_name)

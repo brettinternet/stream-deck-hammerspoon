@@ -124,6 +124,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     applications["com.microsoft.teams2"] = make_application("com.microsoft.teams2", true)
     applications["com.microsoft.teams"] = make_application("com.microsoft.teams", true)
     applications["com.tinyspeck.slackmacgap"] = make_application("com.tinyspeck.slackmacgap", true)
+    applications["com.hnc.Discord"] = make_application("com.hnc.Discord", true)
 
     local streamdeck = load_fixture("hammerspoon/streamdeck/actions/microphone.lua", fake_hs)
     assertEqual(#streamdeck.registrations, 1, "microphone must register one action")
@@ -153,6 +154,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertTrue(type(schema[3].description) == "string")
     assertEqual(schema[4].visibleWhen.key, "muteMeetingApps")
     assertTrue(schema[4].visibleWhen.equals)
+    assertEqual(schema[7].key, "muteDiscord")
+    assertEqual(schema[7].default, true)
+    assertEqual(schema[7].visibleWhen.key, "muteMeetingApps")
 
     local default_context = context("default", {})
     local appearance = action.appearance(default_context)
@@ -243,18 +247,22 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
 
     local meeting_context = context("meeting", { muteMeetingApps = true })
     action.press(meeting_context)
-    assertEqual(#shortcut_calls, 3, "one shortcut per running meeting app and no duplicate Teams delivery")
+    assertEqual(#shortcut_calls, 4, "one shortcut per running meeting app and no duplicate Teams delivery")
     assertEqual(shortcut_calls[1].key, "a")
     assertEqual(shortcut_calls[1].application, applications["us.zoom.xos"])
     assertEqual(shortcut_calls[2].key, "m")
     assertEqual(shortcut_calls[2].application, applications["com.microsoft.teams2"])
     assertEqual(shortcut_calls[3].key, "space")
     assertEqual(shortcut_calls[3].application, applications["com.tinyspeck.slackmacgap"])
+    assertEqual(shortcut_calls[4].key, "m")
+    assertEqual(shortcut_calls[4].application, applications["com.hnc.Discord"])
+    assertEqual(shortcut_calls[4].modifiers[1], "cmd")
+    assertEqual(shortcut_calls[4].modifiers[2], "shift")
     assertEqual(shortcut_calls[1].delay, 0)
     assertEqual(shortcut_calls[1].modifiers[1], "cmd")
     assertEqual(shortcut_calls[1].modifiers[2], "shift")
     assertEqual(applications["com.microsoft.teams"].bundle_id, "com.microsoft.teams")
-    assertEqual(#application_calls, 3, "Zoom, new Teams, and Slack should be checked without focusing them")
+    assertEqual(#application_calls, 4, "Zoom, new Teams, Slack, and Discord should be checked without focusing them")
     local legacy_teams_queried = false
     for _, bundle_id in ipairs(application_calls) do
       if bundle_id == "com.microsoft.teams" then
@@ -268,9 +276,17 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     applications["com.microsoft.teams2"].running = false
     applications["com.microsoft.teams"].running = false
     applications["com.tinyspeck.slackmacgap"].running = false
+    applications["com.hnc.Discord"].running = false
     local shortcut_count = #shortcut_calls
     action.press(meeting_context)
     assertEqual(#shortcut_calls, shortcut_count, "unavailable apps must not receive shortcuts")
+    applications["com.hnc.Discord"].running = true
+    action.press(context("discord-disabled", {
+      muteMeetingApps = true,
+      muteDiscord = false,
+    }))
+    assertEqual(#shortcut_calls, shortcut_count, "disabled Discord integration must not send a shortcut")
+    applications["com.hnc.Discord"].running = false
 
     local push_to_talk = context("push-to-talk", {
       inputDevice = "usb-uid",
