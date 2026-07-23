@@ -46,6 +46,16 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         self.muted_state = desired
         return true
       end
+      function device:watcherCallback(callback)
+        self.watcher_callback = callback
+      end
+      function device:watcherStart()
+        self.watcher_starts = (self.watcher_starts or 0) + 1
+        return self
+      end
+      function device:watcherStop()
+        self.watcher_stops = (self.watcher_stops or 0) + 1
+      end
       return device
     end
 
@@ -153,17 +163,54 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(appearance.state, "active")
     local muted_icon = appearance.icon.dataBase64
     assertTrue(live_icon ~= muted_icon, "live and muted artwork must differ")
+    action.appear(default_context)
+    assertEqual(built_in.watcher_starts, 1, "visible microphone actions must watch their selected input")
+    local default_refreshes_before_external = default_context.refreshes
+    built_in.muted_state = false
+    built_in.watcher_callback("builtin-uid", "mute", "inpt")
+    assertEqual(default_context.refreshes, default_refreshes_before_external + 1,
+      "external input muting must refresh visible actions")
+    appearance = action.appearance(default_context)
+    assertEqual(appearance.title, "MacBook\nMicrophone\nLive")
+    built_in.watcher_callback("builtin-uid", "mute", "inpt")
+    built_in.watcher_callback("builtin-uid", "mute", "outp")
+    assertEqual(default_context.refreshes, default_refreshes_before_external + 1,
+      "unchanged and output mute events must not refresh an input")
+    action.press(default_context)
+    local default_refreshes_before_post_press_event = default_context.refreshes
+    built_in.muted_state = false
+    built_in.watcher_callback("builtin-uid", "mute", "inpt")
+    assertEqual(default_context.refreshes, default_refreshes_before_post_press_event + 1,
+      "button mute writes must not leave a stale watcher state")
+
+
 
     local specific_context = context("specific", { inputDevice = "usb-uid" })
     appearance = action.appearance(specific_context)
     assertEqual(appearance.title, "USB\nMicrophone\nLive")
     action.press(specific_context)
-    assertEqual(set_calls[2].device, usb)
+    assertEqual(set_calls[3].device, usb)
     assertTrue(usb.muted_state)
-    assertTrue(built_in.muted_state)
+    assertFalse(built_in.muted_state, "external mute changes must affect only the selected input")
     appearance = action.appearance(specific_context)
     assertEqual(appearance.title, "USB\nMicrophone\nMuted")
     assertEqual(appearance.state, "active")
+    action.appear(specific_context)
+    assertEqual(usb.watcher_starts, 1, "each selected visible input must be watched")
+    local default_refreshes_before_usb_event = default_context.refreshes
+    local specific_refreshes_before_usb_event = specific_context.refreshes
+    usb.muted_state = false
+    usb.watcher_callback("usb-uid", "mute", "inpt")
+    assertEqual(default_context.refreshes, default_refreshes_before_usb_event + 1,
+      "an input mute event must refresh every visible action")
+    assertEqual(specific_context.refreshes, specific_refreshes_before_usb_event + 1)
+    appearance = action.appearance(specific_context)
+    assertEqual(appearance.title, "USB\nMicrophone\nLive")
+    action.disappear(default_context)
+    action.disappear(specific_context)
+    assertEqual(built_in.watcher_stops, 1, "disappearing actions must release unused watchers")
+    assertEqual(usb.watcher_stops, 1)
+
 
     local meeting_context = context("meeting", { muteMeetingApps = true })
     action.press(meeting_context)
@@ -200,6 +247,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       inputDevice = "usb-uid",
       mode = "pushToTalk",
     })
+    usb.muted_state = true
     local set_count = #set_calls
     assertTrue(usb.muted_state)
     action.press(push_to_talk)

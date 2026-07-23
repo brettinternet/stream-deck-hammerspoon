@@ -5,6 +5,9 @@ local helpers = require("streamdeck.helpers")
 local action_id = "com.brettinternet.hammerspoon.microphone-toggle"
 local default_value = "default"
 local ptt_state_by_instance = {}
+local visible_contexts = {}
+local watched_inputs_by_uid = {}
+local record_watched_input_state
 
 local function require_audio_api(method_name)
   if type(hs) ~= "table"
@@ -359,10 +362,95 @@ local function restore_push_to_talk(instance_id)
   ptt_state_by_instance[instance_id] = nil
   if not state.restoreMuted then return end
   set_microphone_muted(state.device, true)
+  record_watched_input_state(state.device, true)
   if state.muteApps then send_meeting_shortcuts(state.enabledApps) end
 end
 
+local function refresh_visible_contexts()
+  for _, context in pairs(visible_contexts) do
+    context:refresh()
+  end
+end
+
+local function stop_input_watcher(record)
+  local device = record.device
+  if type(device.watcherStop) == "function" then
+    pcall(device.watcherStop, device)
+  end
+  if type(device.watcherCallback) == "function" then
+    pcall(device.watcherCallback, device, nil)
+  end
+end
+
+local function watch_input(device)
+  local uid = device_uid(device)
+  if watched_inputs_by_uid[uid] ~= nil
+    or type(device.watcherCallback) ~= "function"
+    or type(device.watcherStart) ~= "function" then
+    return
+  end
+
+  local muted_ok, muted = pcall(microphone_muted, device)
+  local record = {
+    device = device,
+    muted = muted_ok and muted or nil,
+  }
+  watched_inputs_by_uid[uid] = record
+
+  local callback_ok = pcall(device.watcherCallback, device, function(_uid, event, scope)
+    if watched_inputs_by_uid[uid] ~= record
+      or event ~= "mute"
+      or (scope ~= "inpt" and scope ~= "glob") then
+      return
+    end
+    local current_ok, current = pcall(microphone_muted, record.device)
+    if current_ok and current ~= record.muted then
+      record.muted = current
+      refresh_visible_contexts()
+    end
+  end)
+  local start_ok, result = pcall(device.watcherStart, device)
+  if not callback_ok or not start_ok or result == nil then
+    watched_inputs_by_uid[uid] = nil
+    stop_input_watcher(record)
+  end
+end
+
+record_watched_input_state = function(device, muted)
+  local uid_ok, uid = pcall(device_uid, device)
+  if not uid_ok then return end
+  local record = watched_inputs_by_uid[uid]
+  if record ~= nil then record.muted = muted end
+end
+
+local function reconcile_input_watchers()
+  local desired_inputs = {}
+  for _, context in pairs(visible_contexts) do
+    local selected = settings_for(context)
+    local device_ok, device = pcall(resolve_input_device, selected)
+    if device_ok and device ~= nil then
+      local uid_ok, uid = pcall(device_uid, device)
+      if uid_ok then desired_inputs[uid] = device end
+    end
+  end
+
+  for uid, record in pairs(watched_inputs_by_uid) do
+    if desired_inputs[uid] == nil then
+      watched_inputs_by_uid[uid] = nil
+      stop_input_watcher(record)
+    end
+  end
+  for _, device in pairs(desired_inputs) do
+    watch_input(device)
+  end
+end
+
+
 local function appearance_for(context)
+  if visible_contexts[context.instanceId] ~= nil then
+    visible_contexts[context.instanceId] = context
+    reconcile_input_watchers()
+  end
   local selected, mute_apps, mode = settings_for(context)
   local device = resolve_input_device(selected)
   if not device then
@@ -375,6 +463,7 @@ local function appearance_for(context)
   end
   local name = device_name(device)
   local muted = microphone_muted(device)
+  record_watched_input_state(device, muted)
   local svg = muted and muted_svg or live_svg
   if mute_apps then
     svg = svg:gsub("#102318", "#24152E"):gsub("#281315", "#2E1824")
@@ -403,12 +492,14 @@ local function apply_press(context)
     }
     if muted then
       set_microphone_muted(device, false)
+      record_watched_input_state(device, false)
       if mute_apps then send_meeting_shortcuts(enabled_apps) end
     end
     context:success("Microphone\nlive", 800)
     return
   end
   set_microphone_muted(device, not muted)
+  record_watched_input_state(device, not muted)
   if mute_apps then send_meeting_shortcuts(enabled_apps) end
   context:success(not muted and "Microphone\nmuted" or "Microphone\nlive", 900)
 end
@@ -423,9 +514,13 @@ return {
   settingsSchemaProvider = settings_schema,
   appear = function(context)
     ptt_state_by_instance[context.instanceId] = nil
+    visible_contexts[context.instanceId] = context
+    reconcile_input_watchers()
   end,
   disappear = function(context)
     restore_push_to_talk(context.instanceId)
+    visible_contexts[context.instanceId] = nil
+    reconcile_input_watchers()
   end,
   appearance = appearance_for,
   push = apply_press,
