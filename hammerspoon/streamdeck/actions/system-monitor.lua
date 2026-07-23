@@ -463,7 +463,7 @@ return {
   description = "View a selected live metric; only visible metric selections are sampled.",
   category = "System",
   gesture = "Press: show metric-setting hint",
-  settingsSchemaVersion = 2,
+  settingsSchemaVersion = 1,
   settingsSchema = {
     {
       type = "select",

@@ -812,7 +812,7 @@ test("system monitor samples only visible metric selections and keeps histories 
 
   assertEqual(action.id, "com.brettinternet.hammerspoon.system-monitor")
   assertEqual(action.name, "System monitor")
-  assertEqual(action.settingsSchemaVersion, 2)
+  assertEqual(action.settingsSchemaVersion, 1)
   local metric_setting = action.settingsSchema[1]
   assertEqual(metric_setting.type, "select")
   assertEqual(metric_setting.key, "metric")

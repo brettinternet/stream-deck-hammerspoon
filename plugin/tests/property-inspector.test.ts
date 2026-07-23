@@ -361,6 +361,60 @@ describe.serial("property inspector", () => {
       environment.restore();
     }
   });
+
+  test("lists a configured action with a version 1 settings schema", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(
+        28197,
+        "context-schema",
+        "register",
+        "",
+        JSON.stringify({
+          context: "context-schema",
+          payload: {
+            settings: {
+              actionId: "com.brettinternet.hammerspoon.system-monitor",
+            },
+          },
+        }),
+      );
+      const socket = FakeSocket.instances[0]!;
+      socket.open();
+      socket.message(
+        bridgeState("connected", [
+          action(
+            "com.brettinternet.hammerspoon.system-monitor",
+            "System monitor",
+            {
+              settingsSchemaVersion: 1,
+              settingsSchema: [
+                {
+                  type: "select",
+                  key: "metric",
+                  options: [
+                    { value: "cpu", label: "CPU" },
+                    { value: "memory", label: "Memory" },
+                  ],
+                  default: "cpu",
+                },
+              ],
+            },
+          ),
+        ]),
+      );
+      expect(environment.document.actionSelect.value).toBe(
+        "com.brettinternet.hammerspoon.system-monitor",
+      );
+      expect(environment.document.actionSelect.children).toContainEqual({
+        value: "com.brettinternet.hammerspoon.system-monitor",
+        textContent: "System monitor",
+        disabled: false,
+      });
+    } finally {
+      environment.restore();
+    }
+  });
   test("opens the setup guide through the Stream Deck UI socket", async () => {
     const environment = await installEnvironment();
     try {
