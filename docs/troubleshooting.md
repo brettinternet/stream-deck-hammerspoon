@@ -10,7 +10,7 @@ From the repository root, confirm the source and packaging checks first:
 bun run check
 bun run test
 bun run build
-lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
+mise exec lua -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
 bunx --package @elgato/cli@1.7.4 streamdeck validate plugin/com.brettinternet.hammerspoon.sdPlugin
 ```
 
@@ -62,7 +62,7 @@ For a development symlink:
 ```sh
 mkdir -p ~/.hammerspoon
 ln -sfn "$PWD/hammerspoon/streamdeck" ~/.hammerspoon/streamdeck
-lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
+mise exec lua -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
 ```
 
 ## Logs and diagnostics

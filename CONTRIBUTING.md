@@ -14,7 +14,7 @@ lefthook install
 bun install
 ```
 
-Do not use npm/npx to install dependencies or run project scripts. Lua development uses the mise-provided Lua 5.4.8 runtime.
+Do not use npm/npx to install dependencies or run project scripts. Lua development uses the mise-provided Lua 5 runtime.
 
 ## Architecture-boundary changes
 
@@ -40,7 +40,7 @@ Run the focused checks for the files you changed. The standard repository checks
 bun run build
 bun run check
 bun run test
-lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
+mise exec lua -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
 ```
 
 Use `bun run watch` while iterating on TypeScript/UI changes. Before a manual plugin check, use the official CLI to validate, pack, install, and restart the compiled plugin as documented in [Development](docs/development.md). Hardware and active property-inspector behavior require an actual Stream Deck; do not replace that check with direct USB/HID control.
@@ -60,13 +60,14 @@ From `dist/releases/<version>/`, verify the generated artifacts before installin
 shasum -a 256 -c SHA256SUMS
 ```
 
-Install the plugin through the official Stream Deck application and install the Lua archive from the release directory:
+Install the plugin through the official Stream Deck application and install the Lua archive with the release installer:
 
 ```sh
 open <plugin-uuid>-<version>.streamDeckPlugin
-mkdir -p "$HOME/.hammerspoon"
-tar -xzf stream-deck-hammerspoon-lua-<version>.tar.gz -C "$HOME/.hammerspoon"
-lua -e 'assert(loadfile(os.getenv("HOME") .. "/.hammerspoon/streamdeck/init.lua"))'
+chmod +x stream-deck-hammerspoon-install.sh
+./stream-deck-hammerspoon-install.sh \
+  stream-deck-hammerspoon-lua-<version>.tar.gz
+mise exec lua -- lua -e 'assert(loadfile(os.getenv("HOME") .. "/.hammerspoon/streamdeck/init.lua"))'
 ```
 
 Keep the official Stream Deck application running throughout installation and restart; do not use direct USB/HID access. The full [release guide](docs/releases.md) covers the exact artifact names, token handling, and uninstall workflow.

@@ -33,7 +33,7 @@ The repository has one Bun workspace/package at the root. The required tree is:
 ```text
 .
 ├── package.json                         # Bun workspace/package root
-├── mise.toml                            # pinned Bun, Node, and Lua runtimes
+├── mise.toml                            # configured Bun, Node, and Lua toolchains
 ├── plugin/
 │   ├── package.json                     # plugin package
 │   ├── src/                             # TypeScript source
@@ -46,12 +46,7 @@ The repository has one Bun workspace/package at the root. The required tree is:
 │   └── streamdeck/                       # reusable Lua bridge/API
 ├── protocol/
 │   └── schema/                           # canonical protocol JSON Schema
-├── docs/
-│   └── architecture.md
-└── backlog/                              # present only when the Backlog.md CLI supports it
-```
-
-The source tree and the compiled `.sdPlugin` tree are separate. The compiled directory is the artifact Stream Deck consumes; TypeScript source remains under `plugin/src/`. Protocol schemas are not copied into either runtime as a second source of truth. The `backlog/` node is conditional per the repository bootstrap contract, not a runtime dependency.
+└── docs/                                # design guides, setup, and backlog
 
 ## Components and process boundaries
 

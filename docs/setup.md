@@ -60,7 +60,7 @@ The action files are included in the same managed `~/.hammerspoon/streamdeck` di
 
 Reload Hammerspoon after saving the configuration. The bridge creates `~/.hammerspoon/streamdeck-token` on its first successful start and keeps it owner-readable/writable (`0600`). Do not create, copy, or log this file manually.
 
-In Stream Deck, add **Hammerspoon Button** for one configurable image or **Hammerspoon Toggle** for separate inactive and active images, then select one of the registered action IDs in its property inspector.
+In Stream Deck, add **Hammerspoon Button** for one configurable image, **Hammerspoon Toggle** for separate inactive and active images, or keypad-only **Hammerspoon Multi-State** when an action's `presentationState` should choose one of four static images. Then select one of the registered action IDs in its property inspector.
 
 ## Development checkout
 

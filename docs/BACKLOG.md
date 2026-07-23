@@ -22,10 +22,10 @@ The only remaining item is B2, a standing gate that becomes schedulable with the
 
 **References:**
 
-- `docs/protocol.md:459-478` — breaking changes, negotiation requirements, and supported-version window.
+- `docs/protocol.md:461-478` — breaking changes, negotiation requirements, and supported-version window.
 - `plugin/src/protocol.ts:5` — current protocol version is fixed at 1.
-- `protocol/schema/protocol-v1.json:166-173` — v1 schema requires `protocolVersion: 1`.
-- `plugin/src/bridge.ts:541-551` — current hello contains only the v1 version, token, and plugin version.
+- `protocol/schema/protocol-v1.json:209-214` — v1 schema requires `protocolVersion: 1`.
+- `plugin/src/bridge.ts:710-715` — the loopback hello contains only the v1 version, token, and plugin version.
 
 #### Implementation tasks
 

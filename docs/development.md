@@ -8,10 +8,10 @@ Current development targets are:
 
 - Stream Deck SDK documentation 2.0.0
 - Stream Deck 7.1 or newer
-- Node.js 24.18.0 or newer (the project pins 24.18.0)
+- Node.js 24.18.0 (declared by the root package)
 - `@elgato/streamdeck` 2.1.0
-- Bun 1.3.14
-- Lua 5.4.8
+- Bun 1.3.14 (pinned in root package metadata)
+- Lua 5 (provided by mise)
 - A macOS installation of Hammerspoon
 - The official Stream Deck application for install and hardware/UI checks
 
@@ -61,7 +61,7 @@ bun run check       # repository checks, including type and static checks
 Run the Lua load check after changing `hammerspoon/streamdeck/`:
 
 ```sh
-lua -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
+mise exec lua -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
 ```
 
 This is a syntax/load check only; it does not start Hammerspoon or exercise the bridge. The normal development loop is: edit, run the smallest relevant check, then run `bun run build` before packaging.
@@ -85,7 +85,7 @@ local streamdeck = require("streamdeck")
 streamdeck.start()
 ```
 
-Add that configuration to `~/.hammerspoon/init.lua`, register your actions, and reload Hammerspoon. Then add a Hammerspoon Button or Hammerspoon Toggle in Stream Deck and select a registered action ID in its inspector.
+Add that configuration to `~/.hammerspoon/init.lua`, register your actions, and reload Hammerspoon. Then add a Hammerspoon Button, Toggle, or keypad-only Multi-State action in Stream Deck and select a registered action ID in its inspector.
 
 ## Official CLI flow
 
@@ -143,12 +143,12 @@ Load/reload the module from Hammerspoon's configuration using its normal Lua `re
 
 The complete hardware-facing slice cannot be automated without a connected Stream Deck and an active property inspector. Exercise it manually as follows:
 
-1. Install the pinned runtimes with `mise install`, then run `bun install`, `bun run check`, `bun run test`, and `bun run build`.
+1. Install the configured runtimes with `mise install`, then run `bun install`, `bun run check`, `bun run test`, and `bun run build`.
 2. Run the Lua load check and link or copy `hammerspoon/streamdeck/` into `~/.hammerspoon/`.
 3. Ensure `~/.hammerspoon/streamdeck-token` exists with mode `0600`; start/reload Hammerspoon and start the bridge with its configured action registration, using the default endpoint `ws://localhost:17321/streamdeck` when checking the bridge connection.
 4. Validate, pack, install, and restart the plugin with the official CLI commands above. Leave the official Stream Deck application running.
-5. On the official Stream Deck, add **Hammerspoon Button** (`com.brettinternet.hammerspoon.button`) or **Hammerspoon Toggle** (`com.brettinternet.hammerspoon.action`) to a key. For the initial action event, confirm the plugin reads settings from Stream Deck's `actionInfo.payload.settings`; select a registered action ID in its property inspector and save it to that instance's settings.
-6. Press and release the key. Confirm the registered Hammerspoon callback runs and that the key renders the configured title and state (`0` or `1`).
+5. On the official Stream Deck, add **Hammerspoon Button** (`com.brettinternet.hammerspoon.button`), **Hammerspoon Toggle** (`com.brettinternet.hammerspoon.action`), or keypad-only **Hammerspoon Multi-State** (`com.brettinternet.hammerspoon.multistate`). For the initial action event, confirm the plugin reads settings from Stream Deck's `actionInfo.payload.settings`; select a registered action ID in its property inspector and save it to that instance's settings.
+6. Press and release the key. Confirm the registered Hammerspoon callback runs and that Button or Toggle renders its configured binary state (`0` or `1`), while keypad Multi-State renders `presentationState` (`0` through `3`) and falls back to that binary state when it is omitted.
 7. Confirm the offline/reconnect path by reloading Hammerspoon: the key should temporarily show `Hammerspoon Offline`, then reconnect, receive a fresh `helloAck.sessionId`, refresh the action list, resend visible instances with that ID, and restore appearance.
 8. Stop and restart only the bridge/plugin as needed; do not use direct hardware APIs or a second hardware controller.
 
