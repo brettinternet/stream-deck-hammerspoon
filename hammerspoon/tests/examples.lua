@@ -1317,6 +1317,8 @@ dofile("hammerspoon/tests/last-application-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/app-launcher-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
+dofile("hammerspoon/tests/app-windows-to-cursor-example.lua")(
+  test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/audio-input-router-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/audio-output-router-example.lua")(

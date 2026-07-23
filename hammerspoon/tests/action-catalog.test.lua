@@ -96,7 +96,7 @@ return function(test, context, assertTrue, assertFalse, assertEqual, assertSame,
     local catalog = require("streamdeck.actions")
     local all_bridge = bridge()
     local definitions = catalog.registerAll(all_bridge)
-    assertEqual(#definitions, 22, "meeting mode must not ship as an action")
+    assertEqual(#definitions, 23, "meeting mode must not ship as an action")
 
     local ids = {}
     for _, definition in ipairs(definitions) do
