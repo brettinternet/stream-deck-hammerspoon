@@ -105,6 +105,92 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(watchers["uid-webcam"].stops, 1)
   end)
 
+  test("audio input router skips disconnected devices and restores them after reconnect", function()
+    local current_uid = "uid-usb"
+    local usb_connected = true
+    local timer_callback
+    local timer_stops = 0
+    local set_calls = {}
+    local devices = {}
+
+    local function device(name, uid)
+      return {
+        name = function() return name end,
+        uid = function() return uid end,
+        inputMuted = function() return false end,
+        setDefaultInputDevice = function()
+          current_uid = uid
+          set_calls[#set_calls + 1] = uid
+          return true
+        end,
+      }
+    end
+
+    devices["uid-macbook"] = device("MacBook Microphone", "uid-macbook")
+    devices["uid-usb"] = device("USB Interface", "uid-usb")
+    local fake_hs
+    fake_hs = {
+      audiodevice = {
+        defaultInputDevice = function() return devices[current_uid] end,
+        findDeviceByUID = function(uid)
+          if uid == "uid-usb" and not usb_connected then return nil end
+          return devices[uid]
+        end,
+        allInputDevices = function()
+          if usb_connected then return { devices["uid-macbook"], devices["uid-usb"] } end
+          return { devices["uid-macbook"] }
+        end,
+      },
+      timer = {
+        doEvery = function(interval, callback)
+          assertEqual(interval, 1)
+          timer_callback = function()
+            local previous_hs = _G.hs
+            _G.hs = fake_hs
+            local ok, err = pcall(callback)
+            _G.hs = previous_hs
+            if not ok then error(err, 0) end
+          end
+          return {
+            stop = function()
+              timer_stops = timer_stops + 1
+            end,
+          }
+        end,
+      },
+    }
+    local streamdeck =
+      load_fixture("hammerspoon/streamdeck/actions/audio-input-router.lua", fake_hs)
+    local action = streamdeck.registrations[1]
+    local router = context("reconnecting-input", {
+      input1 = "uid-macbook",
+      input2 = "uid-usb",
+    })
+    action.appear(router)
+
+    usb_connected = false
+    current_uid = "uid-macbook"
+    timer_callback()
+    assertEqual(router.refreshes, 1)
+    assertFalse(action.appearance(router).title:find("USB", 1, true) ~= nil)
+    action.press(router)
+    assertEqual(set_calls[#set_calls], "uid-macbook")
+    assertEqual(router.settings.input2, "uid-usb")
+
+    usb_connected = true
+    local refreshes_before_reconnect = router.refreshes
+    timer_callback()
+    assertEqual(router.refreshes, refreshes_before_reconnect + 1)
+    assertTrue(action.appearance(router).title:find("USB\nInterface", 1, true) ~= nil)
+    action.press(router)
+    assertEqual(set_calls[#set_calls], "uid-usb")
+    assertEqual(current_uid, "uid-usb")
+    assertEqual(router.settings.input2, "uid-usb")
+
+    action.disappear(router)
+    assertEqual(timer_stops, 1)
+  end)
+
   test("audio input router preserves devices without mute watcher support", function()
     local device = {
       name = function() return "Legacy Microphone" end,

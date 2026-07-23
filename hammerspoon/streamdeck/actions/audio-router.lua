@@ -224,6 +224,8 @@ function router.new(kind)
   local watched_input
   local watched_input_uid
   local watched_muted
+  local topology_timer
+  local topology_signature
 
   local function input_muted(device)
     if mode.mute_method == nil
@@ -257,7 +259,11 @@ function router.new(kind)
   end
 
   local function watch_current_input(device)
-    if mode.mute_method == nil or next(visible_contexts) == nil or device == nil then return end
+    if mode.mute_method == nil or next(visible_contexts) == nil then return end
+    if device == nil then
+      stop_input_watcher()
+      return
+    end
     local uid = device_uid(mode, device)
     if uid == watched_input_uid then return end
     stop_input_watcher()
@@ -279,6 +285,60 @@ function router.new(kind)
     local start_ok, result = pcall(device.watcherStart, device)
     if not callback_ok or not start_ok or result == nil then
       stop_input_watcher()
+    end
+  end
+
+  local function current_topology_signature()
+    local options, default_uid = discover_devices(mode)
+    local uids = {}
+    for index = 2, #options do
+      uids[#uids + 1] = options[index].value
+    end
+    table.sort(uids)
+    return (default_uid or "") .. "\0" .. table.concat(uids, "\0")
+  end
+
+  local function stop_topology_timer()
+    if topology_timer ~= nil then
+      pcall(topology_timer.stop, topology_timer)
+    end
+    topology_timer = nil
+    topology_signature = nil
+  end
+
+  local function start_topology_timer()
+    if topology_timer ~= nil
+      or type(hs) ~= "table"
+      or type(hs.timer) ~= "table"
+      or type(hs.timer.doEvery) ~= "function" then
+      return
+    end
+
+    topology_signature = current_topology_signature()
+    local ok, timer = pcall(hs.timer.doEvery, 1, function()
+      local signature_ok, signature = pcall(current_topology_signature)
+      if not signature_ok or signature == topology_signature then return end
+      topology_signature = signature
+      for instance_id in pairs(visible_contexts) do
+        pending_uid_by_instance[instance_id] = nil
+      end
+      if mode.mute_method ~= nil then
+        local current_ok, current = pcall(function()
+          return default_device(mode, audio_api(mode))
+        end)
+        if current_ok then
+          watch_current_input(current)
+        else
+          stop_input_watcher()
+        end
+      end
+      refresh_visible_contexts()
+    end)
+    if ok and timer ~= nil and type(timer.stop) == "function" then
+      topology_timer = timer
+    else
+      topology_timer = nil
+      topology_signature = nil
     end
   end
 
@@ -352,17 +412,22 @@ function router.new(kind)
     settingsSchemaProvider = function() return settings_schema(mode) end,
 
     appear = function(context)
+      local first_instance = next(visible_contexts) == nil
       pending_uid_by_instance[context.instanceId] = nil
       visible_contexts[context.instanceId] = context
       if mode.mute_method ~= nil then
         watch_current_input(default_device(mode, audio_api(mode)))
       end
+      if first_instance then start_topology_timer() end
     end,
 
     disappear = function(context)
       pending_uid_by_instance[context.instanceId] = nil
       visible_contexts[context.instanceId] = nil
-      if next(visible_contexts) == nil then stop_input_watcher() end
+      if next(visible_contexts) == nil then
+        stop_input_watcher()
+        stop_topology_timer()
+      end
     end,
 
     appearance = appearance_for,
