@@ -132,6 +132,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(action.id, "com.brettinternet.hammerspoon.microphone-toggle")
     assertEqual(action.name, "Microphone mute")
     assertTrue(type(action.description) == "string" and action.description ~= "")
+    assertEqual(action.sound.kind, "toggle")
     assertEqual(action.settingsSchemaVersion, 1)
     local schema = action.settingsSchemaProvider()
     assertEqual(schema[1].type, "select")
@@ -159,7 +160,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(appearance.icon.mediaType, "image/svg+xml")
     local live_icon = appearance.icon.dataBase64
 
-    action.press(default_context)
+    local muted_sound = action.press(default_context)
     assertEqual(set_calls[1].device, built_in)
     assertTrue(set_calls[1].value)
     assertTrue(built_in.muted_state)
@@ -188,6 +189,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     built_in.watcher_callback("builtin-uid", "mute", "inpt")
     assertEqual(default_context.refreshes, default_refreshes_before_post_press_event + 1,
       "button mute writes must not leave a stale watcher state")
+    built_in.muted_state = true
+    local live_sound = action.press(default_context)
+    assertTrue(muted_sound ~= live_sound, "muting and unmuting must select different toggle sounds")
 
 
 
@@ -195,7 +199,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     appearance = action.appearance(specific_context)
     assertEqual(appearance.title, "USB\nMicrophone\nLive")
     action.press(specific_context)
-    assertEqual(set_calls[3].device, usb)
+    assertEqual(set_calls[4].device, usb)
     assertTrue(usb.muted_state)
     assertFalse(built_in.muted_state, "external mute changes must affect only the selected input")
     appearance = action.appearance(specific_context)

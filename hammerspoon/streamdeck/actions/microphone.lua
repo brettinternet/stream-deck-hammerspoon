@@ -1,6 +1,7 @@
 -- Stream Deck action: toggle a selected microphone and optionally mute meeting apps.
 
 local helpers = require("streamdeck.helpers")
+local sound = require("streamdeck.sound")
 
 local action_id = "com.brettinternet.hammerspoon.microphone-toggle"
 local default_value = "default"
@@ -513,6 +514,7 @@ local function apply_press(context)
   record_watched_input_state(device, not muted)
   if mute_apps then send_meeting_shortcuts(enabled_apps) end
   context:success(not muted and "Microphone\nmuted" or "Microphone\nlive", 900)
+  return not muted and sound.OFF or sound.ON
 end
 
 return {
@@ -521,6 +523,7 @@ return {
   description = "Toggle a selected microphone or use push-to-talk, with optional meeting-app shortcuts.",
   category = "Audio",
   gesture = "Toggle mode: press to mute · Push-to-talk: hold to speak",
+  sound = sound.toggle(),
   settingsSchemaVersion = 1,
   settingsSchemaProvider = settings_schema,
   appear = function(context)
