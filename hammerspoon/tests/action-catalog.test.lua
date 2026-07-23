@@ -116,6 +116,19 @@ return function(test, context, assertTrue, assertFalse, assertEqual, assertSame,
         end
       end
     end
+    local system_monitor = nil
+    for _, definition in ipairs(definitions) do
+      if definition.id == "com.brettinternet.hammerspoon.system-monitor" then
+        system_monitor = definition
+        break
+      end
+    end
+    assertTrue(system_monitor ~= nil, "system monitor must remain in the complete catalog")
+    assertEqual(system_monitor.settingsSchemaVersion, 1,
+      "the property inspector only supports version-one schemas")
+    assertEqual(#system_monitor.settingsSchema, 2)
+    assertEqual(system_monitor.settingsSchema[1].key, "metric")
+    assertEqual(system_monitor.settingsSchema[2].key, "windowSeconds")
     assertFalse(ids["com.brettinternet.hammerspoon.meeting-mode"],
       "meeting mode must not be present in the complete catalog")
 
