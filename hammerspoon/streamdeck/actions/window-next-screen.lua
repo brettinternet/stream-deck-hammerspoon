@@ -55,7 +55,7 @@ return {
     local window = focused_window()
     local has_next = window ~= nil and next_screen_for(window) ~= nil
     return {
-      title = window == nil and "No window" or (has_next and "Next display" or "One display"),
+      title = window == nil and "No window" or (has_next and "Next\ndisplay" or "One\ndisplay"),
       state = "inactive",
       appearanceVersion = 1,
       icon = helpers.icon("next-screen", {

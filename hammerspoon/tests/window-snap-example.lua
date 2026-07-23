@@ -39,7 +39,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(first.refreshes, 0, "no-window press must not refresh")
 
     focused = window
-    assertEqual(action.appearance(first).title, "Snap window")
+    assertEqual(action.appearance(first).title, "Snap\nwindow")
     assertFalse(action.appearance(first).state == "active", "initial state must be inactive")
     action.press(first)
     assertEqual(first.refreshes, 1)
@@ -76,14 +76,14 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(move_calls[4].unit.y, 0)
     assertEqual(move_calls[4].unit.w, 1)
     assertEqual(move_calls[4].unit.h, 1)
-    assertEqual(action.appearance(first).title, "Full screen")
+    assertEqual(action.appearance(first).title, "Full\nscreen")
 
     move_result = false
     assertError(function()
       action.press(first)
     end, "failed to move focused window")
     assertEqual(first.refreshes, 3, "failed move must not refresh")
-    assertEqual(action.appearance(first).title, "Full screen", "failed move must not advance state")
+    assertEqual(action.appearance(first).title, "Full\nscreen", "failed move must not advance state")
     assertEqual(#move_calls, 5, "failed move should still call moveToUnit")
 
     focused = {}
@@ -95,7 +95,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     action.disappear(first)
     action.appear(first)
     focused = window
-    assertEqual(action.appearance(first).title, "Snap window", "appear must reset layout state")
+    assertEqual(action.appearance(first).title, "Snap\nwindow", "appear must reset layout state")
     assertEqual(action.appearance(first).state, "inactive")
     assertEqual(action.appearance(second).title, "Left half", "disappear must only reset its instance")
   end)
@@ -107,7 +107,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local action = streamdeck.registrations[1]
     local action_context = context("unavailable-focused-window")
 
-    assertEqual(action.appearance(action_context).title, "Window unavailable")
+    assertEqual(action.appearance(action_context).title, "Window\nunavailable")
     assertEqual(action.appearance(action_context).state, "inactive")
     assertError(function()
       action.press(action_context)
@@ -115,7 +115,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(action_context.refreshes, 0, "unavailable focused-window API must not refresh")
     local no_hs = load_fixture("hammerspoon/streamdeck/actions/window-snap.lua", nil)
     local no_hs_context = context("no-hs")
-    assertEqual(no_hs.registrations[1].appearance(no_hs_context).title, "Window unavailable")
+    assertEqual(no_hs.registrations[1].appearance(no_hs_context).title, "Window\nunavailable")
     assertError(function()
       no_hs.registrations[1].press(no_hs_context)
     end, "focused window API unavailable")

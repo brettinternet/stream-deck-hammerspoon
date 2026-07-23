@@ -155,7 +155,7 @@ return {
     local application = available_previous_application()
     if not application then
       return {
-        title = "No previous",
+        title = "No\nprevious",
         state = "inactive",
       }
     end

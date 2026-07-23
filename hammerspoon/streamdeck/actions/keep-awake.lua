@@ -40,7 +40,7 @@ return {
   appearance = function(_context)
     local enabled = display_idle_state()
     return {
-      title = enabled and "Awake" or "Allow sleep",
+      title = enabled and "Awake" or "Allow\nsleep",
       state = enabled and "active" or "inactive",
       appearanceVersion = 1,
       badge = enabled and "ON" or nil,

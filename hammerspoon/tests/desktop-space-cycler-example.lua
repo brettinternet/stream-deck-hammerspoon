@@ -79,7 +79,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
 
     active_space = 99
     appearance = action.appearance(cycler)
-    assertEqual(appearance.title, "Other desktop")
+    assertEqual(appearance.title, "Other\ndesktop")
     assertEqual(appearance.state, "inactive")
     assertEqual(appearance.appearanceVersion, 1)
     assertEqual(appearance.presentationState, 0)

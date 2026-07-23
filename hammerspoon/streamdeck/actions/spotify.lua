@@ -179,7 +179,7 @@ local function truncate_title(value, maximum)
 end
 
 local function title_for_snapshot()
-  if not snapshot.running then return "Spotify unavailable" end
+  if not snapshot.running then return "Spotify\nunavailable" end
   local track = truncate_title(snapshot.track, 22)
   local artist = truncate_title(snapshot.artist, 18)
   if artist and track then return artist .. "\n" .. track end
@@ -197,7 +197,7 @@ local function appearance_for(context)
   local is_encoder = type(device) == "table" and device.controllerType == "encoder"
   if not snapshot.running then
     return {
-      title = "Spotify unavailable",
+      title = "Spotify\nunavailable",
       state = "inactive",
       appearanceVersion = 1,
       badge = "OFF",
@@ -232,7 +232,7 @@ local function appearance_for(context)
   end
 
   return {
-    title = "Spotify volume",
+    title = "Spotify\nvolume",
     state = snapshot.playing and "active" or "inactive",
     appearanceVersion = 1,
     value = string.format("%d%%", math.floor(snapshot.volume + 0.5)),

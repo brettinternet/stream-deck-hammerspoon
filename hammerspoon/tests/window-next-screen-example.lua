@@ -50,7 +50,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     focused = window
     destination = primary
     appearance = action.appearance(action_context)
-    assertEqual(appearance.title, "One display")
+    assertEqual(appearance.title, "One\ndisplay")
     assertError(function()
       action.press(action_context)
     end, "no other screen")
@@ -58,7 +58,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
 
     destination = secondary
     appearance = action.appearance(action_context)
-    assertEqual(appearance.title, "Next display")
+    assertEqual(appearance.title, "Next\ndisplay")
     assertEqual(appearance.state, "inactive")
 
     action.press(action_context)

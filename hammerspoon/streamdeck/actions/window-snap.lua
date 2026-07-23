@@ -6,7 +6,7 @@ local helpers = require("streamdeck.helpers")
 local layouts = {
   { title = "Left half", icon = "snap-left", unit = { x = 0, y = 0, w = 0.5, h = 1 } },
   { title = "Right half", icon = "snap-right", unit = { x = 0.5, y = 0, w = 0.5, h = 1 } },
-  { title = "Full screen", icon = "maximize", unit = { x = 0, y = 0, w = 1, h = 1 } },
+  { title = "Full\nscreen", icon = "maximize", unit = { x = 0, y = 0, w = 1, h = 1 } },
 }
 local layout_by_instance = {}
 
@@ -33,7 +33,7 @@ return {
     local layout_index = layout_by_instance[context.instanceId] or 0
     if not window then
       return {
-        title = available and "No window" or "Window unavailable",
+        title = available and "No window" or "Window\nunavailable",
         state = "inactive",
         appearanceVersion = 1,
         icon = helpers.icon("snap-left", { foregroundColor = helpers.colors.inactive }),
@@ -41,7 +41,7 @@ return {
     end
     if layout_index == 0 then
       return {
-        title = "Snap window",
+        title = "Snap\nwindow",
         state = "inactive",
         appearanceVersion = 1,
         icon = helpers.icon("snap-left", { foregroundColor = helpers.colors.accent }),
@@ -78,7 +78,7 @@ return {
     end
 
     layout_by_instance[instance_id] = next_index
-    context:success(layouts[next_index].title, 850)
+    context:success((layouts[next_index].title:gsub("\n", " ")), 850)
   end,
 
   disappear = function(context)

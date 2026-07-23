@@ -62,7 +62,7 @@ local function appearance_for(desktops, active_space)
   local index = desktop_index(desktops, active_space)
   if not index then
     return {
-      title = #desktops == 0 and "No desktop" or "Other desktop",
+      title = #desktops == 0 and "No desktop" or "Other\ndesktop",
       state = "inactive",
       appearanceVersion = 1,
       presentationState = 0,

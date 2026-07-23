@@ -64,7 +64,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     action.appear(action_context)
     assertTrue(watcher_started, "application watcher must start for a visible instance")
     local appearance = action.appearance(action_context)
-    assertEqual(appearance.title, "No previous")
+    assertEqual(appearance.title, "No\nprevious")
     assertEqual(appearance.state, "inactive")
 
     frontmost = second
@@ -146,7 +146,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     watcher_callback(nil, watcher_api.terminated, first)
     assertEqual(action_context.refreshes, 2, "termination must refresh stale availability")
     local appearance = action.appearance(action_context)
-    assertEqual(appearance.title, "No previous")
+    assertEqual(appearance.title, "No\nprevious")
     assertEqual(appearance.state, "inactive")
     assertError(function()
       action.press(action_context)

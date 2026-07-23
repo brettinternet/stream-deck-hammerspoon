@@ -40,7 +40,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local first_context = context("first")
     local second_context = context("second")
     local appearance = action.appearance(first_context)
-    assertEqual(appearance.title, "Allow sleep")
+    assertEqual(appearance.title, "Allow\nsleep")
     assertEqual(appearance.state, "inactive")
     assertEqual(appearance.icon.kind, "custom")
     assertEqual(appearance.badge, nil)
@@ -66,7 +66,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(first_context.refreshes, 1)
     assertEqual(second_context.refreshes, 1)
     appearance = action.appearance(first_context)
-    assertEqual(appearance.title, "Allow sleep")
+    assertEqual(appearance.title, "Allow\nsleep")
     assertEqual(appearance.state, "inactive")
 
     failure = "get"

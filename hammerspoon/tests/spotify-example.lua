@@ -150,6 +150,7 @@ return function(test, load_fixture, context, assertTrue, _, assertEqual)
 
     action.rotate(volume_dial, 2, false)
     local volume_appearance = action.appearance(volume_dial)
+    assertEqual(volume_appearance.title, "Spotify\nvolume")
     assertEqual(volume, 54)
     assertEqual(volume_appearance.value, "54%")
     assertEqual(volume_appearance.indicator, 54)
@@ -240,7 +241,7 @@ return function(test, load_fixture, context, assertTrue, _, assertEqual)
       "closed Spotify press must not eagerly fetch the current track")
     assertEqual(get_volume_calls, 0,
       "closed Spotify press must not eagerly fetch volume")
-    assertEqual(action.appearance(button).title, "Spotify unavailable",
+    assertEqual(action.appearance(button).title, "Spotify\nunavailable",
       "closed Spotify must show an explicit unavailable state until startup is sampled")
 
     scheduled.callback()
