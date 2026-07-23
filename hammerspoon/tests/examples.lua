@@ -805,6 +805,8 @@ test("system monitor samples only visible metric selections and keeps histories 
 
   local streamdeck = load_fixture("hammerspoon/streamdeck/actions/system-monitor.lua", fake_hs)
   local action = streamdeck.registrations[1]
+  require("streamdeck.registry").new():register(action)
+  assertEqual(type(action.press), "function")
   local first = context("system-first")
   local second = context("system-second")
 
@@ -849,6 +851,9 @@ test("system monitor samples only visible metric selections and keeps histories 
   assertEqual(second.refreshes, 1, "a valid CPU sample must refresh every visible key")
   tick()
   assertEqual(action.appearance(first).title, "CPU 10%", "CPU must use tick deltas")
+  action.press(first)
+  assertEqual(first.feedbacks[#first.feedbacks].message, "Configure\nmetric")
+  assertEqual(action.appearance(first).title, "CPU 10%", "press must not change the selected metric")
 
   first.settings = { metric = "memory" }
   second.settings = { metric = "memory" }

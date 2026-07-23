@@ -462,7 +462,7 @@ return {
   name = "System monitor",
   description = "View a selected live metric; only visible metric selections are sampled.",
   category = "System",
-  gesture = "Choose a system metric in the action settings",
+  gesture = "Press: show metric-setting hint",
   settingsSchemaVersion = 2,
   settingsSchema = {
     {
@@ -501,6 +501,10 @@ return {
 
   appearance = function(context)
     return appearance_for(context)
+  end,
+
+  press = function(context)
+    context:success("Configure\nmetric", 850)
   end,
 
   disappear = function(context)
