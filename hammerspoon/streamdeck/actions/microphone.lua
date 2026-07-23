@@ -15,6 +15,10 @@ local visible_contexts = {}
 local watched_inputs_by_uid = {}
 local record_watched_input_state
 
+local meeting_shortcut_delay = 0.2
+local pending_meeting_apps = {}
+local meeting_shortcut_timer
+local meeting_shortcut_context
 local function require_audio_api(method_name)
   if type(hs) ~= "table"
     or type(hs.audiodevice) ~= "table"
@@ -351,18 +355,55 @@ local function send_meeting_shortcuts(enabled_apps)
 end
 
 local function schedule_meeting_shortcuts(context, enabled_apps)
+  local previously_pending = pending_meeting_apps
+  pending_meeting_apps = {}
+  if enabled_apps ~= nil then
+    for name, enabled in pairs(enabled_apps) do
+      if enabled == true and not previously_pending[name] then
+        pending_meeting_apps[name] = true
+      end
+    end
+  end
+
+  if meeting_shortcut_timer ~= nil then
+    local timer = meeting_shortcut_timer
+    meeting_shortcut_timer = nil
+    if type(timer.stop) == "function" then pcall(timer.stop, timer) end
+  end
+  meeting_shortcut_context = context
+
+  if next(pending_meeting_apps) == nil then
+    meeting_shortcut_context = nil
+    return
+  end
+
   if type(hs) == "table"
     and type(hs.timer) == "table"
     and type(hs.timer.doAfter) == "function" then
-    local scheduled, timer = pcall(hs.timer.doAfter, 0, function()
-      local sent = pcall(send_meeting_shortcuts, enabled_apps)
-      if not sent and type(context.error) == "function" then
-        context:error("Meeting app mute failed", 1200)
+    local timer
+    local scheduled, timer_or_error = pcall(hs.timer.doAfter, meeting_shortcut_delay, function()
+      if meeting_shortcut_timer ~= timer then return end
+      meeting_shortcut_timer = nil
+      local apps = pending_meeting_apps
+      local error_context = meeting_shortcut_context
+      pending_meeting_apps = {}
+      meeting_shortcut_context = nil
+      local sent = pcall(send_meeting_shortcuts, apps)
+      if not sent and error_context and type(error_context.error) == "function" then
+        error_context:error("Meeting app mute failed", 1200)
       end
     end)
-    if scheduled and timer ~= nil then return end
+    if scheduled and timer_or_error ~= nil then
+      timer = timer_or_error
+      meeting_shortcut_timer = timer
+      return
+    end
   end
-  send_meeting_shortcuts(enabled_apps)
+
+  local apps = pending_meeting_apps
+  pending_meeting_apps = {}
+  meeting_shortcut_context = nil
+  send_meeting_shortcuts(apps)
 end
 
 local live_svg = [[
@@ -398,7 +439,7 @@ local function restore_push_to_talk(context)
   if not state.restoreMuted then return end
   set_microphone_muted(state.device, true)
   record_watched_input_state(state.device, true)
-  if state.muteApps then schedule_meeting_shortcuts(context, state.enabledApps) end
+  schedule_meeting_shortcuts(context, state.muteApps and state.enabledApps or nil)
 end
 
 local function stop_combined_hold(state)
@@ -565,7 +606,7 @@ local function start_push_to_talk(context, device, mute_apps, enabled_apps)
   if muted then
     set_microphone_muted(device, false)
     record_watched_input_state(device, false)
-    if mute_apps then schedule_meeting_shortcuts(context, enabled_apps) end
+    schedule_meeting_shortcuts(context, mute_apps and enabled_apps or nil)
   end
   context:success("Microphone\nlive", 800)
 end
@@ -580,7 +621,7 @@ local function toggle_microphone(context, device, mute_apps, enabled_apps)
   local muted = microphone_muted(device)
   set_microphone_muted(device, not muted)
   record_watched_input_state(device, not muted)
-  if mute_apps then schedule_meeting_shortcuts(context, enabled_apps) end
+  schedule_meeting_shortcuts(context, mute_apps and enabled_apps or nil)
   context:success(not muted and "Microphone\nmuted" or "Microphone\nlive", 900)
   return not muted and sound.OFF or sound.ON
 end

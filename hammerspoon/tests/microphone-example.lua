@@ -100,6 +100,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
           if failure == "shortcut-throws" then
             error("keyStroke exploded")
           end
+          application.muted = not application.muted
           shortcut_calls[#shortcut_calls + 1] = {
             modifiers = modifiers,
             key = key,
@@ -277,9 +278,13 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       "the changed microphone appearance must refresh before meeting shortcuts")
     assertEqual(#shortcut_calls, 0, "meeting shortcuts must run after the microphone refresh")
     local meeting_timer = scheduled_timers[#scheduled_timers]
-    assertEqual(meeting_timer.seconds, 0)
+    assertEqual(meeting_timer.seconds, 0.2)
     assertTrue(run_scheduled(meeting_timer))
     assertEqual(#shortcut_calls, 4, "one shortcut per running meeting app and no duplicate Teams delivery")
+    assertEqual(applications["us.zoom.xos"].muted, built_in.muted_state)
+    assertEqual(applications["com.microsoft.teams2"].muted, built_in.muted_state)
+    assertEqual(applications["com.tinyspeck.slackmacgap"].muted, built_in.muted_state)
+    assertEqual(applications["com.hnc.Discord"].muted, built_in.muted_state)
     assertEqual(shortcut_calls[1].key, "a")
     assertEqual(shortcut_calls[1].application, applications["us.zoom.xos"])
     assertEqual(shortcut_calls[2].key, "m")
@@ -304,12 +309,65 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     end
     assertFalse(legacy_teams_queried, "legacy Teams should not be queried when new Teams is available")
 
+    local rapid_initial_muted = built_in.muted_state
+    local shortcut_count = #shortcut_calls
+    action.press(meeting_context)
+    local superseded_meeting_timer = scheduled_timers[#scheduled_timers]
+    action.press(meeting_context)
+    assertEqual(built_in.muted_state, rapid_initial_muted,
+      "two rapid presses must restore the microphone's initial state")
+    assertTrue(superseded_meeting_timer.stopped,
+      "a newer microphone transition must supersede the pending integration delivery")
+    assertTrue(run_scheduled(superseded_meeting_timer))
+    assertEqual(#shortcut_calls, shortcut_count,
+      "two rapid presses must cancel every meeting-app toggle")
+    assertEqual(applications["us.zoom.xos"].muted, built_in.muted_state)
+    assertEqual(applications["com.microsoft.teams2"].muted, built_in.muted_state)
+    assertEqual(applications["com.tinyspeck.slackmacgap"].muted, built_in.muted_state)
+    assertEqual(applications["com.hnc.Discord"].muted, built_in.muted_state)
+
+    action.press(meeting_context)
+    local first_odd_timer = scheduled_timers[#scheduled_timers]
+    action.press(meeting_context)
+    action.press(meeting_context)
+    local final_odd_timer = scheduled_timers[#scheduled_timers]
+    assertTrue(first_odd_timer.stopped)
+    assertEqual(final_odd_timer.seconds, 0.2)
+    assertTrue(run_scheduled(first_odd_timer))
+    assertTrue(run_scheduled(final_odd_timer))
+    assertEqual(#shortcut_calls, shortcut_count + 4,
+      "three rapid presses must deliver one toggle to every meeting app")
+    assertEqual(applications["us.zoom.xos"].muted, built_in.muted_state)
+    assertEqual(applications["com.microsoft.teams2"].muted, built_in.muted_state)
+    assertEqual(applications["com.tinyspeck.slackmacgap"].muted, built_in.muted_state)
+    assertEqual(applications["com.hnc.Discord"].muted, built_in.muted_state)
+
+    shortcut_count = #shortcut_calls
+    action.press(meeting_context)
+    local integration_disabled_timer = scheduled_timers[#scheduled_timers]
+    action.press(context("integration-disabled-rapidly", { muteMeetingApps = false }))
+    assertTrue(integration_disabled_timer.stopped)
+    assertTrue(run_scheduled(integration_disabled_timer))
+    assertEqual(#shortcut_calls, shortcut_count,
+      "disabling integration during a rapid pair must cancel pending app toggles")
+
+    action.press(meeting_context)
+    local app_disabled_timer = scheduled_timers[#scheduled_timers]
+    action.press(context("discord-disabled-rapidly", {
+      muteMeetingApps = true,
+      muteDiscord = false,
+    }))
+    assertTrue(app_disabled_timer.stopped)
+    assertTrue(run_scheduled(app_disabled_timer))
+    assertEqual(#shortcut_calls, shortcut_count,
+      "disabling one app during a rapid pair must not leave its stale toggle pending")
+
     applications["us.zoom.xos"].running = false
     applications["com.microsoft.teams2"].running = false
     applications["com.microsoft.teams"].running = false
     applications["com.tinyspeck.slackmacgap"].running = false
     applications["com.hnc.Discord"].running = false
-    local shortcut_count = #shortcut_calls
+    shortcut_count = #shortcut_calls
     action.press(meeting_context)
     assertTrue(run_scheduled(scheduled_timers[#scheduled_timers]))
     assertEqual(#shortcut_calls, shortcut_count, "unavailable apps must not receive shortcuts")
@@ -352,18 +410,32 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       muteTeams = false,
       muteSlack = false,
     })
+    applications["us.zoom.xos"].muted = true
     shortcut_count = #shortcut_calls
     action.press(disappearing_push_to_talk)
     local ptt_start_timer = scheduled_timers[#scheduled_timers]
     assertFalse(usb.muted_state, "push-to-talk must unmute before disappearance")
+    assertTrue(run_scheduled(ptt_start_timer))
     action.disappear(disappearing_push_to_talk)
     local ptt_restore_timer = scheduled_timers[#scheduled_timers]
     assertTrue(usb.muted_state, "disappearance must restore a held microphone")
-    assertTrue(run_scheduled(ptt_start_timer))
     assertTrue(run_scheduled(ptt_restore_timer))
     assertEqual(#shortcut_calls, shortcut_count + 2, "disappearance must restore meeting-app mute")
+    assertEqual(applications["us.zoom.xos"].muted, usb.muted_state)
     action.release(disappearing_push_to_talk)
     assertEqual(#shortcut_calls, shortcut_count + 2, "release after disappearance must not restore twice")
+
+    shortcut_count = #shortcut_calls
+    action.press(disappearing_push_to_talk)
+    local quick_ptt_timer = scheduled_timers[#scheduled_timers]
+    action.disappear(disappearing_push_to_talk)
+    assertTrue(quick_ptt_timer.stopped,
+      "restoring push-to-talk inside the quiet period must cancel its app toggle")
+    assertTrue(run_scheduled(quick_ptt_timer))
+    assertEqual(#shortcut_calls, shortcut_count,
+      "quick push-to-talk restoration must not emit stale meeting-app shortcuts")
+    assertEqual(applications["us.zoom.xos"].muted, usb.muted_state)
+    action.release(disappearing_push_to_talk)
     applications["us.zoom.xos"].running = false
 
     local combined_mode = context("combined-mode", {
