@@ -707,7 +707,7 @@ test("configurable timer counts down, flashes on completion, and cleans up timer
   end, "timer unavailable")
 end)
 
-test("system monitor samples only visible metric selections and keeps histories bounded", function()
+test("system monitor samples visible metrics, summarizes configured windows, and colors thresholds", function()
   local scheduled = {}
   local timer_count = 0
   local calls = {
@@ -715,16 +715,27 @@ test("system monitor samples only visible metric selections and keeps histories 
     memory = 0,
     disk = 0,
     network = 0,
+    internet = 0,
+    wifi = 0,
+    battery = 0,
+    battery_power = 0,
     thermal = 0,
     idle = 0,
   }
+  local absolute_time = 0
   local active_ticks = 0
   local idle_ticks = 0
   local active_delta = 10
   local idle_delta = 90
   local ram_active_pages = 2
+  local vm_page_outs = 0
+  local vm_swap_outs = 0
   local primary_ipv4 = "en0"
   local primary_ipv6 = false
+  local internet_status = "-R------"
+  local wifi_rssi = -50
+  local battery_percentage = 75
+  local battery_watts = -12.5
   local thermal = "Nominal"
   local user_idle = 0
   local fake_hs = {
@@ -744,12 +755,16 @@ test("system monitor samples only visible metric selections and keeps histories 
       end,
       vmStat = function()
         calls.memory = calls.memory + 1
+        vm_page_outs = vm_page_outs + 2
+        vm_swap_outs = vm_swap_outs + 1
         return {
           pagesActive = ram_active_pages,
           pagesWiredDown = 1,
           pagesUsedByVMCompressor = 1,
           pageSize = 10,
           memSize = 1000,
+          pageOuts = vm_page_outs,
+          swapOuts = vm_swap_outs,
         }
       end,
       volumeInformation = function()
@@ -775,8 +790,37 @@ test("system monitor samples only visible metric selections and keeps histories 
         calls.network = calls.network + 1
         return primary_ipv4, primary_ipv6
       end,
+      reachability = {
+        internet = function()
+          calls.internet = calls.internet + 1
+          return {
+            statusString = function()
+              return internet_status
+            end,
+          }
+        end,
+      },
+    },
+    wifi = {
+      interfaceDetails = function()
+        calls.wifi = calls.wifi + 1
+        return { rssi = wifi_rssi }
+      end,
+    },
+    battery = {
+      percentage = function()
+        calls.battery = calls.battery + 1
+        return battery_percentage
+      end,
+      watts = function()
+        calls.battery_power = calls.battery_power + 1
+        return battery_watts
+      end,
     },
     timer = {
+      absoluteTime = function()
+        return absolute_time
+      end,
       doEvery = function(seconds, callback)
         timer_count = timer_count + 1
         local timer = {
@@ -797,8 +841,14 @@ test("system monitor samples only visible metric selections and keeps histories 
   local original_area_chart = helpers.areaChart
   local chart_lengths = {}
   local chart_options = {}
+  local chart_values = {}
   helpers.areaChart = function(device_context, values, options)
-    chart_lengths[#chart_lengths + 1] = #values
+    local values_copy = {}
+    for index, value in ipairs(values) do
+      values_copy[index] = value
+    end
+    chart_lengths[#chart_lengths + 1] = #values_copy
+    chart_values[#chart_values + 1] = values_copy
     chart_options[#chart_options + 1] = options
     return original_area_chart(device_context, values, options)
   end
@@ -812,16 +862,21 @@ test("system monitor samples only visible metric selections and keeps histories 
 
   assertEqual(action.id, "com.brettinternet.hammerspoon.system-monitor")
   assertEqual(action.name, "System monitor")
-  assertEqual(action.settingsSchemaVersion, 1)
+  assertEqual(action.settingsSchemaVersion, 2)
   local metric_setting = action.settingsSchema[1]
   assertEqual(metric_setting.type, "select")
   assertEqual(metric_setting.key, "metric")
   assertEqual(metric_setting.default, "cpu")
-  assertEqual(#metric_setting.options, 6)
-  assertEqual(metric_setting.options[3].value, "disk")
-  assertEqual(metric_setting.options[4].value, "network")
-  assertEqual(metric_setting.options[5].value, "thermal")
-  assertEqual(metric_setting.options[6].value, "idle")
+  assertEqual(#metric_setting.options, 11)
+  assertEqual(metric_setting.options[3].value, "memory_pressure")
+  assertEqual(metric_setting.options[6].value, "internet")
+  assertEqual(metric_setting.options[9].value, "battery_power")
+  local window_setting = action.settingsSchema[2]
+  assertEqual(window_setting.type, "number")
+  assertEqual(window_setting.key, "windowSeconds")
+  assertEqual(window_setting.default, 120)
+  assertEqual(window_setting.min, 30)
+  assertEqual(window_setting.max, 3600)
   action.appear(first)
   assertEqual(scheduled.seconds, 1, "system monitor must sample once per second")
   assertEqual(timer_count, 1, "first visible instance must start one timer")
@@ -832,10 +887,15 @@ test("system monitor samples only visible metric selections and keeps histories 
   assertEqual(initial.title, "CPU 0%", "CPU must remain informative before a valid delta")
   assertEqual(initial.icon.mediaType, "image/svg+xml")
   assertEqual(chart_lengths[#chart_lengths], 0, "the initial chart may be empty")
+  local initial_colors = chart_options[#chart_options]
+  assertEqual(initial_colors.backgroundColor, "#0D2818")
+  assertEqual(initial_colors.fillColor, "#1B7F3A")
+  assertEqual(initial_colors.strokeColor, "#34C759")
 
   local function tick()
     local previous_hs = _G.hs
     _G.hs = fake_hs
+    absolute_time = absolute_time + 1000000000
     scheduled.callback()
     _G.hs = previous_hs
   end
@@ -845,6 +905,10 @@ test("system monitor samples only visible metric selections and keeps histories 
   assertEqual(calls.memory, 0, "inactive memory keys must not call vmStat")
   assertEqual(calls.disk, 0, "inactive disk keys must not query volumes")
   assertEqual(calls.network, 0, "inactive network keys must not query interfaces")
+  assertEqual(calls.internet, 0, "inactive internet keys must not create reachability probes")
+  assertEqual(calls.wifi, 0, "inactive Wi-Fi keys must not query the interface")
+  assertEqual(calls.battery, 0, "inactive battery keys must not query charge")
+  assertEqual(calls.battery_power, 0, "inactive battery-power keys must not query watts")
   assertEqual(calls.thermal, 0, "inactive thermal keys must not query thermal state")
   assertEqual(calls.idle, 0, "inactive idle keys must not query idle time")
   assertEqual(first.refreshes, 1, "a valid CPU sample must refresh every visible key")
@@ -861,17 +925,34 @@ test("system monitor samples only visible metric selections and keeps histories 
   assertEqual(calls.cpu, 2, "CPU sampling must stop when no CPU key is visible")
   assertEqual(calls.memory, 1, "a memory key must sample vmStat")
   assertEqual(action.appearance(first).title, "Memory 4%")
+  ram_active_pages = 70
+  tick()
+  assertEqual(action.appearance(first).title, "Memory 72%")
+  local memory_caution = chart_options[#chart_options]
+  assertEqual(memory_caution.fillColor, "#8A6D13")
+  assertEqual(memory_caution.backgroundColor, "#2B250B")
+  assertEqual(memory_caution.strokeColor, "#FFD60A")
   ram_active_pages = 90
   tick()
   assertEqual(action.appearance(first).title, "Memory 92%")
   local memory_warning = chart_options[#chart_options]
-  assertEqual(memory_warning.fillColor, "#FF453A")
+  assertEqual(memory_warning.fillColor, "#A61B1B")
+  assertEqual(memory_warning.backgroundColor, "#2B1114")
+  assertEqual(memory_warning.strokeColor, "#FF453A")
   ram_active_pages = 2
+
+  first.settings = { metric = "memory_pressure" }
+  second.settings = { metric = "memory_pressure" }
+  tick()
+  tick()
+  assertEqual(calls.memory, 5, "memory pressure must reuse vmStat rather than make a second query")
+  assertEqual(action.appearance(first).title, "Pressure\n3.0/s")
+  local pressure_caution = chart_options[#chart_options]
+  assertEqual(pressure_caution.fillColor, "#8A6D13")
 
   first.settings = { metric = "disk" }
   second.settings = { metric = "disk" }
   tick()
-  assertEqual(calls.memory, 2, "memory sampling must stop when no memory key is visible")
   assertEqual(calls.disk, 1, "a disk key must query root-volume capacity")
   assertEqual(action.appearance(first).title, "Disk 25%")
 
@@ -884,19 +965,68 @@ test("system monitor samples only visible metric selections and keeps histories 
   tick()
   assertEqual(action.appearance(first).title, "Network\nDown")
   local network_warning = chart_options[#chart_options]
-  assertEqual(network_warning.fillColor, "#FF453A")
+  assertEqual(network_warning.fillColor, "#A61B1B")
   primary_ipv6 = "en1"
   tick()
   assertEqual(action.appearance(first).title, "Network\nUp", "an IPv6 primary interface must report network up")
 
+  first.settings = { metric = "internet" }
+  second.settings = { metric = "internet" }
+  tick()
+  assertEqual(calls.internet, 1, "an internet key must create one reachability probe")
+  assertEqual(action.appearance(first).title, "Internet\nUp")
+  internet_status = "--------"
+  tick()
+  assertEqual(action.appearance(first).title, "Internet\nDown")
+  second.device = { imageSize = 2 }
+  for index = 1, 120 do
+    internet_status = index % 2 == 0 and "--------" or "-R------"
+    tick()
+  end
+  action.appearance(second)
+  local internet_chart_values = chart_values[#chart_values]
+  assertEqual(#internet_chart_values, 2, "categorical histories must summarize to the key width")
+  assertEqual(internet_chart_values[#internet_chart_values], 0,
+    "categorical summaries must retain each bucket's latest value instead of averaging")
+  second.device = nil
+
+  first.settings = { metric = "wifi" }
+  second.settings = { metric = "wifi" }
+  wifi_rssi = -65
+  tick()
+  assertEqual(calls.wifi, 1, "a Wi-Fi key must query signal strength")
+  assertEqual(action.appearance(first).title, "Wi-Fi\n-65 dBm")
+  local wifi_caution = chart_options[#chart_options]
+  assertEqual(wifi_caution.fillColor, "#8A6D13")
+
+  first.settings = { metric = "battery" }
+  second.settings = { metric = "battery" }
+  battery_percentage = 15
+  tick()
+  assertEqual(calls.battery, 1, "a battery key must query charge")
+  assertEqual(action.appearance(first).title, "Battery 15%")
+  local battery_warning = chart_options[#chart_options]
+  assertEqual(battery_warning.fillColor, "#A61B1B")
+
+  first.settings = { metric = "battery_power" }
+  second.settings = { metric = "battery_power" }
+  tick()
+  assertEqual(calls.battery_power, 1, "a battery-power key must query watts")
+  assertEqual(action.appearance(first).title, "Battery\n-12.5 W")
+
   first.settings = { metric = "thermal" }
   second.settings = { metric = "thermal" }
-  thermal = "Serious"
+  thermal = "Fair"
   tick()
   assertEqual(calls.thermal, 1, "a thermal key must query thermal state")
+  assertEqual(action.appearance(first).title, "Thermal\nFair")
+  local thermal_caution = chart_options[#chart_options]
+  assertEqual(thermal_caution.fillColor, "#8A6D13")
+  thermal = "Serious"
+  tick()
   assertEqual(action.appearance(first).title, "Thermal\nSerious")
   local thermal_warning = chart_options[#chart_options]
-  assertEqual(thermal_warning.fillColor, "#FF453A")
+  assertEqual(thermal_warning.fillColor, "#A61B1B")
 
   first.settings = { metric = "idle" }
   second.settings = { metric = "idle" }
@@ -907,20 +1037,33 @@ test("system monitor samples only visible metric selections and keeps histories 
   local idle_options = chart_options[#chart_options]
   assertEqual(idle_options.max, 125, "idle charts must fit the observed duration")
 
-  first.settings = { metric = "memory" }
-  second.settings = { metric = "memory" }
-  for _ = 1, 120 do
+  first.settings = { metric = "memory", windowSeconds = 30.5 }
+  second.settings = { metric = "memory", windowSeconds = 120 }
+  for index = 1, 120 do
+    ram_active_pages = index % 2 == 0 and 2 or 12
     tick()
   end
-  local rolled_over = action.appearance(first)
-  assertEqual(chart_lengths[#chart_lengths], 120, "history must retain at most 120 samples")
+  action.appearance(first)
+  assertEqual(chart_lengths[#chart_lengths], 31,
+    "each key must trim its shared raw history to its configured window")
+  local rolled_over = action.appearance(second)
+  assertEqual(chart_lengths[#chart_lengths], 72,
+    "long windows must summarize raw samples to the key width")
+  local summarized_values = chart_values[#chart_values]
+  local has_bucket_mean = false
+  for _, value in ipairs(summarized_values) do
+    if value == 9 then
+      has_bucket_mean = true
+    end
+  end
+  assertTrue(has_bucket_mean, "numeric summaries must average samples within a bucket")
   assertEqual(rolled_over.title, "Memory 4%")
-  first.settings = { metric = "cpu" }
-  second.settings = { metric = "cpu" }
+  first.settings = { metric = "cpu", windowSeconds = "invalid" }
+  second.settings = { metric = "cpu", windowSeconds = 0 }
   tick()
   action.appearance(first)
   assertEqual(chart_lengths[#chart_lengths], 1,
-    "CPU history must restart when CPU becomes selected after another metric")
+    "malformed persisted windows must fall back without retaining stale CPU history")
 
   action.disappear(first)
   local old_callback = scheduled.callback
