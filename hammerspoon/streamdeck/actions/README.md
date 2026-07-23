@@ -88,6 +88,6 @@ Use **Hammerspoon Toggle** when an action reports meaningful inactive and active
 | `window-next-screen`   | `com.brettinternet.hammerspoon.window-next-screen`   | Button         | Moves the focused window to the next display while preserving its relative frame. Requires Accessibility permission.       |
 | `window-snap`          | `com.brettinternet.hammerspoon.window-snap`          | Toggle         | Cycles the focused window through left, right, and full-screen layouts. Requires Accessibility permission.                 |
 
-The property inspector groups these actions by category and supports search, live key/dial previews, gesture help, conditional sections, per-field and per-action reset, and refreshable system dropdowns. A saved device that is disconnected remains selected as `Unavailable — Device Name` instead of being silently replaced.
+The property inspector groups these actions by category and supports search, gesture help, conditional sections, per-field and per-action reset, and refreshable system dropdowns. A saved device that is disconnected remains selected as `Unavailable — Device Name` instead of being silently replaced.
 
 All actions require macOS, Hammerspoon, the official Stream Deck application, and this project's installed `streamdeck` Lua module. Watchers are started only while their action has visible Stream Deck instances. Timers retain their own instance lifecycle and refresh after asynchronous transitions.
