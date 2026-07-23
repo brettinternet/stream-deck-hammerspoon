@@ -34,7 +34,6 @@
         line-height: 1.4;
       }
 
-
       select {
         box-sizing: border-box;
         width: 100%;
@@ -141,98 +140,8 @@
         margin-top: 6px;
       }
 
-
       .catalog-search {
         width: 100%;
-      }
-
-      .preview-panel {
-        display: grid;
-        place-items: center;
-        min-height: 126px;
-        padding: 10px;
-        border: 1px solid #484848;
-        border-radius: 8px;
-        background: #222;
-      }
-
-      .preview-device {
-        position: relative;
-        display: grid;
-        place-items: center;
-        overflow: hidden;
-        width: 104px;
-        height: 104px;
-        border: 2px solid #5f5f5f;
-        border-radius: 16px;
-        box-shadow: 0 5px 14px #0008;
-        text-align: center;
-      }
-
-      .preview-device.encoder {
-        width: min(240px, 100%);
-        height: 76px;
-        border-radius: 10px;
-      }
-
-      #preview-icon {
-        position: absolute;
-        inset: 8px;
-        width: calc(100% - 16px);
-        height: calc(100% - 16px);
-        object-fit: contain;
-        opacity: 0.72;
-      }
-
-      #preview-title,
-      #preview-value {
-        position: relative;
-        z-index: 1;
-        max-width: 92%;
-        overflow: hidden;
-        font-size: 12px;
-        font-weight: 700;
-        line-height: 1.1;
-        text-shadow: 0 1px 3px #000;
-        white-space: pre-line;
-      }
-
-      #preview-value {
-        position: absolute;
-        bottom: 10px;
-        font-size: 10px;
-      }
-
-      #preview-badge {
-        position: absolute;
-        z-index: 2;
-        top: 6px;
-        right: 6px;
-        min-width: 18px;
-        padding: 2px 4px;
-        border-radius: 9px;
-        background: #f5f5f5;
-        color: #111;
-        font-size: 9px;
-        font-weight: 800;
-      }
-
-      .preview-progress-track {
-        position: absolute;
-        z-index: 2;
-        right: 7px;
-        bottom: 5px;
-        left: 7px;
-        height: 3px;
-        overflow: hidden;
-        border-radius: 2px;
-        background: #ffffff33;
-      }
-
-      #preview-progress {
-        display: block;
-        height: 100%;
-        background: currentColor;
       }
 
       .settings-heading {
@@ -302,7 +211,13 @@
     <main>
       <label for="action-id">Hammerspoon action</label>
       <label for="action-search">Find an action</label>
-      <input id="action-search" class="catalog-search" type="search" placeholder="Search actions" disabled />
+      <input
+        id="action-search"
+        class="catalog-search"
+        type="search"
+        placeholder="Search actions"
+        disabled
+      />
       <select
         id="action-id"
         name="actionId"
@@ -311,23 +226,21 @@
       >
         <option value="">No actions available</option>
       </select>
-      <p id="action-description" class="description" role="note" aria-live="polite"></p>
+      <p
+        id="action-description"
+        class="description"
+        role="note"
+        aria-live="polite"
+      ></p>
       <p id="action-gestures" class="description" role="note"></p>
-      <section class="preview-panel" aria-label="Live action preview">
-        <div id="preview-device" class="preview-device keypad">
-          <img id="preview-icon" alt="" hidden />
-          <span id="preview-title">Select action</span>
-          <span id="preview-value" hidden></span>
-          <span id="preview-badge" hidden></span>
-          <span class="preview-progress-track"><span id="preview-progress"></span></span>
-        </div>
-      </section>
       <div class="settings-heading">
         <span>Settings</span>
         <button id="reset-action" type="button" disabled>Reset all</button>
       </div>
       <section id="action-settings" aria-live="polite"></section>
-      <p id="settings-status" role="status" aria-live="polite">Select an action to edit its settings.</p>
+      <p id="settings-status" role="status" aria-live="polite">
+        Select an action to edit its settings.
+      </p>
       <p id="connection-status" role="status" aria-live="polite">Connecting</p>
       <p id="connection-details" role="note" aria-live="polite"></p>
       <button id="setup-guide" type="button" disabled>Open setup guide</button>

@@ -20624,17 +20624,40 @@ const DEVICE_TYPE_NAMES = {
     12: "galleon-100-sd",
     13: "stream-deck-plus-xl",
 };
-const DEFAULT_RENDERING_PROFILE = { imageSize: 72, encoderLayout: "$A1" };
+const DEFAULT_RENDERING_PROFILE = {
+    imageSize: 72,
+    encoderLayout: "$A1",
+};
 const RENDERING_PROFILES = {
     "keypad:stream-deck:5x3": { imageSize: 72 },
     "keypad:stream-deck-mini:3x2": { imageSize: 80 },
     "keypad:stream-deck-xl:8x4": { imageSize: 96 },
     "keypad:stream-deck-plus:4x2": { imageSize: 120 },
     "keypad:stream-deck-neo:4x2": { imageSize: 96 },
-    "encoder:stream-deck-plus:4x2": { imageSize: 48, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" },
-    "encoder:stream-deck-studio:16x2": { imageSize: 48, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" },
-    "encoder:galleon-100-sd:3x4": { imageSize: 48, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" },
-    "encoder:stream-deck-plus-xl:9x4": { imageSize: 48, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" },
+    "encoder:stream-deck-plus:4x2": {
+        imageSize: 48,
+        encoderLayout: "$A1",
+        encoderDecoratedLayout: "$A0",
+        encoderValueLayout: "$B1",
+    },
+    "encoder:stream-deck-studio:16x2": {
+        imageSize: 48,
+        encoderLayout: "$A1",
+        encoderDecoratedLayout: "$A0",
+        encoderValueLayout: "$B1",
+    },
+    "encoder:galleon-100-sd:3x4": {
+        imageSize: 48,
+        encoderLayout: "$A1",
+        encoderDecoratedLayout: "$A0",
+        encoderValueLayout: "$B1",
+    },
+    "encoder:stream-deck-plus-xl:9x4": {
+        imageSize: 48,
+        encoderLayout: "$A1",
+        encoderDecoratedLayout: "$A0",
+        encoderValueLayout: "$B1",
+    },
 };
 function recognizedRenderingProfile(metadata) {
     const { controllerType, device } = metadata;
@@ -20656,7 +20679,9 @@ function extractDeviceMetadata(action) {
         const device = context.device;
         if (!device)
             return undefined;
-        const deviceType = typeof device.type === "number" ? (DEVICE_TYPE_NAMES[device.type] ?? "unknown") : "unknown";
+        const deviceType = typeof device.type === "number"
+            ? (DEVICE_TYPE_NAMES[device.type] ?? "unknown")
+            : "unknown";
         const controllerType = context.controllerType === "Keypad"
             ? "keypad"
             : context.controllerType === "Encoder"
@@ -20672,7 +20697,9 @@ function extractDeviceMetadata(action) {
         if (metadata === undefined)
             return undefined;
         const renderingProfile = recognizedRenderingProfile(metadata);
-        return renderingProfile === undefined ? metadata : { ...metadata, imageSize: renderingProfile.imageSize };
+        return renderingProfile === undefined
+            ? metadata
+            : { ...metadata, imageSize: renderingProfile.imageSize };
     }
     catch {
         return undefined;
@@ -20712,34 +20739,34 @@ function hasValidAppearanceExtension(appearance) {
     if (hasValue !== hasIndicator) {
         return false;
     }
-    if (appearance.presentationState !== undefined
-        && (appearance.appearanceVersion !== 1
-            || !Number.isInteger(appearance.presentationState)
-            || appearance.presentationState < 0
-            || appearance.presentationState > 3)) {
+    if (appearance.presentationState !== undefined &&
+        (appearance.appearanceVersion !== 1 ||
+            !Number.isInteger(appearance.presentationState) ||
+            appearance.presentationState < 0 ||
+            appearance.presentationState > 3)) {
         return false;
     }
     if (!hasValue) {
         return true;
     }
-    return appearance.appearanceVersion === 1
-        && isSafeAppearanceValue(appearance.value)
-        && typeof appearance.indicator === "number"
-        && Number.isFinite(appearance.indicator)
-        && appearance.indicator >= 0
-        && appearance.indicator <= 100
-        && appearance.foregroundColor === undefined
-        && appearance.backgroundColor === undefined
-        && appearance.progress === undefined
-        && appearance.badge === undefined
-        && (appearance.icon === undefined || isSafeAppearanceIcon(appearance.icon));
+    return (appearance.appearanceVersion === 1 &&
+        isSafeAppearanceValue(appearance.value) &&
+        typeof appearance.indicator === "number" &&
+        Number.isFinite(appearance.indicator) &&
+        appearance.indicator >= 0 &&
+        appearance.indicator <= 100 &&
+        appearance.foregroundColor === undefined &&
+        appearance.backgroundColor === undefined &&
+        appearance.progress === undefined &&
+        appearance.badge === undefined &&
+        (appearance.icon === undefined || isSafeAppearanceIcon(appearance.icon)));
 }
 function appearanceImage(appearance, imageSize, bundledIcon = BUNDLED_BUTTON_ICON_PATH) {
     const icon = appearance.icon;
-    const hasDecoration = appearance.foregroundColor !== undefined
-        || appearance.backgroundColor !== undefined
-        || appearance.progress !== undefined
-        || appearance.badge !== undefined;
+    const hasDecoration = appearance.foregroundColor !== undefined ||
+        appearance.backgroundColor !== undefined ||
+        appearance.progress !== undefined ||
+        appearance.badge !== undefined;
     let customIconImage;
     if (icon !== undefined) {
         if (!isSafeAppearanceIcon(icon)) {
@@ -20762,9 +20789,11 @@ function appearanceImage(appearance, imageSize, bundledIcon = BUNDLED_BUTTON_ICO
         return undefined;
     }
     if ((appearance.foregroundColor !== undefined &&
-        (typeof appearance.foregroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(appearance.foregroundColor))) ||
+        (typeof appearance.foregroundColor !== "string" ||
+            !/^#[0-9A-Fa-f]{6}$/.test(appearance.foregroundColor))) ||
         (appearance.backgroundColor !== undefined &&
-            (typeof appearance.backgroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(appearance.backgroundColor))) ||
+            (typeof appearance.backgroundColor !== "string" ||
+                !/^#[0-9A-Fa-f]{6}$/.test(appearance.backgroundColor))) ||
         (appearance.progress !== undefined &&
             (typeof appearance.progress !== "number" ||
                 !Number.isFinite(appearance.progress) ||
@@ -20786,14 +20815,18 @@ function appearanceImage(appearance, imageSize, bundledIcon = BUNDLED_BUTTON_ICO
         for (const character of badge) {
             const codePoint = character.codePointAt(0);
             if (codePoint !== undefined &&
-                (codePoint <= 0x08 || (codePoint >= 0x0b && codePoint <= 0x0c) || (codePoint >= 0x0e && codePoint <= 0x1f))) {
+                (codePoint <= 0x08 ||
+                    (codePoint >= 0x0b && codePoint <= 0x0c) ||
+                    (codePoint >= 0x0e && codePoint <= 0x1f))) {
                 return undefined;
             }
         }
     }
     const iconMarkup = icon?.kind === "bundled"
         ? `<image href="${bundledIcon}" x="0" y="0" width="${imageSize}" height="${imageSize}"/>`
-        : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="0" y="0" width="${imageSize}" height="${imageSize}"/>`;
+        : customIconImage === undefined
+            ? ""
+            : `<image href="${escapeXml(customIconImage)}" x="0" y="0" width="${imageSize}" height="${imageSize}"/>`;
     const scale = imageSize / 72;
     const progressInset = 4 * scale;
     const progressWidth = 64 * scale;
@@ -20829,7 +20862,9 @@ function dialAppearanceImage(appearance, imageSize, bundledIcon = BUNDLED_BUTTON
     const customIconImage = icon?.kind === "custom" ? safeAppearanceIconImage(icon) : undefined;
     const iconMarkup = icon?.kind === "bundled"
         ? `<image href="${bundledIcon}" x="16" y="40" width="${imageSize}" height="${imageSize}"/>`
-        : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="16" y="40" width="${imageSize}" height="${imageSize}"/>`;
+        : customIconImage === undefined
+            ? ""
+            : `<image href="${escapeXml(customIconImage)}" x="16" y="40" width="${imageSize}" height="${imageSize}"/>`;
     const foreground = appearance.foregroundColor ?? "#FFFFFF";
     const background = appearance.backgroundColor ?? "#000000";
     const progressBar = appearance.progress === undefined
@@ -20858,7 +20893,13 @@ function disconnectedTitle(status) {
     }
     return "Offline";
 }
-const DIAGNOSTIC_AREAS = ["auth", "schema", "reconnect", "registry", "callback"];
+const DIAGNOSTIC_AREAS = [
+    "auth",
+    "schema",
+    "reconnect",
+    "registry",
+    "callback",
+];
 const DIAGNOSTIC_CODES = [
     "AUTH_REQUIRED",
     "AUTH_FAILED",
@@ -20890,10 +20931,14 @@ function safeDiagnosticsSnapshot(value) {
     const candidate = value;
     const snapshot = {
         ...fallback,
-        ...(typeof candidate.pluginVersion === "string" && /^[A-Za-z0-9._-]{1,32}$/.test(candidate.pluginVersion)
+        ...(typeof candidate.pluginVersion === "string" &&
+            /^[A-Za-z0-9._-]{1,32}$/.test(candidate.pluginVersion)
             ? { pluginVersion: candidate.pluginVersion }
             : {}),
-        ...(typeof candidate.port === "number" && Number.isInteger(candidate.port) && candidate.port >= 1 && candidate.port <= 65535
+        ...(typeof candidate.port === "number" &&
+            Number.isInteger(candidate.port) &&
+            candidate.port >= 1 &&
+            candidate.port <= 65535
             ? { port: candidate.port }
             : {}),
         ...(typeof candidate.retryInMs === "number" &&
@@ -20906,7 +20951,9 @@ function safeDiagnosticsSnapshot(value) {
     const latest = candidate.latest;
     if (latest !== null && typeof latest === "object" && !Array.isArray(latest)) {
         const latestCandidate = latest;
-        const at = typeof latestCandidate.at === "string" ? new Date(latestCandidate.at) : undefined;
+        const at = typeof latestCandidate.at === "string"
+            ? new Date(latestCandidate.at)
+            : undefined;
         if (typeof latestCandidate.area === "string" &&
             DIAGNOSTIC_AREAS.includes(latestCandidate.area) &&
             typeof latestCandidate.code === "string" &&
@@ -20927,13 +20974,20 @@ function isDialAction(value) {
         return false;
     }
     const candidate = value;
-    return typeof candidate.isDial === "function" && candidate.isDial();
+    return (typeof candidate.isDial === "function" &&
+        candidate.isDial());
 }
 function isRequestStateMessage(value) {
-    return typeof value === "object" && value !== null && !Array.isArray(value) && value.type === "requestState";
+    return (typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value) &&
+        value.type === "requestState");
 }
 function isRefreshActionsMessage(value) {
-    return typeof value === "object" && value !== null && !Array.isArray(value) && value.type === "refreshActions";
+    return (typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value) &&
+        value.type === "refreshActions");
 }
 /** Bridges the official generic keypad action to one shared Hammerspoon connection. */
 class HammerspoonAction extends SingletonAction {
@@ -20951,8 +21005,11 @@ class HammerspoonAction extends SingletonAction {
         this.bridge = bridge;
         this.manifestId = options.manifestId ?? HAMMERSPOON_ACTION_UUID;
         this.mode = options.mode ?? "toggle";
-        this.scheduleTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
-        this.cancelTimeout = options.clearTimeout ?? ((handle) => clearTimeout(handle));
+        this.scheduleTimeout =
+            options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
+        this.cancelTimeout =
+            options.clearTimeout ??
+                ((handle) => clearTimeout(handle));
     }
     /** Subscribes this action adapter to bridge lifecycle and rendering events. */
     subscribe() {
@@ -21166,7 +21223,8 @@ class HammerspoonAction extends SingletonAction {
     }
     settingsFrom(value) {
         const settings = cloneJsonValue(value);
-        if (typeof settings.actionId !== "string" || settings.actionId.length === 0) {
+        if (typeof settings.actionId !== "string" ||
+            settings.actionId.length === 0) {
             delete settings.actionId;
         }
         return settings;
@@ -21186,7 +21244,8 @@ class HammerspoonAction extends SingletonAction {
             await this.setActionTitle(instance.action, "Select action", instance.renderingProfile);
             return;
         }
-        if (this.bridge.status !== "connected" || !this.synchronized.has(instanceId)) {
+        if (this.bridge.status !== "connected" ||
+            !this.synchronized.has(instanceId)) {
             if (instance.action.isKey()) {
                 const stateApplied = await this.setState(instance.action, 0);
                 if (stateApplied && !(await this.clearImage(instance, 0))) {
@@ -21234,7 +21293,9 @@ class HammerspoonAction extends SingletonAction {
             return;
         }
         const bundledIcon = this.mode === "toggle"
-            ? appearance.state === 1 ? BUNDLED_TOGGLE_ACTIVE_ICON_PATH : BUNDLED_TOGGLE_INACTIVE_ICON_PATH
+            ? appearance.state === 1
+                ? BUNDLED_TOGGLE_ACTIVE_ICON_PATH
+                : BUNDLED_TOGGLE_INACTIVE_ICON_PATH
             : BUNDLED_BUTTON_ICON_PATH;
         if (isDialAction(instance.action)) {
             if (!(await this.setDialTitle(instance.action, appearance.title, instance.renderingProfile, appearance, bundledIcon))) {
@@ -21242,17 +21303,22 @@ class HammerspoonAction extends SingletonAction {
             }
             instance.lastAppearance = appearance;
             this.synchronized.add(appearance.instanceId);
-            await this.sendPreviewState(appearance.instanceId);
             return;
         }
-        const image = appearanceImage(appearance, instance.renderingProfile?.imageSize ?? DEFAULT_RENDERING_PROFILE.imageSize, bundledIcon);
+        const image = appearanceImage(appearance, instance.renderingProfile?.imageSize ??
+            DEFAULT_RENDERING_PROFILE.imageSize, bundledIcon);
         if (appearance.icon !== undefined && image === undefined) {
             await this.alert(instance.action);
             return;
         }
         const targetState = this.mode === "button" ? 0 : this.targetState(appearance);
-        const previousState = instance.lastAppearance === undefined ? 0 : this.mode === "button" ? 0 : this.targetState(instance.lastAppearance);
-        if (this.mode !== "button" && !(await this.setState(instance.action, targetState))) {
+        const previousState = instance.lastAppearance === undefined
+            ? 0
+            : this.mode === "button"
+                ? 0
+                : this.targetState(instance.lastAppearance);
+        if (this.mode !== "button" &&
+            !(await this.setState(instance.action, targetState))) {
             return;
         }
         if (!(await this.applyImage(instance, image, targetState))) {
@@ -21264,11 +21330,12 @@ class HammerspoonAction extends SingletonAction {
         instance.lastAppearance = appearance;
         this.synchronized.add(appearance.instanceId);
         await this.setActionTitle(instance.action, appearance.title, instance.renderingProfile);
-        await this.sendPreviewState(appearance.instanceId);
     }
     async renderFeedback(feedback) {
         const instance = this.instances.get(feedback.instanceId);
-        if (!instance || instance.actionId !== feedback.actionId || this.bridge.status !== "connected") {
+        if (!instance ||
+            instance.actionId !== feedback.actionId ||
+            this.bridge.status !== "connected") {
             return;
         }
         this.cancelFeedbackTimer(instance);
@@ -21303,7 +21370,9 @@ class HammerspoonAction extends SingletonAction {
         if (this.instances.get(instanceId) !== expected) {
             return;
         }
-        if (this.bridge.status === "connected" && this.synchronized.has(instanceId) && expected.lastAppearance) {
+        if (this.bridge.status === "connected" &&
+            this.synchronized.has(instanceId) &&
+            expected.lastAppearance) {
             await this.renderAppearance(expected.lastAppearance);
         }
         else {
@@ -21375,17 +21444,18 @@ class HammerspoonAction extends SingletonAction {
         }
     }
     async setDialTitle(action, title, renderingProfile, appearance, bundledIcon = BUNDLED_BUTTON_ICON_PATH) {
-        const hasDecoration = appearance !== undefined && (appearance.icon !== undefined
-            || appearance.foregroundColor !== undefined
-            || appearance.backgroundColor !== undefined
-            || appearance.progress !== undefined
-            || appearance.badge !== undefined);
+        const hasDecoration = appearance !== undefined &&
+            (appearance.icon !== undefined ||
+                appearance.foregroundColor !== undefined ||
+                appearance.backgroundColor !== undefined ||
+                appearance.progress !== undefined ||
+                appearance.badge !== undefined);
         const layout = hasDecoration && renderingProfile?.encoderDecoratedLayout !== undefined
             ? renderingProfile.encoderDecoratedLayout
-            : renderingProfile?.encoderLayout ?? "$A1";
-        const hasValueIndicator = appearance !== undefined
-            && appearance.value !== undefined
-            && appearance.indicator !== undefined;
+            : (renderingProfile?.encoderLayout ?? "$A1");
+        const hasValueIndicator = appearance !== undefined &&
+            appearance.value !== undefined &&
+            appearance.indicator !== undefined;
         if (hasValueIndicator && renderingProfile?.encoderValueLayout === "$B1") {
             const icon = appearance.icon === undefined
                 ? undefined
@@ -21492,19 +21562,6 @@ class HammerspoonAction extends SingletonAction {
             // Stream Deck feedback is best-effort when an instance is disappearing.
         }
     }
-    async sendPreviewState(instanceId) {
-        const instance = this.instances.get(instanceId);
-        if (!instance || streamDeck.ui.action?.id !== instanceId) {
-            return;
-        }
-        await streamDeck.ui.sendToPropertyInspector({
-            type: "previewState",
-            controller: isDialAction(instance.action) ? "encoder" : "keypad",
-            ...(instance.lastAppearance === undefined
-                ? {}
-                : { appearance: cloneJsonValue(instance.lastAppearance) }),
-        });
-    }
     async sendInspectorFeedback(feedback) {
         if (streamDeck.ui.action?.id !== feedback.instanceId) {
             return;
@@ -21548,11 +21605,10 @@ class HammerspoonAction extends SingletonAction {
                 ? {}
                 : {
                     controller: isDialAction(instance.action) ? "encoder" : "keypad",
-                    ...(instance.lastAppearance === undefined
-                        ? {}
-                        : { preview: cloneJsonValue(instance.lastAppearance) }),
                 }),
-            ...(this.bridge.status === "disconnected" ? { diagnostics: safeDiagnosticsSnapshot(this.bridge.diagnostics) } : {}),
+            ...(this.bridge.status === "disconnected"
+                ? { diagnostics: safeDiagnosticsSnapshot(this.bridge.diagnostics) }
+                : {}),
         });
     }
 }

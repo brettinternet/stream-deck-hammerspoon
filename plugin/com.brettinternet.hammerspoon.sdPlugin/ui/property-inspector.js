@@ -45,12 +45,6 @@
     const actionSearch = documentLike?.getElementById("action-search");
     const actionDescription = documentLike?.getElementById("action-description");
     const actionGestures = documentLike?.getElementById("action-gestures");
-    const previewDevice = documentLike?.getElementById("preview-device");
-    const previewIcon = documentLike?.getElementById("preview-icon");
-    const previewTitle = documentLike?.getElementById("preview-title");
-    const previewBadge = documentLike?.getElementById("preview-badge");
-    const previewProgress = documentLike?.getElementById("preview-progress");
-    const previewValue = documentLike?.getElementById("preview-value");
     const connectionStatus = documentLike?.getElementById("connection-status");
     const connectionDetails = documentLike?.getElementById("connection-details");
     const setupGuideButton = documentLike?.getElementById("setup-guide");
@@ -65,7 +59,6 @@
     let bridgeActions = [];
     let inspectorSocketReady = false;
     let activeController = "keypad";
-    let previewAppearance;
     let catalogFilter = "";
     let feedbackGeneration = 0;
     const renderedControls = new Map();
@@ -198,54 +191,6 @@
         option.disabled = disabled;
         return option;
     }
-    function renderPreview() {
-        const action = bridgeActions.find((candidate) => candidate.actionId === savedActionId);
-        const appearance = previewAppearance;
-        if (previewDevice) {
-            previewDevice.setAttribute("class", `preview-device ${activeController}`);
-            const background = appearance?.backgroundColor;
-            const foreground = appearance?.foregroundColor;
-            previewDevice.setAttribute("style", `background:${background && /^#[0-9A-Fa-f]{6}$/.test(background) ? background : "#151515"};`
-                + `color:${foreground && /^#[0-9A-Fa-f]{6}$/.test(foreground) ? foreground : "#ffffff"}`);
-        }
-        if (previewTitle) {
-            previewTitle.textContent = appearance?.title || action?.name || "Select action";
-        }
-        if (previewValue) {
-            previewValue.textContent = appearance?.value ?? "";
-            if (appearance?.value)
-                previewValue.removeAttribute("hidden");
-            else
-                previewValue.setAttribute("hidden", "");
-        }
-        if (previewBadge) {
-            previewBadge.textContent = appearance?.badge ?? "";
-            if (appearance?.badge)
-                previewBadge.removeAttribute("hidden");
-            else
-                previewBadge.setAttribute("hidden", "");
-        }
-        if (previewProgress) {
-            const progress = appearance?.progress
-                ?? (typeof appearance?.indicator === "number" ? appearance.indicator / 100 : undefined);
-            previewProgress.setAttribute("style", `width:${typeof progress === "number" && Number.isFinite(progress) ? Math.max(0, Math.min(100, progress * 100)) : 0}%`);
-        }
-        if (previewIcon) {
-            const icon = appearance?.icon;
-            if (icon?.kind === "custom") {
-                previewIcon.setAttribute("src", `data:${icon.mediaType};base64,${icon.dataBase64}`);
-                previewIcon.removeAttribute("hidden");
-            }
-            else if (icon?.kind === "bundled") {
-                previewIcon.setAttribute("src", icon.name === "hammerspoon" ? "../imgs/plugin.svg" : "../imgs/action.svg");
-                previewIcon.removeAttribute("hidden");
-            }
-            else {
-                previewIcon.removeAttribute("src");
-                previewIcon.setAttribute("hidden", "");
-            }
-        }
-    }
     function renderActionDescription() {
         const action = bridgeStatus === "connected" && savedActionId
             ? bridgeActions.find((candidate) => candidate.actionId === savedActionId)
@@ -256,14 +201,15 @@
         if (actionGestures) {
             actionGestures.textContent = action?.gesture ?? "";
         }
-        renderPreview();
     }
     function renderActionSelect() {
         renderActionDescription();
         if (!actionSelect || !documentLike) {
             return;
         }
-        if (bridgeStatus === "connected" && bridgeActions.length === 0 && savedActionId) {
+        if (bridgeStatus === "connected" &&
+            bridgeActions.length === 0 &&
+            savedActionId) {
             actionSelect.replaceChildren(createOption(savedActionId, "Loading actions...", true));
             actionSelect.value = savedActionId;
             actionSelect.disabled = true;
@@ -291,7 +237,9 @@
                     return false;
                 if (action.actionId === savedActionId || filter.length === 0)
                     return true;
-                return `${action.name} ${action.description ?? ""} ${category}`.toLocaleLowerCase().includes(filter);
+                return `${action.name} ${action.description ?? ""} ${category}`
+                    .toLocaleLowerCase()
+                    .includes(filter);
             });
             if (matches.length === 0)
                 continue;
@@ -309,7 +257,9 @@
                 continue;
             if (action.actionId !== savedActionId &&
                 filter.length > 0 &&
-                !`${action.name} ${action.description ?? ""}`.toLocaleLowerCase().includes(filter))
+                !`${action.name} ${action.description ?? ""}`
+                    .toLocaleLowerCase()
+                    .includes(filter))
                 continue;
             children.push(createOption(action.actionId, action.name));
             if (action.actionId === savedActionId)
@@ -351,13 +301,17 @@
         return typeof value === "number" && Number.isFinite(value);
     }
     function parseSettingsField(value) {
-        if (!isJsonObject(value) || typeof value.key !== "string" || value.key.length === 0) {
+        if (!isJsonObject(value) ||
+            typeof value.key !== "string" ||
+            value.key.length === 0) {
             return undefined;
         }
         const base = {
             key: value.key,
             ...(typeof value.label === "string" ? { label: value.label } : {}),
-            ...(typeof value.required === "boolean" ? { required: value.required } : {}),
+            ...(typeof value.required === "boolean"
+                ? { required: value.required }
+                : {}),
         };
         if ("description" in value) {
             if (!isValidDescription(value.description)) {
@@ -396,23 +350,31 @@
         }
         if (value.type === "text") {
             if (("default" in value && typeof value.default !== "string") ||
-                ("minLength" in value && (!Number.isInteger(value.minLength) || value.minLength < 0)) ||
-                ("maxLength" in value && (!Number.isInteger(value.maxLength) || value.maxLength < 0))) {
+                ("minLength" in value &&
+                    (!Number.isInteger(value.minLength) ||
+                        value.minLength < 0)) ||
+                ("maxLength" in value &&
+                    (!Number.isInteger(value.maxLength) || value.maxLength < 0))) {
                 return undefined;
             }
             return {
                 ...base,
                 type: "text",
                 ...(typeof value.default === "string" ? { default: value.default } : {}),
-                ...(typeof value.minLength === "number" ? { minLength: value.minLength } : {}),
-                ...(typeof value.maxLength === "number" ? { maxLength: value.maxLength } : {}),
+                ...(typeof value.minLength === "number"
+                    ? { minLength: value.minLength }
+                    : {}),
+                ...(typeof value.maxLength === "number"
+                    ? { maxLength: value.maxLength }
+                    : {}),
             };
         }
         if (value.type === "number") {
             if (("default" in value && !isFiniteNumber(value.default)) ||
                 ("min" in value && !isFiniteNumber(value.min)) ||
                 ("max" in value && !isFiniteNumber(value.max)) ||
-                ("step" in value && (!isFiniteNumber(value.step) || value.step <= 0))) {
+                ("step" in value &&
+                    (!isFiniteNumber(value.step) || value.step <= 0))) {
                 return undefined;
             }
             return {
@@ -437,14 +399,17 @@
         if (value.type === "select" && Array.isArray(value.options)) {
             const options = [];
             for (const option of value.options) {
-                if (!isJsonObject(option) || typeof option.value !== "string" || typeof option.label !== "string") {
+                if (!isJsonObject(option) ||
+                    typeof option.value !== "string" ||
+                    typeof option.label !== "string") {
                     return undefined;
                 }
                 options.push({ value: option.value, label: option.label });
             }
             if (options.length === 0 ||
                 ("default" in value && typeof value.default !== "string") ||
-                (typeof value.default === "string" && !options.some((option) => option.value === value.default)) ||
+                (typeof value.default === "string" &&
+                    !options.some((option) => option.value === value.default)) ||
                 ("refreshable" in value && typeof value.refreshable !== "boolean")) {
                 return undefined;
             }
@@ -453,37 +418,55 @@
                 type: "select",
                 options,
                 ...(typeof value.default === "string" ? { default: value.default } : {}),
-                ...(typeof value.refreshable === "boolean" ? { refreshable: value.refreshable } : {}),
+                ...(typeof value.refreshable === "boolean"
+                    ? { refreshable: value.refreshable }
+                    : {}),
             };
         }
         return undefined;
     }
     function fieldsForAction(action) {
-        if (action.settingsSchemaVersion === undefined && action.settingsSchema === undefined) {
+        if (action.settingsSchemaVersion === undefined &&
+            action.settingsSchema === undefined) {
             return { fields: [] };
         }
         if (action.settingsSchemaVersion !== 1) {
-            return { fields: [], unsupported: "This settings schema version is not editable." };
+            return {
+                fields: [],
+                unsupported: "This settings schema version is not editable.",
+            };
         }
         if (!Array.isArray(action.settingsSchema)) {
-            return { fields: [], unsupported: "This action has an invalid settings schema." };
+            return {
+                fields: [],
+                unsupported: "This action has an invalid settings schema.",
+            };
         }
         const fields = [];
         const keys = new Set();
         for (let index = 0; index < action.settingsSchema.length; index += 1) {
             const field = parseSettingsField(action.settingsSchema[index]);
             if (!field) {
-                return { fields: [], unsupported: `Unsupported settings field at position ${index + 1}.` };
+                return {
+                    fields: [],
+                    unsupported: `Unsupported settings field at position ${index + 1}.`,
+                };
             }
             if (keys.has(field.key)) {
-                return { fields: [], unsupported: `Duplicate settings field "${field.key}" cannot be edited.` };
+                return {
+                    fields: [],
+                    unsupported: `Duplicate settings field "${field.key}" cannot be edited.`,
+                };
             }
             keys.add(field.key);
             fields.push(field);
         }
         for (const field of fields) {
             if (field.visibleWhen && !keys.has(field.visibleWhen.key)) {
-                return { fields: [], unsupported: `Settings field "${field.key}" depends on an unknown field.` };
+                return {
+                    fields: [],
+                    unsupported: `Settings field "${field.key}" depends on an unknown field.`,
+                };
             }
         }
         return { fields };
@@ -517,7 +500,8 @@
     function fieldValueIsValid(field, value) {
         if (field.type === "text") {
             return (typeof value === "string" &&
-                (field.minLength === undefined || stringLength(value) >= field.minLength) &&
+                (field.minLength === undefined ||
+                    stringLength(value) >= field.minLength) &&
                 (field.maxLength === undefined || stringLength(value) <= field.maxLength));
         }
         if (field.type === "number") {
@@ -526,8 +510,11 @@
         if (field.type === "boolean") {
             return typeof value === "boolean";
         }
-        return typeof value === "string" && (field.options.some((option) => option.value === value) ||
-            (field.refreshable === true && value.length > 0 && stringLength(value) <= 256));
+        return (typeof value === "string" &&
+            (field.options.some((option) => option.value === value) ||
+                (field.refreshable === true &&
+                    value.length > 0 &&
+                    stringLength(value) <= 256)));
     }
     function defaultFieldValue(field) {
         if (field.default !== undefined) {
@@ -597,7 +584,9 @@
         const labelsValue = settings.__optionLabels;
         const labels = isJsonObject(labelsValue) ? labelsValue : {};
         const actionLabelsValue = labels[actionId];
-        let actionLabels = isJsonObject(actionLabelsValue) ? actionLabelsValue : {};
+        let actionLabels = isJsonObject(actionLabelsValue)
+            ? actionLabelsValue
+            : {};
         let changed = false;
         for (const field of fields) {
             if (field.type !== "select" || !field.refreshable)
@@ -610,7 +599,8 @@
                 continue;
             const fieldLabelsValue = actionLabels[field.key];
             const fieldLabels = isJsonObject(fieldLabelsValue) ? fieldLabelsValue : {};
-            if (fieldLabels[selected.value] === selected.label && Object.keys(fieldLabels).length === 1)
+            if (fieldLabels[selected.value] === selected.label &&
+                Object.keys(fieldLabels).length === 1)
                 continue;
             actionLabels = {
                 ...actionLabels,
@@ -662,7 +652,8 @@
             setSettingsStatus(`Action unavailable: ${savedActionId}`);
             return;
         }
-        if (action.settingsSchemaVersion === undefined && action.settingsSchema !== undefined) {
+        if (action.settingsSchemaVersion === undefined &&
+            action.settingsSchema !== undefined) {
             setSettingsStatus("Legacy settings schemas are opaque and cannot be edited.");
             return;
         }
@@ -699,9 +690,14 @@
                 control.type = field.type === "boolean" ? "checkbox" : field.type;
             }
             control.setAttribute("aria-label", field.label ?? field.key);
-            const currentValue = hasSetting(savedSettings, field.key) ? savedSettings[field.key] : defaultFieldValue(field);
-            const displayValue = fieldValueIsValid(field, currentValue) ? currentValue : defaultFieldValue(field);
-            if (hasSetting(savedSettings, field.key) && !fieldValueIsValid(field, currentValue)) {
+            const currentValue = hasSetting(savedSettings, field.key)
+                ? savedSettings[field.key]
+                : defaultFieldValue(field);
+            const displayValue = fieldValueIsValid(field, currentValue)
+                ? currentValue
+                : defaultFieldValue(field);
+            if (hasSetting(savedSettings, field.key) &&
+                !fieldValueIsValid(field, currentValue)) {
                 errors.push(`${field.label ?? field.key} has an invalid saved value.`);
             }
             if (field.type === "boolean") {
@@ -761,7 +757,10 @@
             reset.setAttribute("class", "field-action reset-field");
             reset.setAttribute("aria-label", `Reset ${field.label ?? field.key}`);
             reset.addEventListener("click", () => {
-                const candidate = { ...savedSettings, [field.key]: defaultFieldValue(field) };
+                const candidate = {
+                    ...savedSettings,
+                    [field.key]: defaultFieldValue(field),
+                };
                 const result = validateSettings(schema.fields, candidate);
                 if (!result.settings) {
                     setSettingsStatus(result.errors.join(" "));
@@ -804,7 +803,10 @@
         if (!inspectorConnection || bridgeStatus !== "connected" || !actionSelect) {
             return false;
         }
-        const candidate = { ...savedSettings, actionId: actionSelect.value };
+        const candidate = {
+            ...savedSettings,
+            actionId: actionSelect.value,
+        };
         for (const field of fields) {
             const control = renderedControls.get(field.key);
             if (!control)
@@ -864,7 +866,9 @@
         const action = bridgeActions.find((candidate) => candidate.actionId === selectedActionId);
         const fields = action ? fieldsForAction(action).fields : [];
         const candidate = { ...savedSettings, actionId: selectedActionId };
-        const result = action && !fieldsForAction(action).unsupported ? validateSettings(fields, candidate) : { settings: candidate, errors: [] };
+        const result = action && !fieldsForAction(action).unsupported
+            ? validateSettings(fields, candidate)
+            : { settings: candidate, errors: [] };
         if (!result.settings) {
             actionSelect.value = savedActionId;
             setSettingsStatus(result.errors.join(" "));
@@ -872,76 +876,35 @@
             return;
         }
         savedActionId = selectedActionId;
-        previewAppearance = undefined;
         savedSettings = withRefreshableOptionLabels(result.settings, savedActionId, fields);
         renderSettings();
         sendSettings(savedSettings);
     }
     function parseBridgeDiagnostics(value) {
-        if (!isJsonObject(value) || value.version !== 1 || value.status !== "disconnected") {
+        if (!isJsonObject(value) ||
+            value.version !== 1 ||
+            value.status !== "disconnected") {
             return undefined;
         }
-        const port = typeof value.port === "number" && Number.isInteger(value.port) && value.port > 0
+        const port = typeof value.port === "number" &&
+            Number.isInteger(value.port) &&
+            value.port > 0
             ? value.port
             : 17321;
-        const retryInMs = typeof value.retryInMs === "number"
-            && Number.isInteger(value.retryInMs)
-            && value.retryInMs >= 0
+        const retryInMs = typeof value.retryInMs === "number" &&
+            Number.isInteger(value.retryInMs) &&
+            value.retryInMs >= 0
             ? value.retryInMs
             : undefined;
-        const latest = isJsonObject(value.latest) && typeof value.latest.code === "string"
-            && BRIDGE_DIAGNOSTIC_CODES.includes(value.latest.code)
+        const latest = isJsonObject(value.latest) &&
+            typeof value.latest.code === "string" &&
+            BRIDGE_DIAGNOSTIC_CODES.includes(value.latest.code)
             ? { code: value.latest.code }
             : undefined;
-        return { port, ...(retryInMs === undefined ? {} : { retryInMs }), ...(latest === undefined ? {} : { latest }) };
-    }
-    function parsePreviewAppearance(value) {
-        if (!isJsonObject(value) || typeof value.title !== "string" || (value.state !== 0 && value.state !== 1)) {
-            return undefined;
-        }
-        if (("foregroundColor" in value && (typeof value.foregroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(value.foregroundColor))) ||
-            ("backgroundColor" in value && (typeof value.backgroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(value.backgroundColor))) ||
-            ("progress" in value && (!isFiniteNumber(value.progress) || value.progress < 0 || value.progress > 1)) ||
-            ("badge" in value && (typeof value.badge !== "string" || stringLength(value.badge) > 4)) ||
-            ("value" in value && typeof value.value !== "string") ||
-            ("indicator" in value && (!isFiniteNumber(value.indicator) || value.indicator < 0 || value.indicator > 100))) {
-            return undefined;
-        }
-        let icon;
-        if ("icon" in value) {
-            if (!isJsonObject(value.icon))
-                return undefined;
-            if (value.icon.kind === "bundled" &&
-                typeof value.icon.name === "string" &&
-                /^[a-z][a-z0-9-]{0,31}$/.test(value.icon.name)) {
-                icon = { kind: "bundled", name: value.icon.name };
-            }
-            else if (value.icon.kind === "custom" &&
-                (value.icon.mediaType === "image/png" || value.icon.mediaType === "image/svg+xml") &&
-                typeof value.icon.dataBase64 === "string" &&
-                value.icon.dataBase64.length > 0 &&
-                value.icon.dataBase64.length <= 196608 &&
-                /^[A-Za-z0-9+/]*={0,2}$/.test(value.icon.dataBase64)) {
-                icon = {
-                    kind: "custom",
-                    mediaType: value.icon.mediaType,
-                    dataBase64: value.icon.dataBase64,
-                };
-            }
-            else {
-                return undefined;
-            }
-        }
         return {
-            title: value.title,
-            state: value.state,
-            ...(typeof value.foregroundColor === "string" ? { foregroundColor: value.foregroundColor } : {}),
-            ...(typeof value.backgroundColor === "string" ? { backgroundColor: value.backgroundColor } : {}),
-            ...(typeof value.progress === "number" ? { progress: value.progress } : {}),
-            ...(typeof value.badge === "string" ? { badge: value.badge } : {}),
-            ...(typeof value.value === "string" ? { value: value.value } : {}),
-            ...(typeof value.indicator === "number" ? { indicator: value.indicator } : {}),
-            ...(icon === undefined ? {} : { icon }),
+            port,
+            ...(retryInMs === undefined ? {} : { retryInMs }),
+            ...(latest === undefined ? {} : { latest }),
         };
     }
     function parseBridgeState(value) {
@@ -967,7 +930,8 @@
                 typeof item.name !== "string" ||
                 item.name.trim().length === 0 ||
                 ("description" in item && !isValidDescription(item.description)) ||
-                ("category" in item && !CATEGORY_ORDER.includes(item.category)) ||
+                ("category" in item &&
+                    !CATEGORY_ORDER.includes(item.category)) ||
                 ("gesture" in item && !isValidDescription(item.gesture)) ||
                 ("settingsSchema" in item && !Array.isArray(item.settingsSchema)) ||
                 ("settingsSchemaVersion" in item &&
@@ -977,7 +941,8 @@
                         item.settingsSchemaVersion > 16))) {
                 return undefined;
             }
-            if (item.settingsSchemaVersion !== undefined && item.settingsSchemaVersion !== 1) {
+            if (item.settingsSchemaVersion !== undefined &&
+                item.settingsSchemaVersion !== 1) {
                 continue;
             }
             if (actionIds.has(item.actionId)) {
@@ -987,28 +952,32 @@
             actions.push({
                 actionId: item.actionId,
                 name: item.name,
-                ...("description" in item ? { description: item.description } : {}),
-                ...("category" in item ? { category: item.category } : {}),
+                ...("description" in item
+                    ? { description: item.description }
+                    : {}),
+                ...("category" in item
+                    ? { category: item.category }
+                    : {}),
                 ...("gesture" in item ? { gesture: item.gesture } : {}),
-                ...(Array.isArray(item.settingsSchema) ? { settingsSchema: item.settingsSchema } : {}),
+                ...(Array.isArray(item.settingsSchema)
+                    ? { settingsSchema: item.settingsSchema }
+                    : {}),
                 ...(typeof item.settingsSchemaVersion === "number"
                     ? { settingsSchemaVersion: item.settingsSchemaVersion }
                     : {}),
             });
         }
-        const diagnostics = status === "disconnected" ? parseBridgeDiagnostics(value.diagnostics) : undefined;
+        const diagnostics = status === "disconnected"
+            ? parseBridgeDiagnostics(value.diagnostics)
+            : undefined;
         const controller = value.controller === "keypad" || value.controller === "encoder"
             ? value.controller
             : undefined;
-        const preview = value.preview === undefined ? undefined : parsePreviewAppearance(value.preview);
-        if (value.preview !== undefined && preview === undefined)
-            return undefined;
         return {
             status,
             actions,
             ...(diagnostics === undefined ? {} : { diagnostics }),
             ...(controller === undefined ? {} : { controller }),
-            ...(preview === undefined ? {} : { preview }),
         };
     }
     function handleStreamDeckMessage(message) {
@@ -1019,31 +988,16 @@
         if (parsedMessage.event === "didReceiveSettings") {
             const nextSettings = settingsFromValue(parsedMessage.payload);
             const nextActionId = actionIdFromSettings(parsedMessage.payload);
-            if (nextActionId !== savedActionId)
-                previewAppearance = undefined;
             savedSettings = nextSettings;
             savedActionId = nextActionId;
             renderActionSelect();
             return;
         }
-        if (parsedMessage.event !== "sendToPropertyInspector" || !isJsonObject(parsedMessage.payload)) {
+        if (parsedMessage.event !== "sendToPropertyInspector" ||
+            !isJsonObject(parsedMessage.payload)) {
             return;
         }
         const payload = parsedMessage.payload;
-        if (payload.type === "previewState") {
-            if (payload.controller !== "keypad" && payload.controller !== "encoder")
-                return;
-            const appearance = payload.appearance === undefined ? undefined : parsePreviewAppearance(payload.appearance);
-            if (payload.appearance !== undefined && appearance === undefined)
-                return;
-            const controllerChanged = activeController !== payload.controller;
-            activeController = payload.controller;
-            previewAppearance = appearance;
-            renderPreview();
-            if (controllerChanged)
-                renderSettings();
-            return;
-        }
         if (payload.type === "inspectorFeedback") {
             if ((payload.kind !== "success" && payload.kind !== "error") ||
                 typeof payload.message !== "string" ||
@@ -1072,13 +1026,13 @@
         bridgeActions = bridgeState.actions;
         if (bridgeState.controller !== undefined)
             activeController = bridgeState.controller;
-        previewAppearance = bridgeState.preview;
         setBridgeStatus(bridgeState.status, bridgeState.diagnostics);
         renderActionSelect();
     }
     function connectElgatoStreamDeckSocket(port, uuid, registerEvent, _info, actionInfo) {
         const parsedActionInfo = parseJsonObject(actionInfo);
-        const action = typeof parsedActionInfo.action === "string" && parsedActionInfo.action.length > 0
+        const action = typeof parsedActionInfo.action === "string" &&
+            parsedActionInfo.action.length > 0
             ? parsedActionInfo.action
             : DEFAULT_ACTION_UUID;
         const context = uuid;
@@ -1093,9 +1047,10 @@
             // The host may already have closed the superseded inspector socket.
         }
         savedSettings = settingsFromValue(parsedActionInfo.payload);
-        savedActionId = parseInitialActionInfo(actionInfo) || actionIdFromSettings(parsedActionInfo.payload);
+        savedActionId =
+            parseInitialActionInfo(actionInfo) ||
+                actionIdFromSettings(parsedActionInfo.payload);
         bridgeActions = [];
-        previewAppearance = undefined;
         activeController = "keypad";
         setBridgeStatus("connecting");
         renderActionSelect();
@@ -1128,7 +1083,6 @@
                 inspectorConnection = undefined;
                 setBridgeStatus("disconnected");
                 bridgeActions = [];
-                previewAppearance = undefined;
                 renderActionSelect();
                 inspectorSocketReady = false;
                 renderSetupGuideButton();
@@ -1139,7 +1093,6 @@
                 inspectorConnection = undefined;
                 setBridgeStatus("disconnected");
                 bridgeActions = [];
-                previewAppearance = undefined;
                 renderActionSelect();
                 inspectorSocketReady = false;
                 renderSetupGuideButton();

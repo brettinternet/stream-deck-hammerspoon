@@ -49,7 +49,7 @@ type ConnectElgatoStreamDeckSocket = (
   registerEvent: string,
   info: string,
   actionInfo: string,
-)=> void;
+) => void;
 
 type InspectorConnection = {
   socket: StreamDeckSocket;
@@ -62,8 +62,25 @@ type StreamDeckMessage = {
   payload?: unknown;
 };
 
-type BridgeStatus = "disconnected" | "connecting" | "authenticating" | "connected";
-type BridgeDiagnosticCode = "AUTH_REQUIRED" | "AUTH_FAILED" | "VERSION_MISMATCH" | "MALFORMED_MESSAGE" | "UNKNOWN_TYPE" | "INVALID_FIELD" | "INVALID_STATE" | "UNKNOWN_ACTION" | "STALE_INSTANCE" | "CALLBACK_FAILED" | "INTERNAL" | "TOKEN_UNAVAILABLE" | "LAN_KEY_UNAVAILABLE" | "SOCKET_FAILED" | "DISCONNECTED" | "RECONNECTING";
+type BridgeStatus =
+  "disconnected" | "connecting" | "authenticating" | "connected";
+type BridgeDiagnosticCode =
+  | "AUTH_REQUIRED"
+  | "AUTH_FAILED"
+  | "VERSION_MISMATCH"
+  | "MALFORMED_MESSAGE"
+  | "UNKNOWN_TYPE"
+  | "INVALID_FIELD"
+  | "INVALID_STATE"
+  | "UNKNOWN_ACTION"
+  | "STALE_INSTANCE"
+  | "CALLBACK_FAILED"
+  | "INTERNAL"
+  | "TOKEN_UNAVAILABLE"
+  | "LAN_KEY_UNAVAILABLE"
+  | "SOCKET_FAILED"
+  | "DISCONNECTED"
+  | "RECONNECTING";
 type BridgeDiagnostics = {
   port: number;
   retryInMs?: number;
@@ -94,12 +111,6 @@ const actionSelect = documentLike?.getElementById("action-id");
 const actionSearch = documentLike?.getElementById("action-search");
 const actionDescription = documentLike?.getElementById("action-description");
 const actionGestures = documentLike?.getElementById("action-gestures");
-const previewDevice = documentLike?.getElementById("preview-device");
-const previewIcon = documentLike?.getElementById("preview-icon");
-const previewTitle = documentLike?.getElementById("preview-title");
-const previewBadge = documentLike?.getElementById("preview-badge");
-const previewProgress = documentLike?.getElementById("preview-progress");
-const previewValue = documentLike?.getElementById("preview-value");
 const connectionStatus = documentLike?.getElementById("connection-status");
 const connectionDetails = documentLike?.getElementById("connection-details");
 const setupGuideButton = documentLike?.getElementById("setup-guide");
@@ -115,27 +126,13 @@ let bridgeDiagnostics: BridgeDiagnostics | undefined;
 let bridgeActions: BridgeAction[] = [];
 let inspectorSocketReady = false;
 let activeController: SettingsController = "keypad";
-let previewAppearance: PreviewAppearance | undefined;
 let catalogFilter = "";
 let feedbackGeneration = 0;
 const renderedControls = new Map<string, ElementLike>();
 
-
-type ActionCategory = "Applications" | "Audio" | "Productivity" | "Windows" | "System" | "Media";
+type ActionCategory =
+  "Applications" | "Audio" | "Productivity" | "Windows" | "System" | "Media";
 type SettingsController = "keypad" | "encoder";
-type PreviewAppearance = {
-  title: string;
-  state: number;
-  foregroundColor?: string;
-  backgroundColor?: string;
-  progress?: number;
-  badge?: string;
-  value?: string;
-  indicator?: number;
-  icon?:
-    | { kind: "bundled"; name: string }
-    | { kind: "custom"; mediaType: "image/png" | "image/svg+xml"; dataBase64: string };
-};
 
 type SettingsFieldBase = {
   key: string;
@@ -174,7 +171,11 @@ type SelectSettingsField = SettingsFieldBase & {
   refreshable?: boolean;
 };
 
-type SettingsField = TextSettingsField | NumberSettingsField | BooleanSettingsField | SelectSettingsField;
+type SettingsField =
+  | TextSettingsField
+  | NumberSettingsField
+  | BooleanSettingsField
+  | SelectSettingsField;
 
 type BridgeAction = {
   actionId: string;
@@ -186,7 +187,8 @@ type BridgeAction = {
   settingsSchemaVersion?: number;
 };
 const DEFAULT_ACTION_UUID = "com.brettinternet.hammerspoon.action";
-const SETUP_GUIDE_URL = "https://github.com/brettinternet/stream-deck-hammerspoon/blob/main/docs/setup.md";
+const SETUP_GUIDE_URL =
+  "https://github.com/brettinternet/stream-deck-hammerspoon/blob/main/docs/setup.md";
 const DESCRIPTION_MAX_LENGTH = 512;
 const CATEGORY_ORDER: readonly ActionCategory[] = [
   "Applications",
@@ -196,7 +198,6 @@ const CATEGORY_ORDER: readonly ActionCategory[] = [
   "System",
   "Media",
 ];
-
 
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -234,9 +235,10 @@ function setConnectionDetails(message: string): void {
 function diagnosticDetails(): string {
   const code = bridgeDiagnostics?.latest?.code;
   const port = bridgeDiagnostics?.port || 17321;
-  const retry = bridgeDiagnostics?.retryInMs === undefined
-    ? " The plugin will retry automatically."
-    : ` Retrying in about ${Math.max(1, Math.ceil(bridgeDiagnostics.retryInMs / 1000))} seconds.`;
+  const retry =
+    bridgeDiagnostics?.retryInMs === undefined
+      ? " The plugin will retry automatically."
+      : ` Retrying in about ${Math.max(1, Math.ceil(bridgeDiagnostics.retryInMs / 1000))} seconds.`;
   switch (code) {
     case "TOKEN_UNAVAILABLE":
       return "The Hammerspoon token is unavailable. Check ~/.hammerspoon/streamdeck-token, then reload Hammerspoon.";
@@ -270,7 +272,9 @@ function diagnosticDetails(): string {
 }
 
 function renderConnectionDetails(): void {
-  setConnectionDetails(bridgeStatus === "disconnected" ? diagnosticDetails() : "");
+  setConnectionDetails(
+    bridgeStatus === "disconnected" ? diagnosticDetails() : "",
+  );
 }
 function renderSetupGuideButton(): void {
   if (setupGuideButton) {
@@ -298,7 +302,10 @@ function setSettingsStatus(message: string): void {
   }
 }
 
-function setBridgeStatus(status: BridgeStatus, diagnostics?: BridgeDiagnostics): void {
+function setBridgeStatus(
+  status: BridgeStatus,
+  diagnostics?: BridgeDiagnostics,
+): void {
   bridgeStatus = status;
   bridgeDiagnostics = diagnostics;
   if (status === "connected") {
@@ -316,7 +323,11 @@ function actionIdFromSettings(value: unknown): string {
   return typeof settings.actionId === "string" ? settings.actionId : "";
 }
 
-function createOption(value: string, text: string, disabled = false): ElementLike {
+function createOption(
+  value: string,
+  text: string,
+  disabled = false,
+): ElementLike {
   if (!documentLike) {
     throw new Error("Property inspector document is unavailable");
   }
@@ -327,66 +338,18 @@ function createOption(value: string, text: string, disabled = false): ElementLik
   option.disabled = disabled;
   return option;
 }
-function renderPreview(): void {
-  const action = bridgeActions.find((candidate) => candidate.actionId === savedActionId);
-  const appearance = previewAppearance;
-  if (previewDevice) {
-    previewDevice.setAttribute("class", `preview-device ${activeController}`);
-    const background = appearance?.backgroundColor;
-    const foreground = appearance?.foregroundColor;
-    previewDevice.setAttribute(
-      "style",
-      `background:${background && /^#[0-9A-Fa-f]{6}$/.test(background) ? background : "#151515"};`
-        + `color:${foreground && /^#[0-9A-Fa-f]{6}$/.test(foreground) ? foreground : "#ffffff"}`,
-    );
-  }
-  if (previewTitle) {
-    previewTitle.textContent = appearance?.title || action?.name || "Select action";
-  }
-  if (previewValue) {
-    previewValue.textContent = appearance?.value ?? "";
-    if (appearance?.value) previewValue.removeAttribute("hidden");
-    else previewValue.setAttribute("hidden", "");
-  }
-  if (previewBadge) {
-    previewBadge.textContent = appearance?.badge ?? "";
-    if (appearance?.badge) previewBadge.removeAttribute("hidden");
-    else previewBadge.setAttribute("hidden", "");
-  }
-  if (previewProgress) {
-    const progress = appearance?.progress
-      ?? (typeof appearance?.indicator === "number" ? appearance.indicator / 100 : undefined);
-    previewProgress.setAttribute(
-      "style",
-      `width:${typeof progress === "number" && Number.isFinite(progress) ? Math.max(0, Math.min(100, progress * 100)) : 0}%`,
-    );
-  }
-  if (previewIcon) {
-    const icon = appearance?.icon;
-    if (icon?.kind === "custom") {
-      previewIcon.setAttribute("src", `data:${icon.mediaType};base64,${icon.dataBase64}`);
-      previewIcon.removeAttribute("hidden");
-    } else if (icon?.kind === "bundled") {
-      previewIcon.setAttribute("src", icon.name === "hammerspoon" ? "../imgs/plugin.svg" : "../imgs/action.svg");
-      previewIcon.removeAttribute("hidden");
-    } else {
-      previewIcon.removeAttribute("src");
-      previewIcon.setAttribute("hidden", "");
-    }
-  }
-}
 
 function renderActionDescription(): void {
-  const action = bridgeStatus === "connected" && savedActionId
-    ? bridgeActions.find((candidate) => candidate.actionId === savedActionId)
-    : undefined;
+  const action =
+    bridgeStatus === "connected" && savedActionId
+      ? bridgeActions.find((candidate) => candidate.actionId === savedActionId)
+      : undefined;
   if (actionDescription) {
     actionDescription.textContent = action?.description ?? "";
   }
   if (actionGestures) {
     actionGestures.textContent = action?.gesture ?? "";
   }
-  renderPreview();
 }
 
 function renderActionSelect(): void {
@@ -395,17 +358,29 @@ function renderActionSelect(): void {
     return;
   }
 
-  if (bridgeStatus === "connected" && bridgeActions.length === 0 && savedActionId) {
-    actionSelect.replaceChildren(createOption(savedActionId, "Loading actions...", true));
+  if (
+    bridgeStatus === "connected" &&
+    bridgeActions.length === 0 &&
+    savedActionId
+  ) {
+    actionSelect.replaceChildren(
+      createOption(savedActionId, "Loading actions...", true),
+    );
     actionSelect.value = savedActionId;
     actionSelect.disabled = true;
     if (actionSearch) actionSearch.disabled = true;
     renderSettings();
     return;
   }
-  const unavailable = bridgeActions.length === 0 || bridgeStatus !== "connected";
+  const unavailable =
+    bridgeActions.length === 0 || bridgeStatus !== "connected";
   if (unavailable) {
-    actionSelect.replaceChildren(createOption("", bridgeActions.length === 0 ? "No actions available" : "Offline"));
+    actionSelect.replaceChildren(
+      createOption(
+        "",
+        bridgeActions.length === 0 ? "No actions available" : "Offline",
+      ),
+    );
     actionSelect.value = "";
     actionSelect.disabled = true;
     if (actionSearch) actionSearch.disabled = true;
@@ -420,7 +395,9 @@ function renderActionSelect(): void {
     const matches = bridgeActions.filter((action) => {
       if (action.category !== category) return false;
       if (action.actionId === savedActionId || filter.length === 0) return true;
-      return `${action.name} ${action.description ?? ""} ${category}`.toLocaleLowerCase().includes(filter);
+      return `${action.name} ${action.description ?? ""} ${category}`
+        .toLocaleLowerCase()
+        .includes(filter);
     });
     if (matches.length === 0) continue;
     const group = documentLike.createElement("optgroup");
@@ -436,14 +413,19 @@ function renderActionSelect(): void {
     if (
       action.actionId !== savedActionId &&
       filter.length > 0 &&
-      !`${action.name} ${action.description ?? ""}`.toLocaleLowerCase().includes(filter)
-    ) continue;
+      !`${action.name} ${action.description ?? ""}`
+        .toLocaleLowerCase()
+        .includes(filter)
+    )
+      continue;
     children.push(createOption(action.actionId, action.name));
     if (action.actionId === savedActionId) savedActionAvailable = true;
   }
 
   if (savedActionId && !savedActionAvailable) {
-    children.push(createOption(savedActionId, `Unavailable: ${savedActionId}`, true));
+    children.push(
+      createOption(savedActionId, `Unavailable: ${savedActionId}`, true),
+    );
   }
   actionSelect.replaceChildren(...children);
   actionSelect.value = savedActionId;
@@ -451,7 +433,6 @@ function renderActionSelect(): void {
   if (actionSearch) actionSearch.disabled = false;
   renderSettings();
 }
-
 
 function sendSettings(settings: JsonObject): void {
   const connection = inspectorConnection;
@@ -485,13 +466,19 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 function parseSettingsField(value: unknown): SettingsField | undefined {
-  if (!isJsonObject(value) || typeof value.key !== "string" || value.key.length === 0) {
+  if (
+    !isJsonObject(value) ||
+    typeof value.key !== "string" ||
+    value.key.length === 0
+  ) {
     return undefined;
   }
   const base: SettingsFieldBase = {
     key: value.key,
     ...(typeof value.label === "string" ? { label: value.label } : {}),
-    ...(typeof value.required === "boolean" ? { required: value.required } : {}),
+    ...(typeof value.required === "boolean"
+      ? { required: value.required }
+      : {}),
   };
   if ("description" in value) {
     if (!isValidDescription(value.description)) {
@@ -503,7 +490,9 @@ function parseSettingsField(value: unknown): SettingsField | undefined {
     if (
       !Array.isArray(value.controllers) ||
       value.controllers.length < 1 ||
-      value.controllers.some((controller) => controller !== "keypad" && controller !== "encoder") ||
+      value.controllers.some(
+        (controller) => controller !== "keypad" && controller !== "encoder",
+      ) ||
       new Set(value.controllers).size !== value.controllers.length
     ) {
       return undefined;
@@ -515,11 +504,9 @@ function parseSettingsField(value: unknown): SettingsField | undefined {
       !isJsonObject(value.visibleWhen) ||
       typeof value.visibleWhen.key !== "string" ||
       value.visibleWhen.key.length === 0 ||
-      (
-        typeof value.visibleWhen.equals !== "string" &&
+      (typeof value.visibleWhen.equals !== "string" &&
         typeof value.visibleWhen.equals !== "boolean" &&
-        !isFiniteNumber(value.visibleWhen.equals)
-      )
+        !isFiniteNumber(value.visibleWhen.equals))
     ) {
       return undefined;
     }
@@ -537,8 +524,11 @@ function parseSettingsField(value: unknown): SettingsField | undefined {
   if (value.type === "text") {
     if (
       ("default" in value && typeof value.default !== "string") ||
-      ("minLength" in value && (!Number.isInteger(value.minLength) || (value.minLength as number) < 0)) ||
-      ("maxLength" in value && (!Number.isInteger(value.maxLength) || (value.maxLength as number) < 0))
+      ("minLength" in value &&
+        (!Number.isInteger(value.minLength) ||
+          (value.minLength as number) < 0)) ||
+      ("maxLength" in value &&
+        (!Number.isInteger(value.maxLength) || (value.maxLength as number) < 0))
     ) {
       return undefined;
     }
@@ -546,8 +536,12 @@ function parseSettingsField(value: unknown): SettingsField | undefined {
       ...base,
       type: "text",
       ...(typeof value.default === "string" ? { default: value.default } : {}),
-      ...(typeof value.minLength === "number" ? { minLength: value.minLength } : {}),
-      ...(typeof value.maxLength === "number" ? { maxLength: value.maxLength } : {}),
+      ...(typeof value.minLength === "number"
+        ? { minLength: value.minLength }
+        : {}),
+      ...(typeof value.maxLength === "number"
+        ? { maxLength: value.maxLength }
+        : {}),
     };
   }
   if (value.type === "number") {
@@ -555,7 +549,8 @@ function parseSettingsField(value: unknown): SettingsField | undefined {
       ("default" in value && !isFiniteNumber(value.default)) ||
       ("min" in value && !isFiniteNumber(value.min)) ||
       ("max" in value && !isFiniteNumber(value.max)) ||
-      ("step" in value && (!isFiniteNumber(value.step) || (value.step as number) <= 0))
+      ("step" in value &&
+        (!isFiniteNumber(value.step) || (value.step as number) <= 0))
     ) {
       return undefined;
     }
@@ -581,7 +576,11 @@ function parseSettingsField(value: unknown): SettingsField | undefined {
   if (value.type === "select" && Array.isArray(value.options)) {
     const options: Array<{ value: string; label: string }> = [];
     for (const option of value.options) {
-      if (!isJsonObject(option) || typeof option.value !== "string" || typeof option.label !== "string") {
+      if (
+        !isJsonObject(option) ||
+        typeof option.value !== "string" ||
+        typeof option.label !== "string"
+      ) {
         return undefined;
       }
       options.push({ value: option.value, label: option.label });
@@ -589,7 +588,8 @@ function parseSettingsField(value: unknown): SettingsField | undefined {
     if (
       options.length === 0 ||
       ("default" in value && typeof value.default !== "string") ||
-      (typeof value.default === "string" && !options.some((option) => option.value === value.default)) ||
+      (typeof value.default === "string" &&
+        !options.some((option) => option.value === value.default)) ||
       ("refreshable" in value && typeof value.refreshable !== "boolean")
     ) {
       return undefined;
@@ -599,44 +599,70 @@ function parseSettingsField(value: unknown): SettingsField | undefined {
       type: "select",
       options,
       ...(typeof value.default === "string" ? { default: value.default } : {}),
-      ...(typeof value.refreshable === "boolean" ? { refreshable: value.refreshable } : {}),
+      ...(typeof value.refreshable === "boolean"
+        ? { refreshable: value.refreshable }
+        : {}),
     };
   }
   return undefined;
 }
 
-function fieldsForAction(action: BridgeAction): { fields: SettingsField[]; unsupported?: string } {
-  if (action.settingsSchemaVersion === undefined && action.settingsSchema === undefined) {
+function fieldsForAction(action: BridgeAction): {
+  fields: SettingsField[];
+  unsupported?: string;
+} {
+  if (
+    action.settingsSchemaVersion === undefined &&
+    action.settingsSchema === undefined
+  ) {
     return { fields: [] };
   }
   if (action.settingsSchemaVersion !== 1) {
-    return { fields: [], unsupported: "This settings schema version is not editable." };
+    return {
+      fields: [],
+      unsupported: "This settings schema version is not editable.",
+    };
   }
   if (!Array.isArray(action.settingsSchema)) {
-    return { fields: [], unsupported: "This action has an invalid settings schema." };
+    return {
+      fields: [],
+      unsupported: "This action has an invalid settings schema.",
+    };
   }
   const fields: SettingsField[] = [];
   const keys = new Set<string>();
   for (let index = 0; index < action.settingsSchema.length; index += 1) {
     const field = parseSettingsField(action.settingsSchema[index]);
     if (!field) {
-      return { fields: [], unsupported: `Unsupported settings field at position ${index + 1}.` };
+      return {
+        fields: [],
+        unsupported: `Unsupported settings field at position ${index + 1}.`,
+      };
     }
     if (keys.has(field.key)) {
-      return { fields: [], unsupported: `Duplicate settings field "${field.key}" cannot be edited.` };
+      return {
+        fields: [],
+        unsupported: `Duplicate settings field "${field.key}" cannot be edited.`,
+      };
     }
     keys.add(field.key);
     fields.push(field);
   }
   for (const field of fields) {
     if (field.visibleWhen && !keys.has(field.visibleWhen.key)) {
-      return { fields: [], unsupported: `Settings field "${field.key}" depends on an unknown field.` };
+      return {
+        fields: [],
+        unsupported: `Settings field "${field.key}" depends on an unknown field.`,
+      };
     }
   }
   return { fields };
 }
 
-function numberIsValid(field: NumberSettingsField, value: unknown): value is number {
+function numberIsValid(
+  field: NumberSettingsField,
+  value: unknown,
+): value is number {
   if (!isFiniteNumber(value)) {
     return false;
   }
@@ -668,7 +694,8 @@ function fieldValueIsValid(field: SettingsField, value: unknown): boolean {
   if (field.type === "text") {
     return (
       typeof value === "string" &&
-      (field.minLength === undefined || stringLength(value) >= field.minLength) &&
+      (field.minLength === undefined ||
+        stringLength(value) >= field.minLength) &&
       (field.maxLength === undefined || stringLength(value) <= field.maxLength)
     );
   }
@@ -678,9 +705,12 @@ function fieldValueIsValid(field: SettingsField, value: unknown): boolean {
   if (field.type === "boolean") {
     return typeof value === "boolean";
   }
-  return typeof value === "string" && (
-    field.options.some((option) => option.value === value) ||
-    (field.refreshable === true && value.length > 0 && stringLength(value) <= 256)
+  return (
+    typeof value === "string" &&
+    (field.options.some((option) => option.value === value) ||
+      (field.refreshable === true &&
+        value.length > 0 &&
+        stringLength(value) <= 256))
   );
 }
 
@@ -697,7 +727,10 @@ function defaultFieldValue(field: SettingsField): string | number | boolean {
   return field.type === "boolean" ? false : "";
 }
 
-function validateSettings(fields: SettingsField[], candidate: JsonObject): { settings?: JsonObject; errors: string[] } {
+function validateSettings(
+  fields: SettingsField[],
+  candidate: JsonObject,
+): { settings?: JsonObject; errors: string[] } {
   const normalized: JsonObject = { ...candidate };
   const errors: string[] = [];
   for (const field of fields) {
@@ -718,14 +751,19 @@ function validateSettings(fields: SettingsField[], candidate: JsonObject): { set
   }
   return errors.length > 0 ? { errors } : { settings: normalized, errors: [] };
 }
-function fieldIsVisible(field: SettingsField, fields: SettingsField[]): boolean {
+function fieldIsVisible(
+  field: SettingsField,
+  fields: SettingsField[],
+): boolean {
   if (field.controllers && !field.controllers.includes(activeController)) {
     return false;
   }
   if (!field.visibleWhen) {
     return true;
   }
-  const dependency = fields.find((candidate) => candidate.key === field.visibleWhen?.key);
+  const dependency = fields.find(
+    (candidate) => candidate.key === field.visibleWhen?.key,
+  );
   if (!dependency) {
     return false;
   }
@@ -754,7 +792,9 @@ function withRefreshableOptionLabels(
   const labelsValue = settings.__optionLabels;
   const labels: JsonObject = isJsonObject(labelsValue) ? labelsValue : {};
   const actionLabelsValue = labels[actionId];
-  let actionLabels: JsonObject = isJsonObject(actionLabelsValue) ? actionLabelsValue : {};
+  let actionLabels: JsonObject = isJsonObject(actionLabelsValue)
+    ? actionLabelsValue
+    : {};
   let changed = false;
   for (const field of fields) {
     if (field.type !== "select" || !field.refreshable) continue;
@@ -764,7 +804,11 @@ function withRefreshableOptionLabels(
     if (!selected) continue;
     const fieldLabelsValue = actionLabels[field.key];
     const fieldLabels = isJsonObject(fieldLabelsValue) ? fieldLabelsValue : {};
-    if (fieldLabels[selected.value] === selected.label && Object.keys(fieldLabels).length === 1) continue;
+    if (
+      fieldLabels[selected.value] === selected.label &&
+      Object.keys(fieldLabels).length === 1
+    )
+      continue;
     actionLabels = {
       ...actionLabels,
       [field.key]: { [selected.value]: selected.label },
@@ -784,15 +828,16 @@ function withRefreshableOptionLabels(
 function requestOptionsRefresh(): void {
   const connection = inspectorConnection;
   if (!connection || !connection.context) return;
-  connection.socket.send(JSON.stringify({
-    action: connection.action,
-    event: "sendToPlugin",
-    context: connection.context,
-    payload: { type: "refreshActions" },
-  }));
+  connection.socket.send(
+    JSON.stringify({
+      action: connection.action,
+      event: "sendToPlugin",
+      context: connection.context,
+      payload: { type: "refreshActions" },
+    }),
+  );
   setSettingsStatus("Refreshing system options…");
 }
-
 
 function renderSettings(): void {
   renderActionDescription();
@@ -810,13 +855,20 @@ function renderSettings(): void {
     setSettingsStatus("Settings are unavailable while disconnected.");
     return;
   }
-  const action = bridgeActions.find((candidate) => candidate.actionId === savedActionId);
+  const action = bridgeActions.find(
+    (candidate) => candidate.actionId === savedActionId,
+  );
   if (!action) {
     setSettingsStatus(`Action unavailable: ${savedActionId}`);
     return;
   }
-  if (action.settingsSchemaVersion === undefined && action.settingsSchema !== undefined) {
-    setSettingsStatus("Legacy settings schemas are opaque and cannot be edited.");
+  if (
+    action.settingsSchemaVersion === undefined &&
+    action.settingsSchema !== undefined
+  ) {
+    setSettingsStatus(
+      "Legacy settings schemas are opaque and cannot be edited.",
+    );
     return;
   }
   const schema = fieldsForAction(action);
@@ -828,7 +880,11 @@ function renderSettings(): void {
     setSettingsStatus(schema.unsupported);
     return;
   }
-  const labeledSettings = withRefreshableOptionLabels(savedSettings, savedActionId, schema.fields);
+  const labeledSettings = withRefreshableOptionLabels(
+    savedSettings,
+    savedActionId,
+    schema.fields,
+  );
   if (labeledSettings !== savedSettings) {
     savedSettings = labeledSettings;
     sendSettings(savedSettings);
@@ -848,14 +904,23 @@ function renderSettings(): void {
     const wrapper = documentLike.createElement("div");
     wrapper.setAttribute("class", "field-row");
 
-    const control = documentLike.createElement(field.type === "select" ? "select" : "input");
+    const control = documentLike.createElement(
+      field.type === "select" ? "select" : "input",
+    );
     if (field.type !== "select") {
       control.type = field.type === "boolean" ? "checkbox" : field.type;
     }
     control.setAttribute("aria-label", field.label ?? field.key);
-    const currentValue = hasSetting(savedSettings, field.key) ? savedSettings[field.key] : defaultFieldValue(field);
-    const displayValue = fieldValueIsValid(field, currentValue) ? currentValue : defaultFieldValue(field);
-    if (hasSetting(savedSettings, field.key) && !fieldValueIsValid(field, currentValue)) {
+    const currentValue = hasSetting(savedSettings, field.key)
+      ? savedSettings[field.key]
+      : defaultFieldValue(field);
+    const displayValue = fieldValueIsValid(field, currentValue)
+      ? currentValue
+      : defaultFieldValue(field);
+    if (
+      hasSetting(savedSettings, field.key) &&
+      !fieldValueIsValid(field, currentValue)
+    ) {
       errors.push(`${field.label ?? field.key} has an invalid saved value.`);
     }
     if (field.type === "boolean") {
@@ -872,16 +937,20 @@ function renderSettings(): void {
       if (field.max !== undefined) control.max = String(field.max);
       if (field.step !== undefined) control.step = String(field.step);
     } else if (field.type === "select") {
-      const options = field.options.map((option) => createOption(option.value, option.label));
+      const options = field.options.map((option) =>
+        createOption(option.value, option.label),
+      );
       if (
         field.refreshable &&
         typeof currentValue === "string" &&
         !field.options.some((option) => option.value === currentValue)
       ) {
-        options.push(createOption(
-          currentValue,
-          `Unavailable — ${savedOptionLabel(field.key, currentValue) ?? currentValue}`,
-        ));
+        options.push(
+          createOption(
+            currentValue,
+            `Unavailable — ${savedOptionLabel(field.key, currentValue) ?? currentValue}`,
+          ),
+        );
       }
       control.replaceChildren(...options);
       control.value = String(displayValue);
@@ -914,7 +983,10 @@ function renderSettings(): void {
     reset.setAttribute("class", "field-action reset-field");
     reset.setAttribute("aria-label", `Reset ${field.label ?? field.key}`);
     reset.addEventListener("click", () => {
-      const candidate = { ...savedSettings, [field.key]: defaultFieldValue(field) };
+      const candidate = {
+        ...savedSettings,
+        [field.key]: defaultFieldValue(field),
+      };
       const result = validateSettings(schema.fields, candidate);
       if (!result.settings) {
         setSettingsStatus(result.errors.join(" "));
@@ -953,14 +1025,19 @@ function renderSettings(): void {
     }
     section.appendChild(wrapper);
   }
-  setSettingsStatus(errors.length > 0 ? errors.join(" ") : "Settings are ready.");
+  setSettingsStatus(
+    errors.length > 0 ? errors.join(" ") : "Settings are ready.",
+  );
 }
 
 function saveSettings(fields: SettingsField[]): boolean {
   if (!inspectorConnection || bridgeStatus !== "connected" || !actionSelect) {
     return false;
   }
-  const candidate: JsonObject = { ...savedSettings, actionId: actionSelect.value };
+  const candidate: JsonObject = {
+    ...savedSettings,
+    actionId: actionSelect.value,
+  };
   for (const field of fields) {
     const control = renderedControls.get(field.key);
     if (!control) continue;
@@ -978,7 +1055,11 @@ function saveSettings(fields: SettingsField[]): boolean {
     setSettingsStatus(result.errors.join(" "));
     return false;
   }
-  savedSettings = withRefreshableOptionLabels(result.settings, actionSelect.value, fields);
+  savedSettings = withRefreshableOptionLabels(
+    result.settings,
+    actionSelect.value,
+    fields,
+  );
   savedActionId = actionSelect.value;
   sendSettings(savedSettings);
   setSettingsStatus("Settings saved.");
@@ -986,7 +1067,9 @@ function saveSettings(fields: SettingsField[]): boolean {
 }
 
 function resetActionSettings(): void {
-  const action = bridgeActions.find((candidate) => candidate.actionId === savedActionId);
+  const action = bridgeActions.find(
+    (candidate) => candidate.actionId === savedActionId,
+  );
   if (!action) return;
   const schema = fieldsForAction(action);
   if (schema.unsupported) {
@@ -1002,7 +1085,11 @@ function resetActionSettings(): void {
     setSettingsStatus(result.errors.join(" "));
     return;
   }
-  savedSettings = withRefreshableOptionLabels(result.settings, savedActionId, schema.fields);
+  savedSettings = withRefreshableOptionLabels(
+    result.settings,
+    savedActionId,
+    schema.fields,
+  );
   sendSettings(savedSettings);
   renderSettings();
   setSettingsStatus("Action settings reset.");
@@ -1013,10 +1100,15 @@ function saveActionId(): void {
     return;
   }
   const selectedActionId = actionSelect.value;
-  const action = bridgeActions.find((candidate) => candidate.actionId === selectedActionId);
+  const action = bridgeActions.find(
+    (candidate) => candidate.actionId === selectedActionId,
+  );
   const fields = action ? fieldsForAction(action).fields : [];
   const candidate = { ...savedSettings, actionId: selectedActionId };
-  const result = action && !fieldsForAction(action).unsupported ? validateSettings(fields, candidate) : { settings: candidate, errors: [] };
+  const result =
+    action && !fieldsForAction(action).unsupported
+      ? validateSettings(fields, candidate)
+      : { settings: candidate, errors: [] };
   if (!result.settings) {
     actionSelect.value = savedActionId;
     setSettingsStatus(result.errors.join(" "));
@@ -1024,91 +1116,56 @@ function saveActionId(): void {
     return;
   }
   savedActionId = selectedActionId;
-  previewAppearance = undefined;
-  savedSettings = withRefreshableOptionLabels(result.settings, savedActionId, fields);
+  savedSettings = withRefreshableOptionLabels(
+    result.settings,
+    savedActionId,
+    fields,
+  );
   renderSettings();
   sendSettings(savedSettings);
 }
 
 function parseBridgeDiagnostics(value: unknown): BridgeDiagnostics | undefined {
-  if (!isJsonObject(value) || value.version !== 1 || value.status !== "disconnected") {
-    return undefined;
-  }
-  const port = typeof value.port === "number" && Number.isInteger(value.port) && value.port > 0
-    ? value.port
-    : 17321;
-  const retryInMs = typeof value.retryInMs === "number"
-    && Number.isInteger(value.retryInMs)
-    && value.retryInMs >= 0
-    ? value.retryInMs
-    : undefined;
-  const latest = isJsonObject(value.latest) && typeof value.latest.code === "string"
-    && BRIDGE_DIAGNOSTIC_CODES.includes(value.latest.code as BridgeDiagnosticCode)
-    ? { code: value.latest.code as BridgeDiagnosticCode }
-    : undefined;
-  return { port, ...(retryInMs === undefined ? {} : { retryInMs }), ...(latest === undefined ? {} : { latest }) };
-}
-
-function parsePreviewAppearance(value: unknown): PreviewAppearance | undefined {
-  if (!isJsonObject(value) || typeof value.title !== "string" || (value.state !== 0 && value.state !== 1)) {
-    return undefined;
-  }
   if (
-    ("foregroundColor" in value && (typeof value.foregroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(value.foregroundColor))) ||
-    ("backgroundColor" in value && (typeof value.backgroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(value.backgroundColor))) ||
-    ("progress" in value && (!isFiniteNumber(value.progress) || value.progress < 0 || value.progress > 1)) ||
-    ("badge" in value && (typeof value.badge !== "string" || stringLength(value.badge) > 4)) ||
-    ("value" in value && typeof value.value !== "string") ||
-    ("indicator" in value && (!isFiniteNumber(value.indicator) || value.indicator < 0 || value.indicator > 100))
+    !isJsonObject(value) ||
+    value.version !== 1 ||
+    value.status !== "disconnected"
   ) {
     return undefined;
   }
-  let icon: PreviewAppearance["icon"];
-  if ("icon" in value) {
-    if (!isJsonObject(value.icon)) return undefined;
-    if (
-      value.icon.kind === "bundled" &&
-      typeof value.icon.name === "string" &&
-      /^[a-z][a-z0-9-]{0,31}$/.test(value.icon.name)
-    ) {
-      icon = { kind: "bundled", name: value.icon.name };
-    } else if (
-      value.icon.kind === "custom" &&
-      (value.icon.mediaType === "image/png" || value.icon.mediaType === "image/svg+xml") &&
-      typeof value.icon.dataBase64 === "string" &&
-      value.icon.dataBase64.length > 0 &&
-      value.icon.dataBase64.length <= 196608 &&
-      /^[A-Za-z0-9+/]*={0,2}$/.test(value.icon.dataBase64)
-    ) {
-      icon = {
-        kind: "custom",
-        mediaType: value.icon.mediaType,
-        dataBase64: value.icon.dataBase64,
-      };
-    } else {
-      return undefined;
-    }
-  }
+  const port =
+    typeof value.port === "number" &&
+    Number.isInteger(value.port) &&
+    value.port > 0
+      ? value.port
+      : 17321;
+  const retryInMs =
+    typeof value.retryInMs === "number" &&
+    Number.isInteger(value.retryInMs) &&
+    value.retryInMs >= 0
+      ? value.retryInMs
+      : undefined;
+  const latest =
+    isJsonObject(value.latest) &&
+    typeof value.latest.code === "string" &&
+    BRIDGE_DIAGNOSTIC_CODES.includes(value.latest.code as BridgeDiagnosticCode)
+      ? { code: value.latest.code as BridgeDiagnosticCode }
+      : undefined;
   return {
-    title: value.title,
-    state: value.state,
-    ...(typeof value.foregroundColor === "string" ? { foregroundColor: value.foregroundColor } : {}),
-    ...(typeof value.backgroundColor === "string" ? { backgroundColor: value.backgroundColor } : {}),
-    ...(typeof value.progress === "number" ? { progress: value.progress } : {}),
-    ...(typeof value.badge === "string" ? { badge: value.badge } : {}),
-    ...(typeof value.value === "string" ? { value: value.value } : {}),
-    ...(typeof value.indicator === "number" ? { indicator: value.indicator } : {}),
-    ...(icon === undefined ? {} : { icon }),
+    port,
+    ...(retryInMs === undefined ? {} : { retryInMs }),
+    ...(latest === undefined ? {} : { latest }),
   };
 }
 
-function parseBridgeState(value: unknown): {
-  status: BridgeStatus;
-  actions: BridgeAction[];
-  diagnostics?: BridgeDiagnostics;
-  controller?: SettingsController;
-  preview?: PreviewAppearance;
-} | undefined {
+function parseBridgeState(value: unknown):
+  | {
+      status: BridgeStatus;
+      actions: BridgeAction[];
+      diagnostics?: BridgeDiagnostics;
+      controller?: SettingsController;
+    }
+  | undefined {
   if (!isJsonObject(value) || value.type !== "bridgeState") {
     return undefined;
   }
@@ -1137,7 +1194,8 @@ function parseBridgeState(value: unknown): {
       typeof item.name !== "string" ||
       item.name.trim().length === 0 ||
       ("description" in item && !isValidDescription(item.description)) ||
-      ("category" in item && !CATEGORY_ORDER.includes(item.category as ActionCategory)) ||
+      ("category" in item &&
+        !CATEGORY_ORDER.includes(item.category as ActionCategory)) ||
       ("gesture" in item && !isValidDescription(item.gesture)) ||
       ("settingsSchema" in item && !Array.isArray(item.settingsSchema)) ||
       ("settingsSchemaVersion" in item &&
@@ -1148,7 +1206,10 @@ function parseBridgeState(value: unknown): {
     ) {
       return undefined;
     }
-    if (item.settingsSchemaVersion !== undefined && item.settingsSchemaVersion !== 1) {
+    if (
+      item.settingsSchemaVersion !== undefined &&
+      item.settingsSchemaVersion !== 1
+    ) {
       continue;
     }
     if (actionIds.has(item.actionId)) {
@@ -1158,28 +1219,35 @@ function parseBridgeState(value: unknown): {
     actions.push({
       actionId: item.actionId,
       name: item.name,
-      ...("description" in item ? { description: item.description as string } : {}),
-      ...("category" in item ? { category: item.category as ActionCategory } : {}),
+      ...("description" in item
+        ? { description: item.description as string }
+        : {}),
+      ...("category" in item
+        ? { category: item.category as ActionCategory }
+        : {}),
       ...("gesture" in item ? { gesture: item.gesture as string } : {}),
-      ...(Array.isArray(item.settingsSchema) ? { settingsSchema: item.settingsSchema } : {}),
+      ...(Array.isArray(item.settingsSchema)
+        ? { settingsSchema: item.settingsSchema }
+        : {}),
       ...(typeof item.settingsSchemaVersion === "number"
         ? { settingsSchemaVersion: item.settingsSchemaVersion }
         : {}),
     });
   }
 
-  const diagnostics = status === "disconnected" ? parseBridgeDiagnostics(value.diagnostics) : undefined;
-  const controller = value.controller === "keypad" || value.controller === "encoder"
-    ? value.controller
-    : undefined;
-  const preview = value.preview === undefined ? undefined : parsePreviewAppearance(value.preview);
-  if (value.preview !== undefined && preview === undefined) return undefined;
+  const diagnostics =
+    status === "disconnected"
+      ? parseBridgeDiagnostics(value.diagnostics)
+      : undefined;
+  const controller =
+    value.controller === "keypad" || value.controller === "encoder"
+      ? value.controller
+      : undefined;
   return {
     status,
     actions,
     ...(diagnostics === undefined ? {} : { diagnostics }),
     ...(controller === undefined ? {} : { controller }),
-    ...(preview === undefined ? {} : { preview }),
   };
 }
 
@@ -1192,28 +1260,19 @@ function handleStreamDeckMessage(message: { data: unknown }): void {
   if (parsedMessage.event === "didReceiveSettings") {
     const nextSettings = settingsFromValue(parsedMessage.payload);
     const nextActionId = actionIdFromSettings(parsedMessage.payload);
-    if (nextActionId !== savedActionId) previewAppearance = undefined;
     savedSettings = nextSettings;
     savedActionId = nextActionId;
     renderActionSelect();
     return;
   }
 
-  if (parsedMessage.event !== "sendToPropertyInspector" || !isJsonObject(parsedMessage.payload)) {
+  if (
+    parsedMessage.event !== "sendToPropertyInspector" ||
+    !isJsonObject(parsedMessage.payload)
+  ) {
     return;
   }
   const payload = parsedMessage.payload;
-  if (payload.type === "previewState") {
-    if (payload.controller !== "keypad" && payload.controller !== "encoder") return;
-    const appearance = payload.appearance === undefined ? undefined : parsePreviewAppearance(payload.appearance);
-    if (payload.appearance !== undefined && appearance === undefined) return;
-    const controllerChanged = activeController !== payload.controller;
-    activeController = payload.controller;
-    previewAppearance = appearance;
-    renderPreview();
-    if (controllerChanged) renderSettings();
-    return;
-  }
   if (payload.type === "inspectorFeedback") {
     if (
       (payload.kind !== "success" && payload.kind !== "error") ||
@@ -1241,8 +1300,8 @@ function handleStreamDeckMessage(message: { data: unknown }): void {
   const bridgeState = parseBridgeState(payload);
   if (!bridgeState) return;
   bridgeActions = bridgeState.actions;
-  if (bridgeState.controller !== undefined) activeController = bridgeState.controller;
-  previewAppearance = bridgeState.preview;
+  if (bridgeState.controller !== undefined)
+    activeController = bridgeState.controller;
   setBridgeStatus(bridgeState.status, bridgeState.diagnostics);
   renderActionSelect();
 }
@@ -1255,9 +1314,11 @@ function connectElgatoStreamDeckSocket(
   actionInfo: string,
 ): void {
   const parsedActionInfo = parseJsonObject(actionInfo);
-  const action = typeof parsedActionInfo.action === "string" && parsedActionInfo.action.length > 0
-    ? parsedActionInfo.action
-    : DEFAULT_ACTION_UUID;
+  const action =
+    typeof parsedActionInfo.action === "string" &&
+    parsedActionInfo.action.length > 0
+      ? parsedActionInfo.action
+      : DEFAULT_ACTION_UUID;
   const context = uuid;
   const previousConnection = inspectorConnection;
   inspectorConnection = undefined;
@@ -1269,9 +1330,10 @@ function connectElgatoStreamDeckSocket(
     // The host may already have closed the superseded inspector socket.
   }
   savedSettings = settingsFromValue(parsedActionInfo.payload);
-  savedActionId = parseInitialActionInfo(actionInfo) || actionIdFromSettings(parsedActionInfo.payload);
+  savedActionId =
+    parseInitialActionInfo(actionInfo) ||
+    actionIdFromSettings(parsedActionInfo.payload);
   bridgeActions = [];
-  previewAppearance = undefined;
   activeController = "keypad";
   setBridgeStatus("connecting");
   renderActionSelect();
@@ -1306,7 +1368,6 @@ function connectElgatoStreamDeckSocket(
       inspectorConnection = undefined;
       setBridgeStatus("disconnected");
       bridgeActions = [];
-      previewAppearance = undefined;
       renderActionSelect();
       inspectorSocketReady = false;
       renderSetupGuideButton();
@@ -1317,7 +1378,6 @@ function connectElgatoStreamDeckSocket(
       inspectorConnection = undefined;
       setBridgeStatus("disconnected");
       bridgeActions = [];
-      previewAppearance = undefined;
       renderActionSelect();
       inspectorSocketReady = false;
       renderSetupGuideButton();

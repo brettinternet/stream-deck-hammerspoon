@@ -13,7 +13,8 @@ import {
   type HammerspoonActionSettings,
 } from "../src/actions/hammerspoon-action";
 
-type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+type JsonValue =
+  null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 type ActionCalls = {
   titles: string[];
@@ -22,7 +23,12 @@ type ActionCalls = {
   alerts: number;
 };
 class FakeAction {
-  readonly calls: ActionCalls = { titles: [], states: [], images: [], alerts: 0 };
+  readonly calls: ActionCalls = {
+    titles: [],
+    states: [],
+    images: [],
+    alerts: 0,
+  };
   rejectTitle = false;
   readonly feedbacks: Array<Record<string, unknown>> = [];
   readonly imageStates: Array<number | undefined> = [];
@@ -39,7 +45,10 @@ class FakeAction {
   constructor(
     readonly id: string,
     private readonly key = true,
-    context?: { controllerType?: unknown; device?: { type?: unknown; size?: { columns?: unknown; rows?: unknown } } },
+    context?: {
+      controllerType?: unknown;
+      device?: { type?: unknown; size?: { columns?: unknown; rows?: unknown } };
+    },
   ) {
     Object.assign(this, context);
   }
@@ -72,7 +81,10 @@ class FakeAction {
     if (this.imageDelay) {
       await this.imageDelay;
     }
-    if ((this.rejectImage && image !== undefined) || (image === undefined && this.rejectImageClear)) {
+    if (
+      (this.rejectImage && image !== undefined) ||
+      (image === undefined && this.rejectImageClear)
+    ) {
       throw new Error("setImage failed");
     }
   }
@@ -104,7 +116,8 @@ class FakeAction {
 }
 
 class FakeBridge extends EventEmitter {
-  status: "disconnected" | "connecting" | "authenticating" | "connected" = "disconnected";
+  status: "disconnected" | "connecting" | "authenticating" | "connected" =
+    "disconnected";
   diagnostics: BridgeDiagnosticStatus = {
     version: 1,
     status: "disconnected",
@@ -118,9 +131,13 @@ class FakeBridge extends EventEmitter {
   readonly keyDowns: Array<[string, string, HammerspoonActionSettings]> = [];
   readonly keyUps: Array<[string, string, HammerspoonActionSettings]> = [];
   readonly dialDowns: Array<[string, string, HammerspoonActionSettings]> = [];
-  readonly dialRotates: Array<[string, string, number, boolean, HammerspoonActionSettings]> = [];
+  readonly dialRotates: Array<
+    [string, string, number, boolean, HammerspoonActionSettings]
+  > = [];
   readonly dialUps: Array<[string, string, HammerspoonActionSettings]> = [];
-  readonly touchTaps: Array<[string, string, boolean, [number, number], HammerspoonActionSettings]> = [];
+  readonly touchTaps: Array<
+    [string, string, boolean, [number, number], HammerspoonActionSettings]
+  > = [];
 
   upsertInstance(input: Record<string, unknown>): void {
     this.upserts.push(input);
@@ -130,15 +147,27 @@ class FakeBridge extends EventEmitter {
     this.removals.push([instanceId, actionId]);
   }
 
-  keyDown(instanceId: string, actionId: string, settings: HammerspoonActionSettings): void {
+  keyDown(
+    instanceId: string,
+    actionId: string,
+    settings: HammerspoonActionSettings,
+  ): void {
     this.keyDowns.push([instanceId, actionId, settings]);
   }
 
-  keyUp(instanceId: string, actionId: string, settings: HammerspoonActionSettings): void {
+  keyUp(
+    instanceId: string,
+    actionId: string,
+    settings: HammerspoonActionSettings,
+  ): void {
     this.keyUps.push([instanceId, actionId, settings]);
   }
 
-  dialDown(instanceId: string, actionId: string, settings: HammerspoonActionSettings): void {
+  dialDown(
+    instanceId: string,
+    actionId: string,
+    settings: HammerspoonActionSettings,
+  ): void {
     this.dialDowns.push([instanceId, actionId, settings]);
   }
 
@@ -152,7 +181,11 @@ class FakeBridge extends EventEmitter {
     this.dialRotates.push([instanceId, actionId, ticks, pressed, settings]);
   }
 
-  dialUp(instanceId: string, actionId: string, settings: HammerspoonActionSettings): void {
+  dialUp(
+    instanceId: string,
+    actionId: string,
+    settings: HammerspoonActionSettings,
+  ): void {
     this.dialUps.push([instanceId, actionId, settings]);
   }
 
@@ -165,7 +198,6 @@ class FakeBridge extends EventEmitter {
   ): void {
     this.touchTaps.push([instanceId, actionId, hold, tapPos, settings]);
   }
-
 }
 
 const propertyInspectorMessages: unknown[] = [];
@@ -251,7 +283,8 @@ class FeedbackTimers {
   };
 
   runNext(): void {
-    const callback = this.callbacks.values().next().value as (() => void) | undefined;
+    const callback = this.callbacks.values().next().value as
+      (() => void) | undefined;
     if (!callback) return;
     const id = this.callbacks.keys().next().value as number;
     this.callbacks.delete(id);
@@ -290,7 +323,6 @@ describe("HammerspoonAction", () => {
     expect(action.manifestId).toBe(HAMMERSPOON_ACTION_UUID);
   });
   test("subscribe is idempotent and listens for status and actions", async () => {
-
     propertyInspectorMessages.length = 0;
     const bridge = new FakeBridge();
     const adapter = makeAction(bridge);
@@ -414,9 +446,16 @@ describe("HammerspoonAction", () => {
     const configured = new FakeAction("configured");
 
     await adapter.onWillAppear(appear(missing));
-    expect(missing.calls).toEqual({ titles: ["Select action"], states: [0], images: [], alerts: 0 });
+    expect(missing.calls).toEqual({
+      titles: ["Select action"],
+      states: [0],
+      images: [],
+      alerts: 0,
+    });
 
-    await adapter.onWillAppear(appear(configured, { actionId: "action.offline" }));
+    await adapter.onWillAppear(
+      appear(configured, { actionId: "action.offline" }),
+    );
     expect(configured.calls).toEqual({
       titles: ["Offline"],
       states: [0],
@@ -424,11 +463,17 @@ describe("HammerspoonAction", () => {
       alerts: 0,
     });
     expect(bridge.upserts).toEqual([
-      { instanceId: "configured", actionId: "action.offline", settings: { actionId: "action.offline" } },
+      {
+        instanceId: "configured",
+        actionId: "action.offline",
+        settings: { actionId: "action.offline" },
+      },
     ]);
     const unsynchronized = new FakeAction("unsynchronized");
     bridge.status = "connected";
-    await adapter.onWillAppear(appear(unsynchronized, { actionId: "action.unsynchronized" }));
+    await adapter.onWillAppear(
+      appear(unsynchronized, { actionId: "action.unsynchronized" }),
+    );
     expect(unsynchronized.calls).toEqual({
       titles: ["Syncing"],
       states: [0],
@@ -436,14 +481,17 @@ describe("HammerspoonAction", () => {
       alerts: 0,
     });
     expect(bridge.upserts).toEqual([
-      { instanceId: "configured", actionId: "action.offline", settings: { actionId: "action.offline" } },
+      {
+        instanceId: "configured",
+        actionId: "action.offline",
+        settings: { actionId: "action.offline" },
+      },
       {
         instanceId: "unsynchronized",
         actionId: "action.unsynchronized",
         settings: { actionId: "action.unsynchronized" },
       },
     ]);
-
 
     adapter.subscribe();
     bridge.status = "connected";
@@ -464,14 +512,17 @@ describe("HammerspoonAction", () => {
     });
   });
 
-
   test("handles appearance, settings, and disappearance transitions without stale actions", async () => {
     const bridge = new FakeBridge();
     const adapter = makeAction(bridge);
     const action = new FakeAction("instance");
 
-    await adapter.onWillAppear(appear(action, { actionId: "first", extra: "ignored" } as never));
-    await adapter.onDidReceiveSettings(settings(action, { actionId: "second" }));
+    await adapter.onWillAppear(
+      appear(action, { actionId: "first", extra: "ignored" } as never),
+    );
+    await adapter.onDidReceiveSettings(
+      settings(action, { actionId: "second" }),
+    );
     expect(bridge.removals).toEqual([["instance", "first"]]);
     expect(bridge.upserts).toHaveLength(2);
 
@@ -498,7 +549,10 @@ describe("HammerspoonAction", () => {
       ["instance", "second"],
     ]);
 
-    await adapter.onWillAppear({ action: new FakeAction("dial", false), payload: { settings: {} } } as never);
+    await adapter.onWillAppear({
+      action: new FakeAction("dial", false),
+      payload: { settings: {} },
+    } as never);
     expect(bridge.upserts).toHaveLength(2);
   });
 
@@ -519,7 +573,9 @@ describe("HammerspoonAction", () => {
     const configuredSettings = { actionId: "action.id" };
     await adapter.onWillAppear(appear(configured, configuredSettings));
     await adapter.onKeyDown(keyDown(configured));
-    expect(bridge.keyDowns).toEqual([["configured", "action.id", configuredSettings]]);
+    expect(bridge.keyDowns).toEqual([
+      ["configured", "action.id", configuredSettings],
+    ]);
   });
 
   test("forwards key releases with each instance identity in order", async () => {
@@ -560,18 +616,21 @@ describe("HammerspoonAction", () => {
 
     expect(first.layouts).toEqual(["$A1"]);
     expect(second.layouts).toEqual(["$A1"]);
-    expect(bridge.dialDowns).toEqual([["first-encoder", "action.id", firstSettings]]);
+    expect(bridge.dialDowns).toEqual([
+      ["first-encoder", "action.id", firstSettings],
+    ]);
     expect(bridge.dialRotates).toEqual([
       ["first-encoder", "action.id", 2, true, firstSettings],
       ["second-encoder", "action.id", -1, false, secondSettings],
     ]);
-    expect(bridge.dialUps).toEqual([["first-encoder", "action.id", firstSettings]]);
+    expect(bridge.dialUps).toEqual([
+      ["first-encoder", "action.id", firstSettings],
+    ]);
     expect(bridge.touchTaps).toEqual([
       ["first-encoder", "action.id", true, [120, 40], firstSettings],
       ["second-encoder", "action.id", false, [700, 99], secondSettings],
     ]);
   });
-
 
   test("renders dial appearances through the SDK feedback interface", async () => {
     const bridge = new FakeBridge();
@@ -579,7 +638,9 @@ describe("HammerspoonAction", () => {
     const adapter = makeAction(bridge);
     const dial = new FakeAction("lcd-dial", false);
     adapter.subscribe();
-    await adapter.onWillAppear(appear(dial, { actionId: "action.lcd", label: "LCD" }));
+    await adapter.onWillAppear(
+      appear(dial, { actionId: "action.lcd", label: "LCD" }),
+    );
     bridge.emit("appearance", {
       type: "appearance",
       protocolVersion: 1,
@@ -592,7 +653,6 @@ describe("HammerspoonAction", () => {
     expect(dial.layouts).toEqual(["$A1"]);
     expect(dial.feedbacks).toContainEqual({ title: "LCD value" });
   });
-
 
   test("selects supported device rendering and falls back safely for unknown metadata", async () => {
     const bridge = new FakeBridge();
@@ -616,7 +676,9 @@ describe("HammerspoonAction", () => {
       device: { type: 7, size: { columns: 4, rows: 2 } },
     });
 
-    await adapter.onWillAppear(appear(supported, { actionId: "action.supported" }));
+    await adapter.onWillAppear(
+      appear(supported, { actionId: "action.supported" }),
+    );
     await adapter.onWillAppear(appear(unknown, { actionId: "action.unknown" }));
     await adapter.onWillAppear(appear(mini, { actionId: "action.mini" }));
     await adapter.onWillAppear(appear(plus, { actionId: "action.plus" }));
@@ -695,7 +757,9 @@ describe("HammerspoonAction", () => {
     });
 
     const unsupported = new FakeAction("unsupported-value", false);
-    await adapter.onWillAppear(appear(unsupported, { actionId: "action.value" }));
+    await adapter.onWillAppear(
+      appear(unsupported, { actionId: "action.value" }),
+    );
     bridge.emit("appearance", {
       type: "appearance",
       protocolVersion: 1,
@@ -711,7 +775,10 @@ describe("HammerspoonAction", () => {
     expect(unsupported.layouts).toEqual(["$A1"]);
     expect(unsupported.feedbacks.at(-1)).toEqual({ title: "Volume" });
 
-    const callsBeforeMalformed = structuredClone({ layouts: dial.layouts, feedbacks: dial.feedbacks });
+    const callsBeforeMalformed = structuredClone({
+      layouts: dial.layouts,
+      feedbacks: dial.feedbacks,
+    });
     bridge.emit("appearance", {
       type: "appearance",
       protocolVersion: 1,
@@ -822,7 +889,9 @@ describe("HammerspoonAction", () => {
 
     const image = key.calls.images.at(-1);
     expect(image).toStartWith("data:image/svg+xml,");
-    expect(decodeURIComponent(image!.slice("data:image/svg+xml,".length))).toContain(
+    expect(
+      decodeURIComponent(image!.slice("data:image/svg+xml,".length)),
+    ).toContain(
       '<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72">',
     );
   });
@@ -872,10 +941,17 @@ describe("HammerspoonAction", () => {
     await adapter.onWillAppear(appear(second, secondSettings));
     expect(bridge.upserts).toEqual([
       { instanceId: first.id, actionId: "action.id", settings: firstSettings },
-      { instanceId: second.id, actionId: "action.id", settings: secondSettings },
+      {
+        instanceId: second.id,
+        actionId: "action.id",
+        settings: secondSettings,
+      },
     ]);
 
-    const updatedFirst = { actionId: "action.id", label: "First updated" } as never;
+    const updatedFirst = {
+      actionId: "action.id",
+      label: "First updated",
+    } as never;
     await adapter.onDidReceiveSettings(settings(first, updatedFirst));
     await adapter.onKeyDown(keyDown(first));
     await adapter.onKeyDown(keyDown(second));
@@ -914,94 +990,109 @@ describe("HammerspoonAction", () => {
     propertyInspectorMessages.length = 0;
     const bridge = new FakeBridge();
     const schema: JsonValue[] = [
-      { type: "select", key: "mode", options: [{ value: "one", label: "One" }], default: "one" },
+      {
+        type: "select",
+        key: "mode",
+        options: [{ value: "one", label: "One" }],
+        default: "one",
+      },
     ];
     bridge.status = "connected";
-    bridge.actions = [{
-      actionId: "action.id",
-      name: "Action",
-      settingsSchemaVersion: 1,
-      settingsSchema: schema,
-    }];
-    const adapter = makeAction(bridge);
-    adapter.subscribe();
-
-    await adapter.onSendToPlugin({ payload: { type: "requestState" } } as never);
-    expect(propertyInspectorMessages).toHaveLength(1);
-    expect(propertyInspectorMessages[0]).toEqual({
-      type: "bridgeState",
-      status: "connected",
-      actions: [{
+    bridge.actions = [
+      {
         actionId: "action.id",
         name: "Action",
         settingsSchemaVersion: 1,
         settingsSchema: schema,
-      }],
+      },
+    ];
+    const adapter = makeAction(bridge);
+    adapter.subscribe();
+
+    await adapter.onSendToPlugin({
+      payload: { type: "requestState" },
+    } as never);
+    expect(propertyInspectorMessages).toHaveLength(1);
+    expect(propertyInspectorMessages[0]).toEqual({
+      type: "bridgeState",
+      status: "connected",
+      actions: [
+        {
+          actionId: "action.id",
+          name: "Action",
+          settingsSchemaVersion: 1,
+          settingsSchema: schema,
+        },
+      ],
     });
 
     schema[0] = { label: "mutated" };
     expect(propertyInspectorMessages[0]).toEqual({
       type: "bridgeState",
       status: "connected",
-      actions: [{
-        actionId: "action.id",
-        name: "Action",
-        settingsSchemaVersion: 1,
-        settingsSchema: [{ type: "select", key: "mode", options: [{ value: "one", label: "One" }], default: "one" }],
-      }],
+      actions: [
+        {
+          actionId: "action.id",
+          name: "Action",
+          settingsSchemaVersion: 1,
+          settingsSchema: [
+            {
+              type: "select",
+              key: "mode",
+              options: [{ value: "one", label: "One" }],
+              default: "one",
+            },
+          ],
+        },
+      ],
     });
 
     await adapter.onSendToPlugin({ payload: { type: "other" } } as never);
     expect(propertyInspectorMessages).toHaveLength(1);
   });
 
-  test("includes inspected controller and latest appearance in bridge state", async () => {
+  test("includes inspected controller in bridge state", async () => {
     propertyInspectorMessages.length = 0;
     const bridge = new FakeBridge();
     bridge.status = "connected";
-    bridge.actions = [{
-      actionId: "action.id",
-      name: "Action",
-      description: "Action description",
-      category: "Media",
-      gesture: "Press: run",
-    }];
-    const adapter = makeAction(bridge);
-    const dial = new FakeAction("preview-instance", false, {
-      controllerType: "Encoder",
-      device: { type: 7, size: { columns: 4, rows: 2 } },
-    });
-    adapter.subscribe();
-    await adapter.onWillAppear(appear(dial, { actionId: "action.id" }));
-    const appearance = {
-      type: "appearance",
-      protocolVersion: 1,
-      instanceId: dial.id,
-      actionId: "action.id",
-      title: "Now playing",
-      state: 1,
-      appearanceVersion: 1,
-      badge: "Ⅱ",
-      progress: 0.5,
-    } as const;
-    bridge.emit("appearance", appearance);
-    await flush();
-    propertyInspectorMessages.length = 0;
-
-    await adapter.onSendToPlugin({ action: dial, payload: { type: "requestState" } } as never);
-    expect(propertyInspectorMessages).toEqual([{
-      type: "bridgeState",
-      status: "connected",
-      controller: "encoder",
-      preview: appearance,
-      actions: [{
+    bridge.actions = [
+      {
         actionId: "action.id",
         name: "Action",
         description: "Action description",
         category: "Media",
         gesture: "Press: run",
-      }],
-    }]);
+      },
+    ];
+    const adapter = makeAction(bridge);
+    const dial = new FakeAction("inspected-instance", false, {
+      controllerType: "Encoder",
+      device: { type: 7, size: { columns: 4, rows: 2 } },
+    });
+    adapter.subscribe();
+    await adapter.onWillAppear(appear(dial, { actionId: "action.id" }));
+    propertyInspectorMessages.length = 0;
+
+    await adapter.onSendToPlugin({
+      action: dial,
+      payload: { type: "requestState" },
+    } as never);
+    expect(propertyInspectorMessages).toEqual([
+      {
+        type: "bridgeState",
+        status: "connected",
+        controller: "encoder",
+        actions: [
+          {
+            actionId: "action.id",
+            name: "Action",
+            description: "Action description",
+            category: "Media",
+            gesture: "Press: run",
+          },
+        ],
+      },
+    ]);
   });
 
   test("includes safe diagnostics in offline bridge state", async () => {
@@ -1009,17 +1100,25 @@ describe("HammerspoonAction", () => {
     const bridge = new FakeBridge();
     bridge.diagnostics = {
       ...bridge.diagnostics,
-      latest: { area: "auth", code: "TOKEN_UNAVAILABLE", at: "2026-07-18T00:00:00.000Z" },
+      latest: {
+        area: "auth",
+        code: "TOKEN_UNAVAILABLE",
+        at: "2026-07-18T00:00:00.000Z",
+      },
     };
     const adapter = makeAction(bridge);
-    await adapter.onSendToPlugin({ payload: { type: "requestState" } } as never);
+    await adapter.onSendToPlugin({
+      payload: { type: "requestState" },
+    } as never);
 
-    expect(propertyInspectorMessages).toEqual([{
-      type: "bridgeState",
-      status: "disconnected",
-      actions: [],
-      diagnostics: bridge.diagnostics,
-    }]);
+    expect(propertyInspectorMessages).toEqual([
+      {
+        type: "bridgeState",
+        status: "disconnected",
+        actions: [],
+        diagnostics: bridge.diagnostics,
+      },
+    ]);
   });
 
   test("listens for appearances and protocol errors", async () => {
@@ -1082,14 +1181,18 @@ describe("HammerspoonAction", () => {
     expect(action.calls.images).toHaveLength(1);
     const image = action.calls.images[0];
     expect(image).toStartWith("data:image/svg+xml,");
-    expect(decodeURIComponent(image!.slice("data:image/svg+xml,".length))).toContain(
-      '<rect width="72" height="72" fill="#202020"/>',
-    );
-    expect(decodeURIComponent(image!.slice("data:image/svg+xml,".length))).toContain(
-      '<rect x="4" y="64" width="32" height="4" fill="#FFFFFF"/>',
-    );
-    expect(decodeURIComponent(image!.slice("data:image/svg+xml,".length))).toContain("&lt;&amp;&apos;&quot;");
-    expect(decodeURIComponent(image!.slice("data:image/svg+xml,".length))).not.toContain("<&'\"");
+    expect(
+      decodeURIComponent(image!.slice("data:image/svg+xml,".length)),
+    ).toContain('<rect width="72" height="72" fill="#202020"/>');
+    expect(
+      decodeURIComponent(image!.slice("data:image/svg+xml,".length)),
+    ).toContain('<rect x="4" y="64" width="32" height="4" fill="#FFFFFF"/>');
+    expect(
+      decodeURIComponent(image!.slice("data:image/svg+xml,".length)),
+    ).toContain("&lt;&amp;&apos;&quot;");
+    expect(
+      decodeURIComponent(image!.slice("data:image/svg+xml,".length)),
+    ).not.toContain("<&'\"");
     expect(action.calls.titles).toEqual(["Offline", "Ready"]);
     expect(action.calls.states).toEqual([0, 1]);
 
@@ -1156,7 +1259,9 @@ describe("HammerspoonAction", () => {
     });
     await flush();
     expect(action.calls.images.at(-1)).toBe("imgs/toggle-on.svg");
-    const custom = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"></svg>').toString("base64");
+    const custom = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72"></svg>',
+    ).toString("base64");
     bridge.emit("appearance", {
       type: "appearance",
       protocolVersion: 1,
@@ -1334,7 +1439,6 @@ describe("HammerspoonAction", () => {
     expect(action.calls.states.at(-1)).toBe(0);
   });
 
-
   test("best-effort rendering alerts swallow setTitle, setState, and showAlert failures", async () => {
     const bridge = new FakeBridge();
     const adapter = makeAction(bridge);
@@ -1347,17 +1451,32 @@ describe("HammerspoonAction", () => {
 
     await adapter.onWillAppear(appear(titleFailure));
     await adapter.onWillAppear(appear(stateFailure));
-    expect(titleFailure.calls).toEqual({ titles: ["Select action"], states: [0], images: [], alerts: 1 });
-    expect(stateFailure.calls).toEqual({ titles: ["Select action"], states: [0], images: [], alerts: 1 });
+    expect(titleFailure.calls).toEqual({
+      titles: ["Select action"],
+      states: [0],
+      images: [],
+      alerts: 1,
+    });
+    expect(stateFailure.calls).toEqual({
+      titles: ["Select action"],
+      states: [0],
+      images: [],
+      alerts: 1,
+    });
   });
   test("renders correlated feedback and restores the last appearance after expiry", async () => {
     const bridge = new FakeBridge();
     bridge.status = "connected";
     const timers = new FeedbackTimers();
-    const adapter = new HammerspoonAction(bridge as unknown as BridgeClient, timers);
+    const adapter = new HammerspoonAction(
+      bridge as unknown as BridgeClient,
+      timers,
+    );
     adapter.subscribe();
     const action = new FakeAction("feedback-instance");
-    await adapter.onWillAppear(appear(action, { actionId: "com.example.feedback" }));
+    await adapter.onWillAppear(
+      appear(action, { actionId: "com.example.feedback" }),
+    );
     bridge.emit("appearance", {
       type: "appearance",
       protocolVersion: 1,
@@ -1397,5 +1516,4 @@ describe("HammerspoonAction", () => {
     await flush();
     expect(action.calls).toEqual(callsBeforeStale);
   });
-
 });

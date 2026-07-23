@@ -5,8 +5,22 @@ import streamDeck, {
   type KeyAction,
   type SendToPluginEvent,
 } from "@elgato/streamdeck";
-import type { BridgeAppearance, BridgeClient, BridgeDiagnosticArea, BridgeDiagnosticCode, BridgeFeedback } from "../bridge.js";
-import { isSafeAppearanceIcon, isSafeAppearanceValue, safeAppearanceIconImage, sanitizeDeviceMetadata, type DeviceMetadata, type JsonSettings, type PresentationState } from "../protocol.js";
+import type {
+  BridgeAppearance,
+  BridgeClient,
+  BridgeDiagnosticArea,
+  BridgeDiagnosticCode,
+  BridgeFeedback,
+} from "../bridge.js";
+import {
+  isSafeAppearanceIcon,
+  isSafeAppearanceValue,
+  safeAppearanceIconImage,
+  sanitizeDeviceMetadata,
+  type DeviceMetadata,
+  type JsonSettings,
+  type PresentationState,
+} from "../protocol.js";
 type JsonObject = { [key: string]: JsonValue };
 type JsonPrimitive = boolean | number | string | null | undefined;
 type JsonValue = JsonObject | JsonPrimitive | JsonValue[];
@@ -42,25 +56,54 @@ type RenderingProfile = {
   encoderValueLayout?: "$B1";
 };
 
-const DEFAULT_RENDERING_PROFILE: RenderingProfile = { imageSize: 72, encoderLayout: "$A1" };
+const DEFAULT_RENDERING_PROFILE: RenderingProfile = {
+  imageSize: 72,
+  encoderLayout: "$A1",
+};
 const RENDERING_PROFILES: Record<string, RenderingProfile> = {
   "keypad:stream-deck:5x3": { imageSize: 72 },
   "keypad:stream-deck-mini:3x2": { imageSize: 80 },
   "keypad:stream-deck-xl:8x4": { imageSize: 96 },
   "keypad:stream-deck-plus:4x2": { imageSize: 120 },
   "keypad:stream-deck-neo:4x2": { imageSize: 96 },
-  "encoder:stream-deck-plus:4x2": { imageSize: 48, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" },
-  "encoder:stream-deck-studio:16x2": { imageSize: 48, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" },
-  "encoder:galleon-100-sd:3x4": { imageSize: 48, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" },
-  "encoder:stream-deck-plus-xl:9x4": { imageSize: 48, encoderLayout: "$A1", encoderDecoratedLayout: "$A0", encoderValueLayout: "$B1" },
+  "encoder:stream-deck-plus:4x2": {
+    imageSize: 48,
+    encoderLayout: "$A1",
+    encoderDecoratedLayout: "$A0",
+    encoderValueLayout: "$B1",
+  },
+  "encoder:stream-deck-studio:16x2": {
+    imageSize: 48,
+    encoderLayout: "$A1",
+    encoderDecoratedLayout: "$A0",
+    encoderValueLayout: "$B1",
+  },
+  "encoder:galleon-100-sd:3x4": {
+    imageSize: 48,
+    encoderLayout: "$A1",
+    encoderDecoratedLayout: "$A0",
+    encoderValueLayout: "$B1",
+  },
+  "encoder:stream-deck-plus-xl:9x4": {
+    imageSize: 48,
+    encoderLayout: "$A1",
+    encoderDecoratedLayout: "$A0",
+    encoderValueLayout: "$B1",
+  },
 };
 
-function recognizedRenderingProfile(metadata: DeviceMetadata): RenderingProfile | undefined {
+function recognizedRenderingProfile(
+  metadata: DeviceMetadata,
+): RenderingProfile | undefined {
   const { controllerType, device } = metadata;
-  return RENDERING_PROFILES[`${controllerType}:${device.type}:${device.size.columns}x${device.size.rows}`];
+  return RENDERING_PROFILES[
+    `${controllerType}:${device.type}:${device.size.columns}x${device.size.rows}`
+  ];
 }
 
-function selectRenderingProfile(metadata: DeviceMetadata | undefined): RenderingProfile | undefined {
+function selectRenderingProfile(
+  metadata: DeviceMetadata | undefined,
+): RenderingProfile | undefined {
   if (metadata === undefined) {
     return DEFAULT_RENDERING_PROFILE;
   }
@@ -71,17 +114,23 @@ function selectRenderingProfile(metadata: DeviceMetadata | undefined): Rendering
   return recognizedRenderingProfile(sanitized) ?? DEFAULT_RENDERING_PROFILE;
 }
 
-export function extractDeviceMetadata(action: unknown): DeviceMetadata | undefined {
+export function extractDeviceMetadata(
+  action: unknown,
+): DeviceMetadata | undefined {
   try {
     const context = action as DeviceContext;
     const device = context.device;
     if (!device) return undefined;
-    const deviceType = typeof device.type === "number" ? (DEVICE_TYPE_NAMES[device.type] ?? "unknown") : "unknown";
-    const controllerType = context.controllerType === "Keypad"
-      ? "keypad"
-      : context.controllerType === "Encoder"
-        ? "encoder"
-        : undefined;
+    const deviceType =
+      typeof device.type === "number"
+        ? (DEVICE_TYPE_NAMES[device.type] ?? "unknown")
+        : "unknown";
+    const controllerType =
+      context.controllerType === "Keypad"
+        ? "keypad"
+        : context.controllerType === "Encoder"
+          ? "encoder"
+          : undefined;
     const metadata = sanitizeDeviceMetadata({
       controllerType,
       device: {
@@ -91,7 +140,9 @@ export function extractDeviceMetadata(action: unknown): DeviceMetadata | undefin
     });
     if (metadata === undefined) return undefined;
     const renderingProfile = recognizedRenderingProfile(metadata);
-    return renderingProfile === undefined ? metadata : { ...metadata, imageSize: renderingProfile.imageSize };
+    return renderingProfile === undefined
+      ? metadata
+      : { ...metadata, imageSize: renderingProfile.imageSize };
   } catch {
     return undefined;
   }
@@ -113,18 +164,22 @@ function cloneJsonValue(value: JsonValue): JsonValue {
 
 export const HAMMERSPOON_ACTION_UUID = "com.brettinternet.hammerspoon.action";
 export const HAMMERSPOON_BUTTON_UUID = "com.brettinternet.hammerspoon.button";
-export const HAMMERSPOON_MULTI_STATE_UUID = "com.brettinternet.hammerspoon.multistate";
+export const HAMMERSPOON_MULTI_STATE_UUID =
+  "com.brettinternet.hammerspoon.multistate";
 
 function escapeXml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&apos;",
-  })[character] ?? character);
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&apos;",
+      })[character] ?? character,
+  );
 }
-
 
 const BUNDLED_BUTTON_ICON_PATH = "imgs/button.svg";
 const BUNDLED_TOGGLE_INACTIVE_ICON_PATH = "imgs/toggle-off.svg";
@@ -137,32 +192,31 @@ function hasValidAppearanceExtension(appearance: BridgeAppearance): boolean {
     return false;
   }
   if (
-    appearance.presentationState !== undefined
-    && (
-      appearance.appearanceVersion !== 1
-      || !Number.isInteger(appearance.presentationState)
-      || appearance.presentationState < 0
-      || appearance.presentationState > 3
-    )
+    appearance.presentationState !== undefined &&
+    (appearance.appearanceVersion !== 1 ||
+      !Number.isInteger(appearance.presentationState) ||
+      appearance.presentationState < 0 ||
+      appearance.presentationState > 3)
   ) {
     return false;
   }
   if (!hasValue) {
     return true;
   }
-  return appearance.appearanceVersion === 1
-    && isSafeAppearanceValue(appearance.value)
-    && typeof appearance.indicator === "number"
-    && Number.isFinite(appearance.indicator)
-    && appearance.indicator >= 0
-    && appearance.indicator <= 100
-    && appearance.foregroundColor === undefined
-    && appearance.backgroundColor === undefined
-    && appearance.progress === undefined
-    && appearance.badge === undefined
-    && (appearance.icon === undefined || isSafeAppearanceIcon(appearance.icon));
+  return (
+    appearance.appearanceVersion === 1 &&
+    isSafeAppearanceValue(appearance.value) &&
+    typeof appearance.indicator === "number" &&
+    Number.isFinite(appearance.indicator) &&
+    appearance.indicator >= 0 &&
+    appearance.indicator <= 100 &&
+    appearance.foregroundColor === undefined &&
+    appearance.backgroundColor === undefined &&
+    appearance.progress === undefined &&
+    appearance.badge === undefined &&
+    (appearance.icon === undefined || isSafeAppearanceIcon(appearance.icon))
+  );
 }
-
 
 function appearanceImage(
   appearance: BridgeAppearance,
@@ -170,10 +224,11 @@ function appearanceImage(
   bundledIcon = BUNDLED_BUTTON_ICON_PATH,
 ): string | undefined {
   const icon = appearance.icon;
-  const hasDecoration = appearance.foregroundColor !== undefined
-    || appearance.backgroundColor !== undefined
-    || appearance.progress !== undefined
-    || appearance.badge !== undefined;
+  const hasDecoration =
+    appearance.foregroundColor !== undefined ||
+    appearance.backgroundColor !== undefined ||
+    appearance.progress !== undefined ||
+    appearance.badge !== undefined;
   let customIconImage: string | undefined;
   if (icon !== undefined) {
     if (!isSafeAppearanceIcon(icon)) {
@@ -196,9 +251,11 @@ function appearanceImage(
   }
   if (
     (appearance.foregroundColor !== undefined &&
-      (typeof appearance.foregroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(appearance.foregroundColor))) ||
+      (typeof appearance.foregroundColor !== "string" ||
+        !/^#[0-9A-Fa-f]{6}$/.test(appearance.foregroundColor))) ||
     (appearance.backgroundColor !== undefined &&
-      (typeof appearance.backgroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(appearance.backgroundColor))) ||
+      (typeof appearance.backgroundColor !== "string" ||
+        !/^#[0-9A-Fa-f]{6}$/.test(appearance.backgroundColor))) ||
     (appearance.progress !== undefined &&
       (typeof appearance.progress !== "number" ||
         !Number.isFinite(appearance.progress) ||
@@ -222,15 +279,20 @@ function appearanceImage(
       const codePoint = character.codePointAt(0);
       if (
         codePoint !== undefined &&
-        (codePoint <= 0x08 || (codePoint >= 0x0b && codePoint <= 0x0c) || (codePoint >= 0x0e && codePoint <= 0x1f))
+        (codePoint <= 0x08 ||
+          (codePoint >= 0x0b && codePoint <= 0x0c) ||
+          (codePoint >= 0x0e && codePoint <= 0x1f))
       ) {
         return undefined;
       }
     }
   }
-  const iconMarkup = icon?.kind === "bundled"
-    ? `<image href="${bundledIcon}" x="0" y="0" width="${imageSize}" height="${imageSize}"/>`
-    : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="0" y="0" width="${imageSize}" height="${imageSize}"/>`;
+  const iconMarkup =
+    icon?.kind === "bundled"
+      ? `<image href="${bundledIcon}" x="0" y="0" width="${imageSize}" height="${imageSize}"/>`
+      : customIconImage === undefined
+        ? ""
+        : `<image href="${escapeXml(customIconImage)}" x="0" y="0" width="${imageSize}" height="${imageSize}"/>`;
   const scale = imageSize / 72;
   const progressInset = 4 * scale;
   const progressWidth = 64 * scale;
@@ -241,15 +303,18 @@ function appearanceImage(
   const borderWidth = 4 * scale;
   const badgeX = 68 * scale;
   const badgeY = 14 * scale;
-  const progressBar = progress === undefined
-    ? ""
-    : `<rect x="${progressInset}" y="${progressY}" width="${Math.round(progress * progressWidth)}" height="${progressHeight}" fill="${foreground}"/>`;
-  const foregroundBorder = appearance.foregroundColor === undefined
-    ? ""
-    : `<rect x="${borderInset}" y="${borderInset}" width="${borderSize}" height="${borderSize}" fill="none" stroke="${foreground}" stroke-width="${borderWidth}"/>`;
-  const badgeText = badge === undefined
-    ? ""
-    : `<text x="${badgeX}" y="${badgeY}" text-anchor="end" fill="${foreground}">${escapeXml(badge)}</text>`;
+  const progressBar =
+    progress === undefined
+      ? ""
+      : `<rect x="${progressInset}" y="${progressY}" width="${Math.round(progress * progressWidth)}" height="${progressHeight}" fill="${foreground}"/>`;
+  const foregroundBorder =
+    appearance.foregroundColor === undefined
+      ? ""
+      : `<rect x="${borderInset}" y="${borderInset}" width="${borderSize}" height="${borderSize}" fill="none" stroke="${foreground}" stroke-width="${borderWidth}"/>`;
+  const badgeText =
+    badge === undefined
+      ? ""
+      : `<text x="${badgeX}" y="${badgeY}" text-anchor="end" fill="${foreground}">${escapeXml(badge)}</text>`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${imageSize}" height="${imageSize}" viewBox="0 0 ${imageSize} ${imageSize}"><rect width="${imageSize}" height="${imageSize}" fill="${background}"/>${iconMarkup}${foregroundBorder}${progressBar}${badgeText}</svg>`;
   try {
     return `data:image/svg+xml,${encodeURIComponent(svg)}`;
@@ -267,21 +332,28 @@ function dialAppearanceImage(
     return undefined;
   }
   const icon = appearance.icon;
-  const customIconImage = icon?.kind === "custom" ? safeAppearanceIconImage(icon) : undefined;
-  const iconMarkup = icon?.kind === "bundled"
-    ? `<image href="${bundledIcon}" x="16" y="40" width="${imageSize}" height="${imageSize}"/>`
-    : customIconImage === undefined ? "" : `<image href="${escapeXml(customIconImage)}" x="16" y="40" width="${imageSize}" height="${imageSize}"/>`;
+  const customIconImage =
+    icon?.kind === "custom" ? safeAppearanceIconImage(icon) : undefined;
+  const iconMarkup =
+    icon?.kind === "bundled"
+      ? `<image href="${bundledIcon}" x="16" y="40" width="${imageSize}" height="${imageSize}"/>`
+      : customIconImage === undefined
+        ? ""
+        : `<image href="${escapeXml(customIconImage)}" x="16" y="40" width="${imageSize}" height="${imageSize}"/>`;
   const foreground = appearance.foregroundColor ?? "#FFFFFF";
   const background = appearance.backgroundColor ?? "#000000";
-  const progressBar = appearance.progress === undefined
-    ? ""
-    : `<rect x="16" y="88" width="${Math.round(168 * appearance.progress)}" height="4" fill="${foreground}"/>`;
-  const foregroundBorder = appearance.foregroundColor === undefined
-    ? ""
-    : `<rect x="2" y="2" width="196" height="96" fill="none" stroke="${foreground}" stroke-width="4"/>`;
-  const badge = appearance.badge === undefined
-    ? ""
-    : `<text x="184" y="16" text-anchor="end" fill="${foreground}">${escapeXml(appearance.badge)}</text>`;
+  const progressBar =
+    appearance.progress === undefined
+      ? ""
+      : `<rect x="16" y="88" width="${Math.round(168 * appearance.progress)}" height="4" fill="${foreground}"/>`;
+  const foregroundBorder =
+    appearance.foregroundColor === undefined
+      ? ""
+      : `<rect x="2" y="2" width="196" height="96" fill="none" stroke="${foreground}" stroke-width="4"/>`;
+  const badge =
+    appearance.badge === undefined
+      ? ""
+      : `<text x="184" y="16" text-anchor="end" fill="${foreground}">${escapeXml(appearance.badge)}</text>`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100"><rect width="200" height="100" fill="${background}"/>${iconMarkup}${foregroundBorder}${progressBar}${badge}</svg>`;
   try {
     return `data:image/svg+xml,${encodeURIComponent(svg)}`;
@@ -303,7 +375,13 @@ function disconnectedTitle(status: BridgeClient["status"]): string {
   }
   return "Offline";
 }
-const DIAGNOSTIC_AREAS: readonly BridgeDiagnosticArea[] = ["auth", "schema", "reconnect", "registry", "callback"];
+const DIAGNOSTIC_AREAS: readonly BridgeDiagnosticArea[] = [
+  "auth",
+  "schema",
+  "reconnect",
+  "registry",
+  "callback",
+];
 const DIAGNOSTIC_CODES: readonly BridgeDiagnosticCode[] = [
   "AUTH_REQUIRED",
   "AUTH_FAILED",
@@ -336,23 +414,30 @@ function safeDiagnosticsSnapshot(value: unknown): JsonObject {
   const candidate = value as Record<string, unknown>;
   const snapshot: JsonObject = {
     ...fallback,
-    ...(typeof candidate.pluginVersion === "string" && /^[A-Za-z0-9._-]{1,32}$/.test(candidate.pluginVersion)
+    ...(typeof candidate.pluginVersion === "string" &&
+    /^[A-Za-z0-9._-]{1,32}$/.test(candidate.pluginVersion)
       ? { pluginVersion: candidate.pluginVersion }
       : {}),
-    ...(typeof candidate.port === "number" && Number.isInteger(candidate.port) && candidate.port >= 1 && candidate.port <= 65535
+    ...(typeof candidate.port === "number" &&
+    Number.isInteger(candidate.port) &&
+    candidate.port >= 1 &&
+    candidate.port <= 65535
       ? { port: candidate.port }
       : {}),
     ...(typeof candidate.retryInMs === "number" &&
-      Number.isInteger(candidate.retryInMs) &&
-      candidate.retryInMs >= 0 &&
-      candidate.retryInMs <= 600000
+    Number.isInteger(candidate.retryInMs) &&
+    candidate.retryInMs >= 0 &&
+    candidate.retryInMs <= 600000
       ? { retryInMs: candidate.retryInMs }
       : {}),
   };
   const latest = candidate.latest;
   if (latest !== null && typeof latest === "object" && !Array.isArray(latest)) {
     const latestCandidate = latest as Record<string, unknown>;
-    const at = typeof latestCandidate.at === "string" ? new Date(latestCandidate.at) : undefined;
+    const at =
+      typeof latestCandidate.at === "string"
+        ? new Date(latestCandidate.at)
+        : undefined;
     if (
       typeof latestCandidate.area === "string" &&
       DIAGNOSTIC_AREAS.includes(latestCandidate.area as BridgeDiagnosticArea) &&
@@ -372,15 +457,19 @@ function safeDiagnosticsSnapshot(value: unknown): JsonObject {
 }
 
 type TrackedAction =
-  | KeyAction<HammerspoonActionSettings>
-  | DialAction<HammerspoonActionSettings>;
+  KeyAction<HammerspoonActionSettings> | DialAction<HammerspoonActionSettings>;
 
-function isDialAction(value: unknown): value is DialAction<HammerspoonActionSettings> {
+function isDialAction(
+  value: unknown,
+): value is DialAction<HammerspoonActionSettings> {
   if (value === null || typeof value !== "object") {
     return false;
   }
   const candidate = value as { isDial?: unknown };
-  return typeof candidate.isDial === "function" && (candidate.isDial as () => boolean)();
+  return (
+    typeof candidate.isDial === "function" &&
+    (candidate.isDial as () => boolean)()
+  );
 }
 
 type TrackedInstance = {
@@ -401,14 +490,24 @@ type RefreshActionsMessage = {
   type: "refreshActions";
 };
 
-
 function isRequestStateMessage(value: JsonValue): value is RequestStateMessage {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && value.type === "requestState";
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    value.type === "requestState"
+  );
 }
-function isRefreshActionsMessage(value: JsonValue): value is RefreshActionsMessage {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && value.type === "refreshActions";
+function isRefreshActionsMessage(
+  value: JsonValue,
+): value is RefreshActionsMessage {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    value.type === "refreshActions"
+  );
 }
-
 
 type HammerspoonActionOptions = {
   clearTimeout?: (handle: unknown) => void;
@@ -423,7 +522,10 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   private readonly instances = new Map<string, TrackedInstance>();
   private readonly synchronized = new Set<string>();
   private readonly renderQueues = new Map<string, Promise<void>>();
-  private readonly scheduleTimeout: (callback: () => void, delay: number) => unknown;
+  private readonly scheduleTimeout: (
+    callback: () => void,
+    delay: number,
+  ) => unknown;
   private readonly cancelTimeout: (handle: unknown) => void;
   private readonly mode: "button" | "toggle" | "multi-state";
   private subscribed = false;
@@ -435,8 +537,11 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     super();
     this.manifestId = options.manifestId ?? HAMMERSPOON_ACTION_UUID;
     this.mode = options.mode ?? "toggle";
-    this.scheduleTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
-    this.cancelTimeout = options.clearTimeout ?? ((handle) => clearTimeout(handle as NodeJS.Timeout));
+    this.scheduleTimeout =
+      options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
+    this.cancelTimeout =
+      options.clearTimeout ??
+      ((handle) => clearTimeout(handle as NodeJS.Timeout));
   }
 
   /** Subscribes this action adapter to bridge lifecycle and rendering events. */
@@ -466,10 +571,14 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       void this.sendBridgeState(event?.action?.id ?? streamDeck.ui.action?.id);
     });
     this.bridge.on("appearance", (appearance) => {
-      void this.enqueueRender(appearance.instanceId, () => this.renderAppearance(appearance));
+      void this.enqueueRender(appearance.instanceId, () =>
+        this.renderAppearance(appearance),
+      );
     });
     this.bridge.on("feedback", (feedback) => {
-      void this.enqueueRender(feedback.instanceId, () => this.renderFeedback(feedback));
+      void this.enqueueRender(feedback.instanceId, () =>
+        this.renderFeedback(feedback),
+      );
       void this.sendInspectorFeedback(feedback);
     });
     this.bridge.on("protocolError", (error) => {
@@ -482,7 +591,11 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     });
   }
 
-  public override async onWillAppear(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onWillAppear"]>>[0]): Promise<void> {
+  public override async onWillAppear(
+    ev: Parameters<
+      NonNullable<SingletonAction<HammerspoonActionSettings>["onWillAppear"]>
+    >[0],
+  ): Promise<void> {
     if (!ev.action.isKey() && !isDialAction(ev.action)) {
       return;
     }
@@ -523,7 +636,11 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
   }
 
-  public override async onWillDisappear(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onWillDisappear"]>>[0]): Promise<void> {
+  public override async onWillDisappear(
+    ev: Parameters<
+      NonNullable<SingletonAction<HammerspoonActionSettings>["onWillDisappear"]>
+    >[0],
+  ): Promise<void> {
     const instanceId = ev.action.id;
     const instance = this.instances.get(instanceId);
     this.cancelFeedbackTimer(instance);
@@ -534,7 +651,13 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
   }
 
-  public override async onDidReceiveSettings(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onDidReceiveSettings"]>>[0]): Promise<void> {
+  public override async onDidReceiveSettings(
+    ev: Parameters<
+      NonNullable<
+        SingletonAction<HammerspoonActionSettings>["onDidReceiveSettings"]
+      >
+    >[0],
+  ): Promise<void> {
     if (!ev.action.isKey() && !isDialAction(ev.action)) {
       return;
     }
@@ -575,52 +698,88 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
   }
 
-  public override async onKeyDown(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onKeyDown"]>>[0]): Promise<void> {
+  public override async onKeyDown(
+    ev: Parameters<
+      NonNullable<SingletonAction<HammerspoonActionSettings>["onKeyDown"]>
+    >[0],
+  ): Promise<void> {
     if (!ev.action.isKey()) {
       return;
     }
     const instance = this.instances.get(ev.action.id);
     if (!instance?.actionId) {
-      await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+      await this.enqueueRender(ev.action.id, () =>
+        this.renderInstance(ev.action.id),
+      );
       return;
     }
 
-    this.bridge.keyDown(ev.action.id, instance.actionId, instance.settings as JsonSettings);
+    this.bridge.keyDown(
+      ev.action.id,
+      instance.actionId,
+      instance.settings as JsonSettings,
+    );
   }
 
-  public override async onKeyUp(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onKeyUp"]>>[0]): Promise<void> {
+  public override async onKeyUp(
+    ev: Parameters<
+      NonNullable<SingletonAction<HammerspoonActionSettings>["onKeyUp"]>
+    >[0],
+  ): Promise<void> {
     if (!ev.action.isKey()) {
       return;
     }
     const instance = this.instances.get(ev.action.id);
     if (!instance?.actionId) {
-      await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+      await this.enqueueRender(ev.action.id, () =>
+        this.renderInstance(ev.action.id),
+      );
       return;
     }
 
-    this.bridge.keyUp(ev.action.id, instance.actionId, instance.settings as JsonSettings);
+    this.bridge.keyUp(
+      ev.action.id,
+      instance.actionId,
+      instance.settings as JsonSettings,
+    );
   }
 
-  public override async onDialDown(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onDialDown"]>>[0]): Promise<void> {
+  public override async onDialDown(
+    ev: Parameters<
+      NonNullable<SingletonAction<HammerspoonActionSettings>["onDialDown"]>
+    >[0],
+  ): Promise<void> {
     if (!isDialAction(ev.action)) {
       return;
     }
     const instance = this.instances.get(ev.action.id);
     if (!instance?.actionId) {
-      await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+      await this.enqueueRender(ev.action.id, () =>
+        this.renderInstance(ev.action.id),
+      );
       return;
     }
 
-    this.bridge.dialDown(ev.action.id, instance.actionId, instance.settings as JsonSettings);
+    this.bridge.dialDown(
+      ev.action.id,
+      instance.actionId,
+      instance.settings as JsonSettings,
+    );
   }
 
-  public override async onDialRotate(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onDialRotate"]>>[0]): Promise<void> {
+  public override async onDialRotate(
+    ev: Parameters<
+      NonNullable<SingletonAction<HammerspoonActionSettings>["onDialRotate"]>
+    >[0],
+  ): Promise<void> {
     if (!isDialAction(ev.action)) {
       return;
     }
     const instance = this.instances.get(ev.action.id);
     if (!instance?.actionId) {
-      await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+      await this.enqueueRender(ev.action.id, () =>
+        this.renderInstance(ev.action.id),
+      );
       return;
     }
 
@@ -633,28 +792,42 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     );
   }
 
-  public override async onDialUp(ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onDialUp"]>>[0]): Promise<void> {
-    if (!isDialAction(ev.action)) {
-      return;
-    }
-    const instance = this.instances.get(ev.action.id);
-    if (!instance?.actionId) {
-      await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
-      return;
-    }
-
-    this.bridge.dialUp(ev.action.id, instance.actionId, instance.settings as JsonSettings);
-  }
-
-  public override async onTouchTap(
-    ev: Parameters<NonNullable<SingletonAction<HammerspoonActionSettings>["onTouchTap"]>>[0],
+  public override async onDialUp(
+    ev: Parameters<
+      NonNullable<SingletonAction<HammerspoonActionSettings>["onDialUp"]>
+    >[0],
   ): Promise<void> {
     if (!isDialAction(ev.action)) {
       return;
     }
     const instance = this.instances.get(ev.action.id);
     if (!instance?.actionId) {
-      await this.enqueueRender(ev.action.id, () => this.renderInstance(ev.action.id));
+      await this.enqueueRender(ev.action.id, () =>
+        this.renderInstance(ev.action.id),
+      );
+      return;
+    }
+
+    this.bridge.dialUp(
+      ev.action.id,
+      instance.actionId,
+      instance.settings as JsonSettings,
+    );
+  }
+
+  public override async onTouchTap(
+    ev: Parameters<
+      NonNullable<SingletonAction<HammerspoonActionSettings>["onTouchTap"]>
+    >[0],
+  ): Promise<void> {
+    if (!isDialAction(ev.action)) {
+      return;
+    }
+    const instance = this.instances.get(ev.action.id);
+    if (!instance?.actionId) {
+      await this.enqueueRender(ev.action.id, () =>
+        this.renderInstance(ev.action.id),
+      );
       return;
     }
 
@@ -667,7 +840,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     );
   }
 
-  public override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, HammerspoonActionSettings>): Promise<void> {
+  public override async onSendToPlugin(
+    ev: SendToPluginEvent<JsonValue, HammerspoonActionSettings>,
+  ): Promise<void> {
     if (isRefreshActionsMessage(ev.payload)) {
       this.bridge.requestActions();
       return;
@@ -683,10 +858,14 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     return appearance.presentationState ?? appearance.state;
   }
 
-
-  private settingsFrom(value: HammerspoonActionSettings): HammerspoonActionSettings {
+  private settingsFrom(
+    value: HammerspoonActionSettings,
+  ): HammerspoonActionSettings {
     const settings = cloneJsonValue(value) as HammerspoonActionSettings;
-    if (typeof settings.actionId !== "string" || settings.actionId.length === 0) {
+    if (
+      typeof settings.actionId !== "string" ||
+      settings.actionId.length === 0
+    ) {
       delete settings.actionId;
     }
     return settings;
@@ -705,11 +884,18 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
           return;
         }
       }
-      await this.setActionTitle(instance.action, "Select action", instance.renderingProfile);
+      await this.setActionTitle(
+        instance.action,
+        "Select action",
+        instance.renderingProfile,
+      );
       return;
     }
 
-    if (this.bridge.status !== "connected" || !this.synchronized.has(instanceId)) {
+    if (
+      this.bridge.status !== "connected" ||
+      !this.synchronized.has(instanceId)
+    ) {
       if (instance.action.isKey()) {
         const stateApplied = await this.setState(instance.action, 0);
         if (stateApplied && !(await this.clearImage(instance, 0))) {
@@ -724,7 +910,11 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       return;
     }
 
-    await this.setActionTitle(instance.action, "Hammerspoon", instance.renderingProfile);
+    await this.setActionTitle(
+      instance.action,
+      "Hammerspoon",
+      instance.renderingProfile,
+    );
     if (instance.action.isKey()) {
       await this.setState(instance.action, 0);
     }
@@ -732,11 +922,16 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
 
   private renderStatus(): void {
     for (const instanceId of this.instances.keys()) {
-      void this.enqueueRender(instanceId, () => this.renderInstance(instanceId));
+      void this.enqueueRender(instanceId, () =>
+        this.renderInstance(instanceId),
+      );
     }
   }
 
-  private enqueueRender(instanceId: string, render: () => Promise<void>): Promise<void> {
+  private enqueueRender(
+    instanceId: string,
+    render: () => Promise<void>,
+  ): Promise<void> {
     const previous = this.renderQueues.get(instanceId) ?? Promise.resolve();
     const next = previous.then(render, render);
     this.renderQueues.set(instanceId, next);
@@ -767,30 +962,50 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       await this.renderInstance(appearance.instanceId);
       return;
     }
-    const bundledIcon = this.mode === "toggle"
-      ? appearance.state === 1 ? BUNDLED_TOGGLE_ACTIVE_ICON_PATH : BUNDLED_TOGGLE_INACTIVE_ICON_PATH
-      : BUNDLED_BUTTON_ICON_PATH;
+    const bundledIcon =
+      this.mode === "toggle"
+        ? appearance.state === 1
+          ? BUNDLED_TOGGLE_ACTIVE_ICON_PATH
+          : BUNDLED_TOGGLE_INACTIVE_ICON_PATH
+        : BUNDLED_BUTTON_ICON_PATH;
     if (isDialAction(instance.action)) {
-      if (!(await this.setDialTitle(instance.action, appearance.title, instance.renderingProfile, appearance, bundledIcon))) {
+      if (
+        !(await this.setDialTitle(
+          instance.action,
+          appearance.title,
+          instance.renderingProfile,
+          appearance,
+          bundledIcon,
+        ))
+      ) {
         return;
       }
       instance.lastAppearance = appearance;
       this.synchronized.add(appearance.instanceId);
-      await this.sendPreviewState(appearance.instanceId);
       return;
     }
     const image = appearanceImage(
       appearance,
-      instance.renderingProfile?.imageSize ?? DEFAULT_RENDERING_PROFILE.imageSize,
+      instance.renderingProfile?.imageSize ??
+        DEFAULT_RENDERING_PROFILE.imageSize,
       bundledIcon,
     );
     if (appearance.icon !== undefined && image === undefined) {
       await this.alert(instance.action);
       return;
     }
-    const targetState = this.mode === "button" ? 0 : this.targetState(appearance);
-    const previousState = instance.lastAppearance === undefined ? 0 : this.mode === "button" ? 0 : this.targetState(instance.lastAppearance);
-    if (this.mode !== "button" && !(await this.setState(instance.action, targetState))) {
+    const targetState =
+      this.mode === "button" ? 0 : this.targetState(appearance);
+    const previousState =
+      instance.lastAppearance === undefined
+        ? 0
+        : this.mode === "button"
+          ? 0
+          : this.targetState(instance.lastAppearance);
+    if (
+      this.mode !== "button" &&
+      !(await this.setState(instance.action, targetState))
+    ) {
       return;
     }
     if (!(await this.applyImage(instance, image, targetState))) {
@@ -801,17 +1016,28 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
     instance.lastAppearance = appearance;
     this.synchronized.add(appearance.instanceId);
-    await this.setActionTitle(instance.action, appearance.title, instance.renderingProfile);
-    await this.sendPreviewState(appearance.instanceId);
+    await this.setActionTitle(
+      instance.action,
+      appearance.title,
+      instance.renderingProfile,
+    );
   }
 
   private async renderFeedback(feedback: BridgeFeedback): Promise<void> {
     const instance = this.instances.get(feedback.instanceId);
-    if (!instance || instance.actionId !== feedback.actionId || this.bridge.status !== "connected") {
+    if (
+      !instance ||
+      instance.actionId !== feedback.actionId ||
+      this.bridge.status !== "connected"
+    ) {
       return;
     }
     this.cancelFeedbackTimer(instance);
-    await this.setActionTitle(instance.action, feedback.message, instance.renderingProfile);
+    await this.setActionTitle(
+      instance.action,
+      feedback.message,
+      instance.renderingProfile,
+    );
     try {
       if (feedback.kind === "success") {
         if (instance.action.isKey()) {
@@ -829,18 +1055,27 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
           return;
         }
         instance.feedbackTimer = undefined;
-        void this.enqueueRender(feedback.instanceId, () => this.restoreInstance(feedback.instanceId, instance));
+        void this.enqueueRender(feedback.instanceId, () =>
+          this.restoreInstance(feedback.instanceId, instance),
+        );
       }, feedback.durationMs);
     } catch {
       // A failed timer must not affect the bridge or callback loop.
     }
   }
 
-  private async restoreInstance(instanceId: string, expected: TrackedInstance): Promise<void> {
+  private async restoreInstance(
+    instanceId: string,
+    expected: TrackedInstance,
+  ): Promise<void> {
     if (this.instances.get(instanceId) !== expected) {
       return;
     }
-    if (this.bridge.status === "connected" && this.synchronized.has(instanceId) && expected.lastAppearance) {
+    if (
+      this.bridge.status === "connected" &&
+      this.synchronized.has(instanceId) &&
+      expected.lastAppearance
+    ) {
       await this.renderAppearance(expected.lastAppearance);
     } else {
       await this.renderInstance(instanceId);
@@ -859,11 +1094,20 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     instance.feedbackTimer = undefined;
   }
 
-  private async clearImage(instance: TrackedInstance, state: number): Promise<boolean> {
+  private async clearImage(
+    instance: TrackedInstance,
+    state: number,
+  ): Promise<boolean> {
     if (!instance.action.isKey() || !instance.imageAppliedStates.has(state)) {
       return true;
     }
-    if (await this.setImage(instance.action, undefined, this.mode === "button" ? undefined : state)) {
+    if (
+      await this.setImage(
+        instance.action,
+        undefined,
+        this.mode === "button" ? undefined : state,
+      )
+    ) {
       instance.imageAppliedStates.delete(state);
       return true;
     }
@@ -881,11 +1125,23 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     if (image === undefined) {
       return this.clearImage(instance, state);
     }
-    if (await this.setImage(instance.action, image, this.mode === "button" ? undefined : state)) {
+    if (
+      await this.setImage(
+        instance.action,
+        image,
+        this.mode === "button" ? undefined : state,
+      )
+    ) {
       instance.imageAppliedStates.add(state);
       return true;
     }
-    if (await this.setImage(instance.action, undefined, this.mode === "button" ? undefined : state)) {
+    if (
+      await this.setImage(
+        instance.action,
+        undefined,
+        this.mode === "button" ? undefined : state,
+      )
+    ) {
       instance.imageAppliedStates.delete(state);
       return true;
     }
@@ -932,25 +1188,28 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     appearance?: BridgeAppearance,
     bundledIcon = BUNDLED_BUTTON_ICON_PATH,
   ): Promise<boolean> {
-    const hasDecoration = appearance !== undefined && (
-      appearance.icon !== undefined
-      || appearance.foregroundColor !== undefined
-      || appearance.backgroundColor !== undefined
-      || appearance.progress !== undefined
-      || appearance.badge !== undefined
-    );
-    const layout = hasDecoration && renderingProfile?.encoderDecoratedLayout !== undefined
-      ? renderingProfile.encoderDecoratedLayout
-      : renderingProfile?.encoderLayout ?? "$A1";
-    const hasValueIndicator = appearance !== undefined
-      && appearance.value !== undefined
-      && appearance.indicator !== undefined;
+    const hasDecoration =
+      appearance !== undefined &&
+      (appearance.icon !== undefined ||
+        appearance.foregroundColor !== undefined ||
+        appearance.backgroundColor !== undefined ||
+        appearance.progress !== undefined ||
+        appearance.badge !== undefined);
+    const layout =
+      hasDecoration && renderingProfile?.encoderDecoratedLayout !== undefined
+        ? renderingProfile.encoderDecoratedLayout
+        : (renderingProfile?.encoderLayout ?? "$A1");
+    const hasValueIndicator =
+      appearance !== undefined &&
+      appearance.value !== undefined &&
+      appearance.indicator !== undefined;
     if (hasValueIndicator && renderingProfile?.encoderValueLayout === "$B1") {
-      const icon = appearance.icon === undefined
-        ? undefined
-        : appearance.icon.kind === "bundled"
-          ? bundledIcon
-          : safeAppearanceIconImage(appearance.icon);
+      const icon =
+        appearance.icon === undefined
+          ? undefined
+          : appearance.icon.kind === "bundled"
+            ? bundledIcon
+            : safeAppearanceIconImage(appearance.icon);
       if (appearance.icon !== undefined && icon === undefined) {
         await this.alert(action);
         return false;
@@ -979,7 +1238,11 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
 
     try {
       if (hasDecoration && layout === "$A0") {
-        const image = dialAppearanceImage(appearance, renderingProfile?.imageSize ?? 48, bundledIcon);
+        const image = dialAppearanceImage(
+          appearance,
+          renderingProfile?.imageSize ?? 48,
+          bundledIcon,
+        );
         if (image === undefined) {
           await this.alert(action);
           return false;
@@ -1028,7 +1291,10 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
   }
 
-  private async setTitle(action: KeyAction<HammerspoonActionSettings>, title: string): Promise<void> {
+  private async setTitle(
+    action: KeyAction<HammerspoonActionSettings>,
+    title: string,
+  ): Promise<void> {
     try {
       await action.setTitle(title);
     } catch {
@@ -1036,7 +1302,10 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
   }
 
-  private async setState(action: KeyAction<HammerspoonActionSettings>, state: number): Promise<boolean> {
+  private async setState(
+    action: KeyAction<HammerspoonActionSettings>,
+    state: number,
+  ): Promise<boolean> {
     try {
       await action.setState(state);
       return true;
@@ -1046,27 +1315,12 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     }
   }
 
-
   private async alert(action: TrackedAction): Promise<void> {
     try {
       await action.showAlert();
     } catch {
       // Stream Deck feedback is best-effort when an instance is disappearing.
     }
-  }
-
-  private async sendPreviewState(instanceId: string): Promise<void> {
-    const instance = this.instances.get(instanceId);
-    if (!instance || streamDeck.ui.action?.id !== instanceId) {
-      return;
-    }
-    await streamDeck.ui.sendToPropertyInspector({
-      type: "previewState",
-      controller: isDialAction(instance.action) ? "encoder" : "keypad",
-      ...(instance.lastAppearance === undefined
-        ? {}
-        : { appearance: cloneJsonValue(instance.lastAppearance as unknown as JsonObject) }),
-    });
   }
 
   private async sendInspectorFeedback(feedback: BridgeFeedback): Promise<void> {
@@ -1081,7 +1335,9 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
     });
   }
 
-  private async sendBridgeState(instanceId = streamDeck.ui.action?.id): Promise<void> {
+  private async sendBridgeState(
+    instanceId = streamDeck.ui.action?.id,
+  ): Promise<void> {
     const actions = this.bridge.actions.map((action) => {
       const copy: JsonObject = {
         actionId: action.actionId,
@@ -1104,7 +1360,8 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
       }
       return copy;
     });
-    const instance = instanceId === undefined ? undefined : this.instances.get(instanceId);
+    const instance =
+      instanceId === undefined ? undefined : this.instances.get(instanceId);
     await streamDeck.ui.sendToPropertyInspector({
       type: "bridgeState",
       status: this.bridge.status,
@@ -1113,11 +1370,10 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
         ? {}
         : {
             controller: isDialAction(instance.action) ? "encoder" : "keypad",
-            ...(instance.lastAppearance === undefined
-              ? {}
-              : { preview: cloneJsonValue(instance.lastAppearance as unknown as JsonObject) }),
           }),
-      ...(this.bridge.status === "disconnected" ? { diagnostics: safeDiagnosticsSnapshot(this.bridge.diagnostics) } : {}),
+      ...(this.bridge.status === "disconnected"
+        ? { diagnostics: safeDiagnosticsSnapshot(this.bridge.diagnostics) }
+        : {}),
     });
   }
 }

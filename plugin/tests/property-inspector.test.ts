@@ -56,12 +56,6 @@ class FakeDocument {
   readonly actionSelect = new FakeElement("select");
   readonly actionSearch = new FakeElement("input");
   readonly actionGestures = new FakeElement("p");
-  readonly previewDevice = new FakeElement("div");
-  readonly previewTitle = new FakeElement("span");
-  readonly previewIcon = new FakeElement("img");
-  readonly previewBadge = new FakeElement("span");
-  readonly previewProgress = new FakeElement("span");
-  readonly previewValue = new FakeElement("span");
   readonly actionDescription = new FakeElement("p");
   readonly connectionStatus = new FakeElement("p");
   readonly connectionDetails = new FakeElement("p");
@@ -74,12 +68,6 @@ class FakeDocument {
     if (id === "action-search") return this.actionSearch;
     if (id === "action-description") return this.actionDescription;
     if (id === "action-gestures") return this.actionGestures;
-    if (id === "preview-device") return this.previewDevice;
-    if (id === "preview-title") return this.previewTitle;
-    if (id === "preview-icon") return this.previewIcon;
-    if (id === "preview-badge") return this.previewBadge;
-    if (id === "preview-progress") return this.previewProgress;
-    if (id === "preview-value") return this.previewValue;
     if (id === "connection-status") return this.connectionStatus;
     if (id === "connection-details") return this.connectionDetails;
     if (id === "setup-guide") return this.setupGuideButton;
@@ -90,7 +78,8 @@ class FakeDocument {
   }
 
   createElement(tagName: string): FakeElement | FakeOption {
-    if (tagName === "option") return { value: "", textContent: null, disabled: false };
+    if (tagName === "option")
+      return { value: "", textContent: null, disabled: false };
     return new FakeElement(tagName);
   }
 }
@@ -144,7 +133,9 @@ type TestEnvironment = {
 
 let moduleInstance = 0;
 
-async function installEnvironment(withWebSocket = true): Promise<TestEnvironment> {
+async function installEnvironment(
+  withWebSocket = true,
+): Promise<TestEnvironment> {
   const document = new FakeDocument();
   const globals = globalThis as unknown as Record<string, unknown>;
   const keys = ["document", "WebSocket", "connectElgatoStreamDeckSocket"];
@@ -166,7 +157,8 @@ async function installEnvironment(withWebSocket = true): Promise<TestEnvironment
   });
 
   await import(`../src/property-inspector.ts?test=${++moduleInstance}`);
-  const connect = globals.connectElgatoStreamDeckSocket as TestEnvironment["connect"];
+  const connect =
+    globals.connectElgatoStreamDeckSocket as TestEnvironment["connect"];
 
   return {
     document,
@@ -202,12 +194,18 @@ function bridgeState(
   });
 }
 
-function action(actionId: string, name: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+function action(
+  actionId: string,
+  name: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
   return { actionId, name, ...extra };
 }
 
 function sentFrames(socket: FakeSocket): Array<Record<string, unknown>> {
-  return socket.sent.map((frame) => JSON.parse(frame) as Record<string, unknown>);
+  return socket.sent.map(
+    (frame) => JSON.parse(frame) as Record<string, unknown>,
+  );
 }
 
 describe.serial("property inspector", () => {
@@ -230,7 +228,9 @@ describe.serial("property inspector", () => {
       expect(environment.document.actionSelect.children).toEqual([
         { value: "", textContent: "No actions available", disabled: false },
       ]);
-      expect(environment.document.connectionStatus.textContent).toBe("Connecting");
+      expect(environment.document.connectionStatus.textContent).toBe(
+        "Connecting",
+      );
       expect(FakeSocket.instances).toHaveLength(1);
       const socket = FakeSocket.instances[0]!;
       expect(socket.url).toBe("ws://127.0.0.1:28196");
@@ -243,25 +243,37 @@ describe.serial("property inspector", () => {
       socket.message(new Uint8Array([123]));
       socket.message("not-json");
       socket.message(JSON.stringify({ event: "unrelated", payload: {} }));
-      expect(environment.document.connectionStatus.textContent).toBe("Connecting");
+      expect(environment.document.connectionStatus.textContent).toBe(
+        "Connecting",
+      );
 
       socket.message(bridgeState("connected", []));
-      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.connectionStatus.textContent).toBe(
+        "Connected",
+      );
       expect(environment.document.actionSelect.disabled).toBe(true);
       expect(environment.document.actionSelect.value).toBe("action-two");
       expect(environment.document.actionSelect.children).toEqual([
-        { value: "action-two", textContent: "Loading actions...", disabled: true },
+        {
+          value: "action-two",
+          textContent: "Loading actions...",
+          disabled: true,
+        },
       ]);
       socket.message(
         bridgeState("connected", [
-          action("action-one", "First action", { description: "Runs the first action." }),
+          action("action-one", "First action", {
+            description: "Runs the first action.",
+          }),
           action("action-two", "Second action", {
             description: "Runs the second action.",
             settingsSchema: [],
           }),
         ]),
       );
-      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.connectionStatus.textContent).toBe(
+        "Connected",
+      );
       expect(environment.document.actionSelect.disabled).toBe(false);
       expect(environment.document.actionSelect.value).toBe("action-two");
       expect(environment.document.actionSelect.children).toEqual([
@@ -269,7 +281,9 @@ describe.serial("property inspector", () => {
         { value: "action-one", textContent: "First action", disabled: false },
         { value: "action-two", textContent: "Second action", disabled: false },
       ]);
-      expect(environment.document.actionDescription.textContent).toBe("Runs the second action.");
+      expect(environment.document.actionDescription.textContent).toBe(
+        "Runs the second action.",
+      );
 
       socket.message(
         JSON.stringify({
@@ -278,12 +292,16 @@ describe.serial("property inspector", () => {
         }),
       );
       expect(environment.document.actionSelect.value).toBe("action-one");
-      expect(environment.document.actionDescription.textContent).toBe("Runs the first action.");
+      expect(environment.document.actionDescription.textContent).toBe(
+        "Runs the first action.",
+      );
 
       environment.document.actionSelect.value = "action-two";
       environment.document.actionSelect.dispatch("change");
       expect(environment.document.actionSelect.value).toBe("action-two");
-      expect(environment.document.actionDescription.textContent).toBe("Runs the second action.");
+      expect(environment.document.actionDescription.textContent).toBe(
+        "Runs the second action.",
+      );
       expect(sentFrames(socket).slice(-1)).toEqual([
         {
           action: "com.brettinternet.hammerspoon.button",
@@ -293,7 +311,9 @@ describe.serial("property inspector", () => {
         },
       ]);
 
-      socket.message(JSON.stringify({ event: "didReceiveSettings", payload: {} }));
+      socket.message(
+        JSON.stringify({ event: "didReceiveSettings", payload: {} }),
+      );
       expect(environment.document.actionSelect.value).toBe("");
       expect(environment.document.actionDescription.textContent).toBe("");
     } finally {
@@ -303,7 +323,13 @@ describe.serial("property inspector", () => {
   test("opens the setup guide through the Stream Deck UI socket", async () => {
     const environment = await installEnvironment();
     try {
-      environment.connect(28196, "context-setup", "registerPropertyInspector", "", "{}");
+      environment.connect(
+        28196,
+        "context-setup",
+        "registerPropertyInspector",
+        "",
+        "{}",
+      );
       const socket = FakeSocket.instances[0]!;
       expect(environment.document.setupGuideButton.disabled).toBe(true);
 
@@ -328,7 +354,13 @@ describe.serial("property inspector", () => {
   test("disables the setup guide when the Stream Deck UI socket fails or closes", async () => {
     const environment = await installEnvironment();
     try {
-      environment.connect(28196, "context-setup-lifecycle", "registerPropertyInspector", "", "{}");
+      environment.connect(
+        28196,
+        "context-setup-lifecycle",
+        "registerPropertyInspector",
+        "",
+        "{}",
+      );
       const socket = FakeSocket.instances[0]!;
 
       socket.open();
@@ -337,7 +369,13 @@ describe.serial("property inspector", () => {
       socket.error();
       expect(environment.document.setupGuideButton.disabled).toBe(true);
 
-      environment.connect(28196, "context-setup-lifecycle-2", "registerPropertyInspector", "", "{}");
+      environment.connect(
+        28196,
+        "context-setup-lifecycle-2",
+        "registerPropertyInspector",
+        "",
+        "{}",
+      );
       const secondSocket = FakeSocket.instances[1]!;
 
       secondSocket.open();
@@ -358,12 +396,21 @@ describe.serial("property inspector", () => {
         "context-01",
         "register",
         "",
-        JSON.stringify({ context: "context-01", payload: { settings: { actionId: "known" } } }),
+        JSON.stringify({
+          context: "context-01",
+          payload: { settings: { actionId: "known" } },
+        }),
       );
       const firstSocket = FakeSocket.instances[0]!;
       firstSocket.open();
-      firstSocket.message(bridgeState("connected", [action("known", "Known action", { description: "Known description" })]));
-      expect(environment.document.actionDescription.textContent).toBe("Known description");
+      firstSocket.message(
+        bridgeState("connected", [
+          action("known", "Known action", { description: "Known description" }),
+        ]),
+      );
+      expect(environment.document.actionDescription.textContent).toBe(
+        "Known description",
+      );
 
       const expectedOptions = [
         { value: "", textContent: "No action selected", disabled: false },
@@ -371,36 +418,60 @@ describe.serial("property inspector", () => {
       ];
       const malformedMessages = [
         bridgeState("bogus" as "connected", []),
-        JSON.stringify({ event: "sendToPropertyInspector", payload: { type: "bridgeState", status: "connected" } }),
+        JSON.stringify({
+          event: "sendToPropertyInspector",
+          payload: { type: "bridgeState", status: "connected" },
+        }),
         bridgeState("connected", [action("", "Blank id")]),
-        bridgeState("connected", [action("known", "Known action", { description: "" })]),
-        bridgeState("connected", [action("known", "Duplicate", { settingsSchema: "invalid" })]),
-        bridgeState("connected", [action("known", "Known action"), action("known", "Duplicate")]),
+        bridgeState("connected", [
+          action("known", "Known action", { description: "" }),
+        ]),
+        bridgeState("connected", [
+          action("known", "Duplicate", { settingsSchema: "invalid" }),
+        ]),
+        bridgeState("connected", [
+          action("known", "Known action"),
+          action("known", "Duplicate"),
+        ]),
       ];
       for (const message of malformedMessages) {
         firstSocket.message(message);
       }
-      expect(environment.document.connectionStatus.textContent).toBe("Connected");
-      expect(environment.document.actionSelect.children).toEqual(expectedOptions);
-      expect(environment.document.actionDescription.textContent).toBe("Known description");
+      expect(environment.document.connectionStatus.textContent).toBe(
+        "Connected",
+      );
+      expect(environment.document.actionSelect.children).toEqual(
+        expectedOptions,
+      );
+      expect(environment.document.actionDescription.textContent).toBe(
+        "Known description",
+      );
 
       environment.connect(28197, "context-02", "registerAgain", "", "{}");
       const secondSocket = FakeSocket.instances[1]!;
       firstSocket.error();
       firstSocket.close();
-      expect(environment.document.connectionStatus.textContent).toBe("Connecting");
+      expect(environment.document.connectionStatus.textContent).toBe(
+        "Connecting",
+      );
       secondSocket.open();
-      secondSocket.message(bridgeState("connected", [action("new", "New action")]));
+      secondSocket.message(
+        bridgeState("connected", [action("new", "New action")]),
+      );
       expect(environment.document.actionSelect.children[1]).toEqual({
         value: "new",
         textContent: "New action",
         disabled: false,
       });
-      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.connectionStatus.textContent).toBe(
+        "Connected",
+      );
 
       firstSocket.error();
       firstSocket.close();
-      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.connectionStatus.textContent).toBe(
+        "Connected",
+      );
       expect(environment.document.actionSelect.children).toEqual([
         { value: "", textContent: "No action selected", disabled: false },
         { value: "new", textContent: "New action", disabled: false },
@@ -417,11 +488,16 @@ describe.serial("property inspector", () => {
         "context-01",
         "register",
         "",
-        JSON.stringify({ context: "context-01", payload: { settings: { actionId: "old" } } }),
+        JSON.stringify({
+          context: "context-01",
+          payload: { settings: { actionId: "old" } },
+        }),
       );
       const firstSocket = FakeSocket.instances[0]!;
       firstSocket.open();
-      firstSocket.message(bridgeState("connected", [action("old", "Old action")]));
+      firstSocket.message(
+        bridgeState("connected", [action("old", "Old action")]),
+      );
       expect(environment.document.actionSelect.value).toBe("old");
 
       environment.connect(
@@ -434,14 +510,23 @@ describe.serial("property inspector", () => {
       const secondSocket = FakeSocket.instances[1]!;
       expect(firstSocket.closeCalls).toBe(1);
       firstSocket.open();
-      firstSocket.message(JSON.stringify({ event: "didReceiveSettings", payload: { settings: { actionId: "old" } } }));
-      firstSocket.message(bridgeState("connected", [action("old", "Old action")]));
+      firstSocket.message(
+        JSON.stringify({
+          event: "didReceiveSettings",
+          payload: { settings: { actionId: "old" } },
+        }),
+      );
+      firstSocket.message(
+        bridgeState("connected", [action("old", "Old action")]),
+      );
 
       secondSocket.open();
       expect(sentFrames(secondSocket)).toEqual([
         { event: "registerAgain", uuid: "context-02" },
       ]);
-      secondSocket.message(bridgeState("connected", [action("new", "New action")]));
+      secondSocket.message(
+        bridgeState("connected", [action("new", "New action")]),
+      );
       expect(environment.document.actionSelect.value).toBe("");
       expect(environment.document.actionSelect.children).toEqual([
         { value: "", textContent: "No action selected", disabled: false },
@@ -460,17 +545,26 @@ describe.serial("property inspector", () => {
         "context-01",
         "register",
         "",
-        JSON.stringify({ context: "context-01", payload: { settings: { actionId: "removed" } } }),
+        JSON.stringify({
+          context: "context-01",
+          payload: { settings: { actionId: "removed" } },
+        }),
       );
       const socket = FakeSocket.instances[0]!;
       socket.open();
-      socket.message(bridgeState("connected", [action("current", "Current action")]));
+      socket.message(
+        bridgeState("connected", [action("current", "Current action")]),
+      );
 
       expect(environment.document.actionSelect.value).toBe("removed");
       expect(environment.document.actionSelect.children).toEqual([
         { value: "", textContent: "No action selected", disabled: false },
         { value: "current", textContent: "Current action", disabled: false },
-        { value: "removed", textContent: "Unavailable: removed", disabled: true },
+        {
+          value: "removed",
+          textContent: "Unavailable: removed",
+          disabled: true,
+        },
       ]);
       expect(environment.document.actionSelect.disabled).toBe(false);
     } finally {
@@ -486,12 +580,23 @@ describe.serial("property inspector", () => {
         "context-01",
         "register",
         "",
-        JSON.stringify({ context: "context-01", payload: { settings: { actionId: "current" } } }),
+        JSON.stringify({
+          context: "context-01",
+          payload: { settings: { actionId: "current" } },
+        }),
       );
       const socket = FakeSocket.instances[0]!;
       socket.open();
-      socket.message(bridgeState("connected", [action("current", "Current action", { description: "Current description" })]));
-      expect(environment.document.actionDescription.textContent).toBe("Current description");
+      socket.message(
+        bridgeState("connected", [
+          action("current", "Current action", {
+            description: "Current description",
+          }),
+        ]),
+      );
+      expect(environment.document.actionDescription.textContent).toBe(
+        "Current description",
+      );
       socket.error();
       expect(environment.document.connectionStatus.textContent).toBe("Offline");
       expect(environment.document.actionSelect.disabled).toBe(true);
@@ -534,11 +639,17 @@ describe.serial("property inspector", () => {
       );
 
       socket.message(bridgeState("connected", []));
-      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.connectionStatus.textContent).toBe(
+        "Connected",
+      );
       expect(environment.document.connectionDetails.textContent).toBe("");
 
-      socket.message(bridgeState("disconnected", [], { latest: { code: "SECRET" } }));
-      expect(environment.document.connectionDetails.textContent).toContain("Hammerspoon is not connected");
+      socket.message(
+        bridgeState("disconnected", [], { latest: { code: "SECRET" } }),
+      );
+      expect(environment.document.connectionDetails.textContent).toContain(
+        "Hammerspoon is not connected",
+      );
     } finally {
       environment.restore();
     }
@@ -604,11 +715,17 @@ describe.serial("property inspector", () => {
         ]),
       );
 
-      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.connectionStatus.textContent).toBe(
+        "Connected",
+      );
       expect(environment.document.actionSelect.disabled).toBe(false);
       expect(environment.document.actionSelect.children).toEqual([
         { value: "", textContent: "No action selected", disabled: false },
-        { value: "schema-action", textContent: "Schema action", disabled: false },
+        {
+          value: "schema-action",
+          textContent: "Schema action",
+          disabled: false,
+        },
       ]);
     } finally {
       environment.restore();
@@ -625,11 +742,15 @@ describe.serial("property inspector", () => {
         bridgeState("connected", [
           action("future-two", "Future two", { settingsSchemaVersion: 2 }),
           action("current", "Current action", { settingsSchemaVersion: 1 }),
-          action("future-sixteen", "Future sixteen", { settingsSchemaVersion: 16 }),
+          action("future-sixteen", "Future sixteen", {
+            settingsSchemaVersion: 16,
+          }),
         ]),
       );
 
-      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.connectionStatus.textContent).toBe(
+        "Connected",
+      );
       expect(environment.document.actionSelect.disabled).toBe(false);
       expect(environment.document.actionSelect.children).toEqual([
         { value: "", textContent: "No action selected", disabled: false },
@@ -646,7 +767,9 @@ describe.serial("property inspector", () => {
       environment.connect(28196, "context-01", "register", "", "{}");
       const socket = FakeSocket.instances[0]!;
       socket.open();
-      socket.message(bridgeState("connected", [action("known", "Known action")]));
+      socket.message(
+        bridgeState("connected", [action("known", "Known action")]),
+      );
 
       const expectedOptions = [
         { value: "", textContent: "No action selected", disabled: false },
@@ -660,9 +783,13 @@ describe.serial("property inspector", () => {
             action("known", "Known action"),
           ]),
         );
-        expect(environment.document.connectionStatus.textContent).toBe("Connected");
+        expect(environment.document.connectionStatus.textContent).toBe(
+          "Connected",
+        );
         expect(environment.document.actionSelect.disabled).toBe(false);
-        expect(environment.document.actionSelect.children).toEqual(expectedOptions);
+        expect(environment.document.actionSelect.children).toEqual(
+          expectedOptions,
+        );
       }
     } finally {
       environment.restore();
@@ -677,7 +804,9 @@ describe.serial("property inspector", () => {
       socket.open();
       socket.message(bridgeState("connected", []));
 
-      expect(environment.document.connectionStatus.textContent).toBe("Connected");
+      expect(environment.document.connectionStatus.textContent).toBe(
+        "Connected",
+      );
       expect(environment.document.actionSelect.disabled).toBe(true);
       expect(environment.document.actionSelect.children).toEqual([
         { value: "", textContent: "No actions available", disabled: false },
@@ -696,7 +825,13 @@ describe.serial("property inspector", () => {
         "",
         JSON.stringify({
           context: "context-01",
-          payload: { settings: { actionId: "schema", text: "init", opaque: { keep: true } } },
+          payload: {
+            settings: {
+              actionId: "schema",
+              text: "init",
+              opaque: { keep: true },
+            },
+          },
         }),
       );
       const socket = FakeSocket.instances[0]!;
@@ -726,7 +861,13 @@ describe.serial("property inspector", () => {
                 max: 10,
                 step: 2,
               },
-              { type: "boolean", key: "enabled", label: "Enabled", description: "Whether processing is enabled.", default: true },
+              {
+                type: "boolean",
+                key: "enabled",
+                label: "Enabled",
+                description: "Whether processing is enabled.",
+                default: true,
+              },
               {
                 type: "select",
                 key: "mode",
@@ -745,22 +886,42 @@ describe.serial("property inspector", () => {
       socket.message(
         JSON.stringify({
           event: "didReceiveSettings",
-          payload: { settings: { actionId: "schema", text: "init", opaque: { keep: true } } },
+          payload: {
+            settings: {
+              actionId: "schema",
+              text: "init",
+              opaque: { keep: true },
+            },
+          },
         }),
       );
 
       expect(environment.document.actionSettings.children).toHaveLength(4);
-      expect(environment.document.actionDescription.textContent).toBe("Configures schema values.");
-      const textWrapper = environment.document.actionSettings.children[0] as FakeElement;
-      const countWrapper = environment.document.actionSettings.children[1] as FakeElement;
+      expect(environment.document.actionDescription.textContent).toBe(
+        "Configures schema values.",
+      );
+      const textWrapper = environment.document.actionSettings
+        .children[0] as FakeElement;
+      const countWrapper = environment.document.actionSettings
+        .children[1] as FakeElement;
       const text = textWrapper.children[0] as FakeElement;
       const count = countWrapper.children[0] as FakeElement;
-      const enabled = (environment.document.actionSettings.children[2] as FakeElement).children[0] as FakeElement;
-      const mode = (environment.document.actionSettings.children[3] as FakeElement).children[0] as FakeElement;
+      const enabled = (
+        environment.document.actionSettings.children[2] as FakeElement
+      ).children[0] as FakeElement;
+      const mode = (
+        environment.document.actionSettings.children[3] as FakeElement
+      ).children[0] as FakeElement;
       expect(textWrapper.children[1]).toMatchObject({ textContent: "Text" });
-      expect(textWrapper.children[2]).toMatchObject({ textContent: "A short text value." });
-      expect(countWrapper.children[2]).toMatchObject({ textContent: "How many items to process." });
-      expect(text.attributes.get("aria-describedby")).toBe("action-field-description-0");
+      expect(textWrapper.children[2]).toMatchObject({
+        textContent: "A short text value.",
+      });
+      expect(countWrapper.children[2]).toMatchObject({
+        textContent: "How many items to process.",
+      });
+      expect(text.attributes.get("aria-describedby")).toBe(
+        "action-field-description-0",
+      );
       expect(text.value).toBe("init");
       expect(text.maxLength).toBe(5);
       expect(text.minLength).toBe(2);
@@ -774,8 +935,14 @@ describe.serial("property inspector", () => {
 
       text.value = "too-long";
       text.dispatch("change");
-      expect(environment.document.settingsStatus.textContent).toContain("invalid");
-      expect(sentFrames(socket).filter((frame) => (frame as { event?: unknown }).event === "setSettings")).toHaveLength(0);
+      expect(environment.document.settingsStatus.textContent).toContain(
+        "invalid",
+      );
+      expect(
+        sentFrames(socket).filter(
+          (frame) => (frame as { event?: unknown }).event === "setSettings",
+        ),
+      ).toHaveLength(0);
 
       text.value = "ok";
       count.value = "6";
@@ -785,7 +952,9 @@ describe.serial("property inspector", () => {
       count.dispatch("change");
       enabled.dispatch("change");
       mode.dispatch("change");
-      const frames = sentFrames(socket).filter((frame) => (frame as { event?: unknown }).event === "setSettings");
+      const frames = sentFrames(socket).filter(
+        (frame) => (frame as { event?: unknown }).event === "setSettings",
+      );
       expect(frames.at(-1)).toEqual({
         action: "com.brettinternet.hammerspoon.action",
         event: "setSettings",
@@ -830,19 +999,34 @@ describe.serial("property inspector", () => {
       socket.message(
         JSON.stringify({
           event: "didReceiveSettings",
-          payload: { settings: { actionId: "schema", label: "Instance", count: "wrong", opaque: ["preserve"] } },
+          payload: {
+            settings: {
+              actionId: "schema",
+              label: "Instance",
+              count: "wrong",
+              opaque: ["preserve"],
+            },
+          },
         }),
       );
 
-      const label = (environment.document.actionSettings.children[0] as FakeElement).children[0] as FakeElement;
-      const count = (environment.document.actionSettings.children[1] as FakeElement).children[0] as FakeElement;
+      const label = (
+        environment.document.actionSettings.children[0] as FakeElement
+      ).children[0] as FakeElement;
+      const count = (
+        environment.document.actionSettings.children[1] as FakeElement
+      ).children[0] as FakeElement;
       expect(label.value).toBe("Instance");
       expect(count.value).toBe("2");
-      expect(environment.document.settingsStatus.textContent).toContain("invalid saved value");
+      expect(environment.document.settingsStatus.textContent).toContain(
+        "invalid saved value",
+      );
 
       count.value = "4";
       count.dispatch("change");
-      const frames = sentFrames(socket).filter((frame) => frame.event === "setSettings");
+      const frames = sentFrames(socket).filter(
+        (frame) => frame.event === "setSettings",
+      );
       expect(frames.at(-1)).toEqual({
         action: "com.brettinternet.hammerspoon.action",
         event: "setSettings",
@@ -885,12 +1069,18 @@ describe.serial("property inspector", () => {
         }),
       );
 
-      const value = (environment.document.actionSettings.children[0] as FakeElement).children[0] as FakeElement;
+      const value = (
+        environment.document.actionSettings.children[0] as FakeElement
+      ).children[0] as FakeElement;
       expect(value.value).toBe("😀");
-      expect(environment.document.settingsStatus.textContent).toBe("Settings are ready.");
+      expect(environment.document.settingsStatus.textContent).toBe(
+        "Settings are ready.",
+      );
 
       value.dispatch("change");
-      const frames = sentFrames(socket).filter((frame) => frame.event === "setSettings");
+      const frames = sentFrames(socket).filter(
+        (frame) => frame.event === "setSettings",
+      );
       expect(frames.at(-1)).toEqual({
         action: "com.brettinternet.hammerspoon.action",
         event: "setSettings",
@@ -919,20 +1109,27 @@ describe.serial("property inspector", () => {
       );
       environment.document.actionSelect.value = "unsupported";
       environment.document.actionSelect.dispatch("change");
-      expect(environment.document.settingsStatus.textContent).toContain("Unsupported settings field");
+      expect(environment.document.settingsStatus.textContent).toContain(
+        "Unsupported settings field",
+      );
       expect(environment.document.actionSettings.children).toHaveLength(1);
-      expect((environment.document.actionSettings.children[0] as FakeElement).disabled).toBe(true);
+      expect(
+        (environment.document.actionSettings.children[0] as FakeElement)
+          .disabled,
+      ).toBe(true);
 
       environment.document.actionSelect.value = "valid";
       environment.document.actionSelect.dispatch("change");
-      expect(environment.document.settingsStatus.textContent).toBe("No additional settings.");
+      expect(environment.document.settingsStatus.textContent).toBe(
+        "No additional settings.",
+      );
       expect(environment.document.actionSelect.disabled).toBe(false);
     } finally {
       environment.restore();
     }
   });
 
-  test("renders categorized live previews and interactive action settings", async () => {
+  test("renders categorized actions and interactive action settings", async () => {
     vi.useFakeTimers();
     const environment = await installEnvironment();
     try {
@@ -958,16 +1155,6 @@ describe.serial("property inspector", () => {
         { value: "default", label: "Default input" },
         { value: "missing", label: "Studio Mic" },
       ];
-      const keypadPreview = {
-        title: "Studio Mic — Muted",
-        state: 1,
-        appearanceVersion: 1,
-        badge: "SM",
-        progress: 0.4,
-        backgroundColor: "#281315",
-        foregroundColor: "#FFFFFF",
-        icon: { kind: "bundled", name: "hammerspoon" },
-      };
       const actions = [
         action("app", "Launch app", {
           category: "Applications",
@@ -1022,71 +1209,76 @@ describe.serial("property inspector", () => {
           ],
         }),
       ];
-      socket.message(JSON.stringify({
-        event: "sendToPropertyInspector",
-        payload: {
-          type: "bridgeState",
-          status: "connected",
-          controller: "keypad",
-          preview: keypadPreview,
-          actions,
-        },
-      }));
+      socket.message(
+        JSON.stringify({
+          event: "sendToPropertyInspector",
+          payload: {
+            type: "bridgeState",
+            status: "connected",
+            controller: "keypad",
+            actions,
+          },
+        }),
+      );
 
-      expect(environment.document.actionDescription.textContent).toBe("Control a microphone.");
-      expect(sentFrames(socket).filter((frame) => frame.event === "setSettings").at(-1)?.payload).toMatchObject({
+      expect(environment.document.actionDescription.textContent).toBe(
+        "Control a microphone.",
+      );
+      expect(
+        sentFrames(socket)
+          .filter((frame) => frame.event === "setSettings")
+          .at(-1)?.payload,
+      ).toMatchObject({
         __optionLabels: {
           audio: { inputDevice: { missing: "Studio Mic" } },
         },
       });
       inputOptions.splice(1, 1);
-      socket.message(JSON.stringify({
-        event: "sendToPropertyInspector",
-        payload: {
-          type: "bridgeState",
-          status: "connected",
-          controller: "keypad",
-          preview: keypadPreview,
-          actions,
-        },
-      }));
-      socket.message(JSON.stringify({
-        event: "sendToPropertyInspector",
-        payload: {
-          type: "inspectorFeedback",
-          kind: "success",
-          message: "Microphone muted",
-          durationMs: 100,
-        },
-      }));
-      expect(environment.document.settingsStatus.textContent).toBe("Microphone muted");
-      expect(environment.document.settingsStatus.attributes.get("data-feedback")).toBe("success");
-      socket.message(JSON.stringify({
-        event: "sendToPropertyInspector",
-        payload: {
-          type: "previewState",
-          controller: "keypad",
-          appearance: keypadPreview,
-        },
-      }));
-      expect(environment.document.settingsStatus.textContent).toBe("Microphone muted");
-      expect(environment.document.settingsStatus.attributes.get("data-feedback")).toBe("success");
-      expect(environment.document.actionGestures.textContent).toBe("Press: toggle · Hold: talk");
-      expect(environment.document.previewTitle.textContent).toBe("Studio Mic — Muted");
-      expect(environment.document.previewBadge.textContent).toBe("SM");
-      expect(environment.document.previewProgress.attributes.get("style")).toBe("width:40%");
-      expect(environment.document.previewDevice.attributes.get("class")).toBe("preview-device keypad");
-      expect(environment.document.previewIcon.attributes.get("src")).toBe("../imgs/plugin.svg");
+      socket.message(
+        JSON.stringify({
+          event: "sendToPropertyInspector",
+          payload: {
+            type: "bridgeState",
+            status: "connected",
+            controller: "keypad",
+            actions,
+          },
+        }),
+      );
+      socket.message(
+        JSON.stringify({
+          event: "sendToPropertyInspector",
+          payload: {
+            type: "inspectorFeedback",
+            kind: "success",
+            message: "Microphone muted",
+            durationMs: 100,
+          },
+        }),
+      );
+      expect(environment.document.settingsStatus.textContent).toBe(
+        "Microphone muted",
+      );
+      expect(
+        environment.document.settingsStatus.attributes.get("data-feedback"),
+      ).toBe("success");
+      expect(environment.document.actionGestures.textContent).toBe(
+        "Press: toggle · Hold: talk",
+      );
       expect(environment.document.actionSelect.children).toHaveLength(4);
-      const applicationGroup = environment.document.actionSelect.children[1] as FakeElement;
-      const audioGroup = environment.document.actionSelect.children[2] as FakeElement;
-      const mediaGroup = environment.document.actionSelect.children[3] as FakeElement;
+      const applicationGroup = environment.document.actionSelect
+        .children[1] as FakeElement;
+      const audioGroup = environment.document.actionSelect
+        .children[2] as FakeElement;
+      const mediaGroup = environment.document.actionSelect
+        .children[3] as FakeElement;
       expect(applicationGroup.attributes.get("label")).toBe("Applications");
       expect(audioGroup.attributes.get("label")).toBe("Audio");
       expect(mediaGroup.attributes.get("label")).toBe("Media");
 
       expect(environment.document.actionSettings.children).toHaveLength(2);
-      let inputWrapper = environment.document.actionSettings.children[0] as FakeElement;
+      let inputWrapper = environment.document.actionSettings
+        .children[0] as FakeElement;
       const inputControl = inputWrapper.children[0] as FakeElement;
       expect(inputControl.value).toBe("missing");
       expect(inputControl.children.at(-1)).toMatchObject({
@@ -1097,42 +1289,76 @@ describe.serial("property inspector", () => {
       environment.document.actionSearch.value = "spotify";
       environment.document.actionSearch.dispatch("input");
       expect(environment.document.actionSelect.children).toHaveLength(3);
-      expect((environment.document.actionSelect.children[1] as FakeElement).attributes.get("label")).toBe("Audio");
-      expect((environment.document.actionSelect.children[2] as FakeElement).attributes.get("label")).toBe("Media");
+      expect(
+        (
+          environment.document.actionSelect.children[1] as FakeElement
+        ).attributes.get("label"),
+      ).toBe("Audio");
+      expect(
+        (
+          environment.document.actionSelect.children[2] as FakeElement
+        ).attributes.get("label"),
+      ).toBe("Media");
       environment.document.actionSearch.value = "";
       environment.document.actionSearch.dispatch("input");
 
-      let meetingWrapper = environment.document.actionSettings.children[1] as FakeElement;
+      let meetingWrapper = environment.document.actionSettings
+        .children[1] as FakeElement;
       const meetingControl = meetingWrapper.children[0] as FakeElement;
       meetingControl.checked = true;
       meetingControl.dispatch("change");
       expect(environment.document.actionSettings.children).toHaveLength(3);
-      const meetingSection = environment.document.actionSettings.children[2] as FakeElement;
-      expect((meetingSection.children[0] as FakeElement).textContent).toBe("Meeting apps");
-      expect(sentFrames(socket).filter((frame) => frame.event === "setSettings").at(-1)?.payload).toMatchObject({
+      const meetingSection = environment.document.actionSettings
+        .children[2] as FakeElement;
+      expect((meetingSection.children[0] as FakeElement).textContent).toBe(
+        "Meeting apps",
+      );
+      expect(
+        sentFrames(socket)
+          .filter((frame) => frame.event === "setSettings")
+          .at(-1)?.payload,
+      ).toMatchObject({
         actionId: "audio",
         muteMeetingApps: true,
       });
 
-      inputWrapper = environment.document.actionSettings.children[0] as FakeElement;
+      inputWrapper = environment.document.actionSettings
+        .children[0] as FakeElement;
       (inputWrapper.children[4] as FakeElement).dispatch("click");
-      expect(sentFrames(socket).filter((frame) => frame.event === "sendToPlugin").at(-1)?.payload).toEqual({
+      expect(
+        sentFrames(socket)
+          .filter((frame) => frame.event === "sendToPlugin")
+          .at(-1)?.payload,
+      ).toEqual({
         type: "refreshActions",
       });
 
-      meetingWrapper = environment.document.actionSettings.children[1] as FakeElement;
+      meetingWrapper = environment.document.actionSettings
+        .children[1] as FakeElement;
       (meetingWrapper.children[2] as FakeElement).dispatch("click");
       expect(environment.document.actionSettings.children).toHaveLength(2);
-      expect(sentFrames(socket).filter((frame) => frame.event === "setSettings").at(-1)?.payload).toMatchObject({
+      expect(
+        sentFrames(socket)
+          .filter((frame) => frame.event === "setSettings")
+          .at(-1)?.payload,
+      ).toMatchObject({
         actionId: "audio",
         muteMeetingApps: false,
       });
 
       environment.document.resetActionButton.dispatch("click");
-      expect(environment.document.settingsStatus.textContent).toBe("Action settings reset.");
+      expect(environment.document.settingsStatus.textContent).toBe(
+        "Action settings reset.",
+      );
       vi.advanceTimersByTime(100);
-      expect(environment.document.settingsStatus.textContent).toBe("Action settings reset.");
-      expect(sentFrames(socket).filter((frame) => frame.event === "setSettings").at(-1)?.payload).toMatchObject({
+      expect(environment.document.settingsStatus.textContent).toBe(
+        "Action settings reset.",
+      );
+      expect(
+        sentFrames(socket)
+          .filter((frame) => frame.event === "setSettings")
+          .at(-1)?.payload,
+      ).toMatchObject({
         actionId: "audio",
         inputDevice: "default",
         muteMeetingApps: false,
@@ -1142,27 +1368,24 @@ describe.serial("property inspector", () => {
       environment.document.actionSelect.value = "spotify";
       environment.document.actionSelect.dispatch("change");
       expect(environment.document.actionSettings.children).toHaveLength(0);
-      socket.message(JSON.stringify({
-        event: "sendToPropertyInspector",
-        payload: {
-          type: "bridgeState",
-          status: "connected",
-          controller: "encoder",
-          actions,
-          preview: {
-            title: "Volume",
-            state: 1,
-            appearanceVersion: 1,
-            value: "35%",
-            indicator: 35,
+      socket.message(
+        JSON.stringify({
+          event: "sendToPropertyInspector",
+          payload: {
+            type: "bridgeState",
+            status: "connected",
+            controller: "encoder",
+            actions,
           },
-        },
-      }));
+        }),
+      );
       expect(environment.document.actionSettings.children).toHaveLength(1);
-      expect(((environment.document.actionSettings.children[0] as FakeElement).children[0] as FakeElement).value)
-        .toBe("volume");
-      expect(environment.document.previewProgress.attributes.get("style")).toBe("width:35%");
-      expect(environment.document.previewValue.textContent).toBe("35%");
+      expect(
+        (
+          (environment.document.actionSettings.children[0] as FakeElement)
+            .children[0] as FakeElement
+        ).value,
+      ).toBe("volume");
     } finally {
       environment.restore();
       vi.useRealTimers();
