@@ -1,6 +1,14 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, test, vi } from "bun:test";
 
-type Listener = () => void;
+type FakeKeyboardEvent = {
+  key?: string;
+  altKey?: boolean;
+  defaultPrevented: boolean;
+  preventDefault(): void;
+};
+
+type Listener = (event?: FakeKeyboardEvent) => void;
 
 type FakeOption = {
   value: string;
@@ -24,6 +32,8 @@ class FakeElement {
   children: FakeChild[] = [];
   readonly attributes = new Map<string, string>();
   private readonly listeners = new Map<string, Listener>();
+  focusCalls = 0;
+  showPickerCalls = 0;
 
   constructor(readonly tagName = "div") {}
 
@@ -39,6 +49,15 @@ class FakeElement {
     this.listeners.set(type, listener);
   }
 
+
+  focus(): void {
+    this.focusCalls += 1;
+  }
+
+  showPicker(): void {
+    this.showPickerCalls += 1;
+  }
+
   replaceChildren(...children: FakeChild[]): void {
     this.children = children;
   }
@@ -47,8 +66,16 @@ class FakeElement {
     this.children.push(child);
   }
 
-  dispatch(type: string): void {
-    this.listeners.get(type)?.();
+  dispatch(type: string, event: Partial<FakeKeyboardEvent> = {}): FakeKeyboardEvent {
+    const dispatched: FakeKeyboardEvent = {
+      defaultPrevented: false,
+      preventDefault: () => {
+        dispatched.defaultPrevented = true;
+      },
+      ...event,
+    };
+    this.listeners.get(type)?.(dispatched);
+    return dispatched;
   }
 }
 
@@ -207,6 +234,20 @@ function sentFrames(socket: FakeSocket): Array<Record<string, unknown>> {
     (frame) => JSON.parse(frame) as Record<string, unknown>,
   );
 }
+
+test("documents action search keyboard handoff", async () => {
+  const markup = await readFile(
+    new URL("../com.brettinternet.hammerspoon.sdPlugin/ui/property-inspector.html", import.meta.url),
+    "utf8",
+  );
+
+  expect(markup).toContain('aria-controls="action-id"');
+  expect(markup).toContain('aria-describedby="action-search-hint"');
+  expect(markup).toContain('id="action-search-hint"');
+  expect(markup).toContain(
+    'aria-describedby="action-search-hint action-description connection-status connection-details"',
+  );
+});
 
 describe.serial("property inspector", () => {
   test("uses the inspected action UUID for settings commands", async () => {
@@ -791,6 +832,36 @@ describe.serial("property inspector", () => {
           expectedOptions,
         );
       }
+    } finally {
+      environment.restore();
+    }
+  });
+
+  test("hands filtered catalog results to the keyboard", async () => {
+    const environment = await installEnvironment();
+    try {
+      environment.connect(28196, "context-01", "register", "", "{}");
+      const socket = FakeSocket.instances[0]!;
+      socket.open();
+      socket.message(bridgeState("connected", [
+        action("speaker", "Speaker Volume"),
+        action("music", "Music Playback"),
+      ]));
+
+      environment.document.actionSearch.value = "speaker";
+      environment.document.actionSearch.dispatch("input");
+
+      const arrowDown = environment.document.actionSearch.dispatch("keydown", { key: "ArrowDown", altKey: true });
+      expect(arrowDown.defaultPrevented).toBe(true);
+      expect(environment.document.actionSelect.focusCalls).toBe(1);
+      expect(environment.document.actionSelect.showPickerCalls).toBe(1);
+
+      const enter = environment.document.actionSearch.dispatch("keydown", { key: "Enter" });
+      expect(enter.defaultPrevented).toBe(true);
+      expect(environment.document.actionSelect.value).toBe("speaker");
+      expect(sentFrames(socket).filter((frame) => frame.event === "setSettings").at(-1)?.payload).toMatchObject({
+        actionId: "speaker",
+      });
     } finally {
       environment.restore();
     }

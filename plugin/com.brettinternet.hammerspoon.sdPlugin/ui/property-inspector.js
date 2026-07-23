@@ -202,6 +202,40 @@
             actionGestures.textContent = action?.gesture ?? "";
         }
     }
+    function actionMatchesCatalogFilter(action, filter) {
+        return filter.length === 0
+            || `${action.name} ${action.description ?? ""} ${action.category ?? ""}`.toLocaleLowerCase().includes(filter);
+    }
+    function openActionSelect() {
+        if (!actionSelect || actionSelect.disabled)
+            return;
+        actionSelect.focus?.();
+        try {
+            actionSelect.showPicker?.();
+        }
+        catch {
+            // Older Property Inspector runtimes still receive focus for native keyboard controls.
+        }
+    }
+    function handleActionSearchKeydown(event) {
+        if (!event)
+            return;
+        if (event.key === "ArrowDown") {
+            event.preventDefault();
+            openActionSelect();
+        }
+        else if (event.key === "Enter") {
+            const filter = catalogFilter.trim().toLocaleLowerCase();
+            const matches = bridgeActions.filter((action) => actionMatchesCatalogFilter(action, filter));
+            if (matches.length !== 1)
+                return;
+            event.preventDefault();
+            if (!actionSelect || actionSelect.disabled)
+                return;
+            actionSelect.value = matches[0].actionId;
+            saveActionId();
+        }
+    }
     function renderActionSelect() {
         renderActionDescription();
         if (!actionSelect || !documentLike) {
@@ -232,15 +266,8 @@
         const children = [createOption("", "No action selected")];
         let savedActionAvailable = savedActionId.length === 0;
         for (const category of CATEGORY_ORDER) {
-            const matches = bridgeActions.filter((action) => {
-                if (action.category !== category)
-                    return false;
-                if (action.actionId === savedActionId || filter.length === 0)
-                    return true;
-                return `${action.name} ${action.description ?? ""} ${category}`
-                    .toLocaleLowerCase()
-                    .includes(filter);
-            });
+            const matches = bridgeActions.filter((action) => (action.category === category
+                && (action.actionId === savedActionId || actionMatchesCatalogFilter(action, filter))));
             if (matches.length === 0)
                 continue;
             const group = documentLike.createElement("optgroup");
@@ -255,11 +282,7 @@
         for (const action of bridgeActions) {
             if (action.category !== undefined)
                 continue;
-            if (action.actionId !== savedActionId &&
-                filter.length > 0 &&
-                !`${action.name} ${action.description ?? ""}`
-                    .toLocaleLowerCase()
-                    .includes(filter))
+            if (action.actionId !== savedActionId && !actionMatchesCatalogFilter(action, filter))
                 continue;
             children.push(createOption(action.actionId, action.name));
             if (action.actionId === savedActionId)
@@ -1111,6 +1134,7 @@
             catalogFilter = actionSearch.value;
             renderActionSelect();
         });
+        actionSearch.addEventListener("keydown", handleActionSearchKeydown);
     }
     if (resetActionButton) {
         resetActionButton.addEventListener("click", resetActionSettings);

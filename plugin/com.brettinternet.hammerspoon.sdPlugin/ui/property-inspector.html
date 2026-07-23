@@ -216,12 +216,17 @@
         class="catalog-search"
         type="search"
         placeholder="Search actions"
+        aria-controls="action-id"
+        aria-describedby="action-search-hint"
         disabled
       />
+      <p id="action-search-hint" class="description" role="note">
+        Type to filter actions. Press Down Arrow to open the results. When one action matches, press Enter to select it.
+      </p>
       <select
         id="action-id"
         name="actionId"
-        aria-describedby="action-description connection-status connection-details"
+        aria-describedby="action-search-hint action-description connection-status connection-details"
         disabled
       >
         <option value="">No actions available</option>
