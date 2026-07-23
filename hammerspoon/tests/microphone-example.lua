@@ -21,6 +21,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         return self.device_name
       end
       function device:uid()
+        if failure == "uid-throws" then
+          error("uid exploded")
+        end
         return self.device_uid
       end
       function device:inputMuted()
@@ -47,6 +50,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         return true
       end
       function device:watcherCallback(callback)
+        if failure == "watcher-callback-throws" then
+          error("watcher callback exploded")
+        end
         self.watcher_callback = callback
       end
       function device:watcherStart()
@@ -210,6 +216,23 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     action.disappear(specific_context)
     assertEqual(built_in.watcher_stops, 1, "disappearing actions must release unused watchers")
     assertEqual(usb.watcher_stops, 1)
+    failure = "uid-throws"
+    action.appear(default_context)
+    appearance = action.appearance(default_context)
+    assertEqual(appearance.title, "MacBook\nMicrophone\nLive",
+      "unavailable watcher details must not block the initial microphone appearance")
+    action.disappear(default_context)
+    failure = nil
+    failure = "watcher-callback-throws"
+    action.appear(default_context)
+    appearance = action.appearance(default_context)
+    assertEqual(appearance.title, "MacBook\nMicrophone\nLive",
+      "failed watcher setup must not block the initial microphone appearance")
+    action.disappear(default_context)
+    failure = nil
+    action.appear(default_context)
+    assertEqual(built_in.watcher_starts, 2, "failed watcher setup must not retain a stale watcher record")
+    action.disappear(default_context)
 
 
     local meeting_context = context("meeting", { muteMeetingApps = true })

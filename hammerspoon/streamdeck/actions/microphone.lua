@@ -373,44 +373,51 @@ local function refresh_visible_contexts()
 end
 
 local function stop_input_watcher(record)
-  local device = record.device
-  if type(device.watcherStop) == "function" then
-    pcall(device.watcherStop, device)
-  end
-  if type(device.watcherCallback) == "function" then
-    pcall(device.watcherCallback, device, nil)
-  end
+  pcall(function()
+    local device = record.device
+    local watcher_stop = device.watcherStop
+    if type(watcher_stop) == "function" then watcher_stop(device) end
+    local watcher_callback = device.watcherCallback
+    if type(watcher_callback) == "function" then watcher_callback(device, nil) end
+  end)
 end
 
 local function watch_input(device)
   local uid = device_uid(device)
-  if watched_inputs_by_uid[uid] ~= nil
-    or type(device.watcherCallback) ~= "function"
-    or type(device.watcherStart) ~= "function" then
+  if watched_inputs_by_uid[uid] ~= nil then return end
+  local methods_ok, watcher_callback, watcher_start = pcall(function()
+    return device.watcherCallback, device.watcherStart
+  end)
+  if not methods_ok
+    or type(watcher_callback) ~= "function"
+    or type(watcher_start) ~= "function" then
     return
   end
 
   local muted_ok, muted = pcall(microphone_muted, device)
   local record = {
     device = device,
-    muted = muted_ok and muted or nil,
+    muted = nil,
   }
+  if muted_ok then record.muted = muted end
   watched_inputs_by_uid[uid] = record
 
-  local callback_ok = pcall(device.watcherCallback, device, function(_uid, event, scope)
-    if watched_inputs_by_uid[uid] ~= record
-      or event ~= "mute"
-      or (scope ~= "inpt" and scope ~= "glob") then
-      return
-    end
-    local current_ok, current = pcall(microphone_muted, record.device)
-    if current_ok and current ~= record.muted then
-      record.muted = current
-      refresh_visible_contexts()
-    end
+  local setup_ok, result = pcall(function()
+    watcher_callback(device, function(_uid, event, scope)
+      if watched_inputs_by_uid[uid] ~= record
+        or event ~= "mute"
+        or (scope ~= "inpt" and scope ~= "glob") then
+        return
+      end
+      local current_ok, current = pcall(microphone_muted, record.device)
+      if current_ok and current ~= record.muted then
+        record.muted = current
+        refresh_visible_contexts()
+      end
+    end)
+    return watcher_start(device)
   end)
-  local start_ok, result = pcall(device.watcherStart, device)
-  if not callback_ok or not start_ok or result == nil then
+  if not setup_ok or result == nil then
     watched_inputs_by_uid[uid] = nil
     stop_input_watcher(record)
   end
@@ -445,11 +452,15 @@ local function reconcile_input_watchers()
   end
 end
 
+local function synchronize_input_watchers()
+  pcall(reconcile_input_watchers)
+end
+
 
 local function appearance_for(context)
   if visible_contexts[context.instanceId] ~= nil then
     visible_contexts[context.instanceId] = context
-    reconcile_input_watchers()
+    synchronize_input_watchers()
   end
   local selected, mute_apps, mode = settings_for(context)
   local device = resolve_input_device(selected)
@@ -515,12 +526,12 @@ return {
   appear = function(context)
     ptt_state_by_instance[context.instanceId] = nil
     visible_contexts[context.instanceId] = context
-    reconcile_input_watchers()
+    synchronize_input_watchers()
   end,
   disappear = function(context)
     restore_push_to_talk(context.instanceId)
     visible_contexts[context.instanceId] = nil
-    reconcile_input_watchers()
+    synchronize_input_watchers()
   end,
   appearance = appearance_for,
   push = apply_press,
