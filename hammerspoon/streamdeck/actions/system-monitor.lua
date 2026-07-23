@@ -58,7 +58,7 @@ local activity_monitor_metrics = {
   memory = true,
   memory_pressure = true,
 }
-local network_settings_url = "x-apple.systempreferences:com.apple.Network-Settings.extension"
+local network_settings_url = "x-apple.systempreferences://com.apple.Network-Settings.extension"
 
 local visible_contexts = {}
 local requested_metrics = {}
