@@ -16,6 +16,7 @@ local modes = {
     list_method = "allInputDevices",
     set_method = "setDefaultInputDevice",
     icon_for_name = function() return "microphone" end,
+    mute_method = "inputMuted",
     badge = "IN",
   },
   output = {
@@ -219,17 +220,84 @@ function router.new(kind)
   local mode = modes[kind]
   if mode == nil then error("unknown audio router kind: " .. tostring(kind)) end
   local pending_uid_by_instance = {}
+  local visible_contexts = {}
+  local watched_input
+  local watched_input_uid
+  local watched_muted
+
+  local function input_muted(device)
+    if mode.mute_method == nil
+      or (type(device) ~= "table" and type(device) ~= "userdata")
+      or type(device[mode.mute_method]) ~= "function" then
+      return nil
+    end
+    local ok, muted = pcall(device[mode.mute_method], device)
+    if not ok or type(muted) ~= "boolean" then return nil end
+    return muted
+  end
+
+  local function refresh_visible_contexts()
+    for _, context in pairs(visible_contexts) do
+      context:refresh()
+    end
+  end
+
+  local function stop_input_watcher()
+    if watched_input ~= nil then
+      if type(watched_input.watcherStop) == "function" then
+        pcall(watched_input.watcherStop, watched_input)
+      end
+      if type(watched_input.watcherCallback) == "function" then
+        pcall(watched_input.watcherCallback, watched_input, nil)
+      end
+    end
+    watched_input = nil
+    watched_input_uid = nil
+    watched_muted = nil
+  end
+
+  local function watch_current_input(device)
+    if mode.mute_method == nil or next(visible_contexts) == nil or device == nil then return end
+    local uid = device_uid(mode, device)
+    if uid == watched_input_uid then return end
+    stop_input_watcher()
+    if type(device.watcherCallback) ~= "function" or type(device.watcherStart) ~= "function" then
+      return
+    end
+
+    watched_input = device
+    watched_input_uid = uid
+    watched_muted = input_muted(device)
+    local callback_ok = pcall(device.watcherCallback, device, function(_uid, event, scope)
+      if event ~= "mute" or (scope ~= "inpt" and scope ~= "glob") then return end
+      local muted = input_muted(watched_input)
+      if type(muted) == "boolean" and muted ~= watched_muted then
+        watched_muted = muted
+        refresh_visible_contexts()
+      end
+    end)
+    local start_ok, result = pcall(device.watcherStart, device)
+    if not callback_ok or not start_ok or result == nil then
+      stop_input_watcher()
+    end
+  end
 
   local function title_name(name)
     return name:gsub("%s+", "\n")
+  end
+
+  local function muted_title(name, muted)
+    return title_name(name) .. (muted == true and "\nMuted" or "")
   end
 
   local function appearance_for(context)
     local audio = audio_api(mode)
     local devices = configured_devices(mode, context)
     local current = default_device(mode, audio)
+    watch_current_input(current)
     local current_index = current_device_index(mode, current, devices)
     local current_name = current and device_name(mode, current) or ("No " .. mode.singular)
+    local muted = input_muted(current)
     local device = type(context.getDevice) == "function" and context:getDevice() or nil
     local encoder = type(device) == "table" and device.controllerType == "encoder"
 
@@ -244,33 +312,40 @@ function router.new(kind)
       local selected = devices[selected_index]
       local selected_name = selected and selected.name or current_name
       return {
-        title = selected_name == current_name and title_name(current_name)
-          or (title_name(current_name) .. "\n→ " .. title_name(selected_name)),
+        title = selected_name == current_name and muted_title(current_name, muted)
+          or (muted_title(current_name, muted) .. "\n→ " .. title_name(selected_name)),
         state = selected_name == current_name and "inactive" or "active",
         appearanceVersion = 1,
         value = selected_name == current_name and "Rotate to select" or "Press to confirm",
         indicator = #devices > 1 and ((selected_index - 1) / (#devices - 1) * 100) or 0,
-        icon = helpers.icon(mode.icon_for_name(selected_name), { foregroundColor = helpers.colors.accent }),
+        icon = helpers.icon(mode.icon_for_name(selected_name), {
+          foregroundColor = selected_name == current_name and muted == true
+              and helpers.colors.error or helpers.colors.accent,
+        }),
       }
     end
 
     local next_device = devices[((current_index or 0) % math.max(1, #devices)) + 1]
     return {
-      title = title_name(current_name) .. (next_device and ("\n→ " .. title_name(next_device.name)) or ""),
+      title = muted_title(current_name, muted)
+        .. (next_device and ("\n→ " .. title_name(next_device.name)) or ""),
       state = current_index ~= nil and current_index > 1 and "active" or "inactive",
       appearanceVersion = 1,
       presentationState = current_index and current_index - 1 or 0,
       badge = device_badge(mode, current_name),
       backgroundColor = helpers.colors.background,
       foregroundColor = helpers.colors.foreground,
-      icon = helpers.icon(mode.icon_for_name(current_name), { foregroundColor = helpers.colors.accent }),
+      icon = helpers.icon(mode.icon_for_name(current_name), {
+        foregroundColor = muted == true and helpers.colors.error or helpers.colors.accent,
+      }),
     }
   end
 
   return {
     id = mode.action_id,
     name = mode.name,
-    description = "Cycle " .. mode.plural .. " on a key, or select with a dial and press to confirm.",
+    description = "Cycle " .. mode.plural .. " on a key, or select with a dial and press to confirm."
+      .. (mode.mute_method ~= nil and " Shows the current input mute state." or ""),
     category = "Audio",
     gesture = "Key press: next " .. mode.singular .. " · Dial: rotate to select, press to confirm",
     settingsSchemaVersion = 1,
@@ -278,10 +353,16 @@ function router.new(kind)
 
     appear = function(context)
       pending_uid_by_instance[context.instanceId] = nil
+      visible_contexts[context.instanceId] = context
+      if mode.mute_method ~= nil then
+        watch_current_input(default_device(mode, audio_api(mode)))
+      end
     end,
 
     disappear = function(context)
       pending_uid_by_instance[context.instanceId] = nil
+      visible_contexts[context.instanceId] = nil
+      if next(visible_contexts) == nil then stop_input_watcher() end
     end,
 
     appearance = appearance_for,
@@ -293,6 +374,7 @@ function router.new(kind)
       local current = default_device(mode, audio)
       local target = devices[((current_device_index(mode, current, devices) or 0) % #devices) + 1]
       set_default_device(mode, target)
+      watch_current_input(target.device)
       context:success("Using\n" .. title_name(target.name), 1100)
     end,
 
@@ -324,6 +406,7 @@ function router.new(kind)
       end
       set_default_device(mode, target)
       pending_uid_by_instance[context.instanceId] = nil
+      watch_current_input(target.device)
       context:success("Using\n" .. title_name(target.name), 1100)
     end,
   }

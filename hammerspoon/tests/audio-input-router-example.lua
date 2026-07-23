@@ -3,17 +3,32 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local current_uid = "uid-macbook"
     local set_calls = {}
     local devices = {}
+    local watchers = {}
 
     local function device(name, uid)
-      return {
-        name = function() return name end,
-        uid = function() return uid end,
-        setDefaultInputDevice = function()
-          current_uid = uid
-          set_calls[#set_calls + 1] = uid
-          return true
-        end,
-      }
+      local record = { muted = false }
+      watchers[uid] = { starts = 0, stops = 0 }
+      function record.name() return name end
+      function record.uid() return uid end
+      function record.inputMuted() return record.muted end
+      function record.setDefaultInputDevice()
+        current_uid = uid
+        set_calls[#set_calls + 1] = uid
+        return true
+      end
+      function record.watcherCallback(_, callback)
+        watchers[uid].callback = callback
+        return record
+      end
+      function record.watcherStart()
+        watchers[uid].starts = watchers[uid].starts + 1
+        return record
+      end
+      function record.watcherStop()
+        watchers[uid].stops = watchers[uid].stops + 1
+        return record
+      end
+      return record
     end
 
     devices["uid-macbook"] = device("MacBook Microphone", "uid-macbook")
@@ -31,7 +46,8 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local action = streamdeck.registrations[1]
     assertEqual(action.id, "com.brettinternet.hammerspoon.audio-input-router")
     assertEqual(action.name, "Audio input router")
-    assertEqual(action.description, "Cycle inputs on a key, or select with a dial and press to confirm.")
+    assertEqual(action.description,
+      "Cycle inputs on a key, or select with a dial and press to confirm. Shows the current input mute state.")
 
     local schema = action.settingsSchemaProvider()
     assertEqual(#schema, 4)
@@ -46,15 +62,33 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       input2 = "uid-interface",
       input3 = "uid-webcam",
     })
+    action.appear(router)
+    assertEqual(watchers["uid-macbook"].starts, 1)
     local appearance = action.appearance(router)
     assertTrue(appearance.title:find("MacBook\nMicrophone", 1, true) == 1)
     assertEqual(appearance.badge, "MM")
     assertEqual(appearance.icon.kind, "custom")
+    local live_icon = appearance.icon.dataBase64
 
+    devices["uid-macbook"].muted = true
+    watchers["uid-macbook"].callback("uid-macbook", "mute", "inpt", 0)
+    assertEqual(router.refreshes, 1)
+    appearance = action.appearance(router)
+    assertTrue(appearance.title:find("MacBook\nMicrophone\nMuted", 1, true) == 1)
+    assertFalse(appearance.icon.dataBase64 == live_icon)
+    watchers["uid-macbook"].callback("uid-macbook", "mute", "outp", 0)
+    assertEqual(router.refreshes, 1, "output mute events must not refresh an input")
+
+    devices["uid-macbook"].muted = false
+    watchers["uid-macbook"].callback("uid-macbook", "mute", "glob", 0)
+    assertEqual(router.refreshes, 2)
+    local refreshes_before_press = router.refreshes
     action.press(router)
     assertEqual(set_calls[1], "uid-interface")
-    assertEqual(router.refreshes, 1)
+    assertEqual(router.refreshes, refreshes_before_press + 1)
     assertTrue(action.appearance(router).title:find("USB\nInterface", 1, true) == 1)
+    assertEqual(watchers["uid-macbook"].stops, 1)
+    assertEqual(watchers["uid-interface"].starts, 1)
 
     current_uid = "uid-macbook"
     local dial = context("input-dial", router.settings, { controllerType = "encoder" })
@@ -65,6 +99,33 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     action.push(dial)
     assertEqual(current_uid, "uid-webcam")
     assertEqual(action.appearance(dial).value, "Rotate to select")
+    assertEqual(watchers["uid-interface"].stops, 1)
+    assertEqual(watchers["uid-webcam"].starts, 1)
+    action.disappear(router)
+    assertEqual(watchers["uid-webcam"].stops, 1)
+  end)
+
+  test("audio input router preserves devices without mute watcher support", function()
+    local device = {
+      name = function() return "Legacy Microphone" end,
+      uid = function() return "uid-legacy" end,
+      inputMuted = function() return nil end,
+      setDefaultInputDevice = function() return true end,
+    }
+    local streamdeck = load_fixture("hammerspoon/streamdeck/actions/audio-input-router.lua", {
+      audiodevice = {
+        defaultInputDevice = function() return device end,
+        findDeviceByUID = function() return device end,
+        allInputDevices = function() return { device } end,
+      },
+    })
+    local action = streamdeck.registrations[1]
+    local router = context("legacy-input")
+    action.appear(router)
+    local appearance = action.appearance(router)
+    assertFalse(appearance.title:find("Muted", 1, true) ~= nil)
+    assertEqual(appearance.icon.kind, "custom")
+    action.disappear(router)
   end)
 
   test("audio input router reports unavailable input APIs", function()
