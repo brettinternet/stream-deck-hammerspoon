@@ -1,5 +1,5 @@
 -- Stream Deck action: a Stream Deck key that toggles display sleep prevention.
--- Add it as a Hammerspoon Toggle to choose separate Awake and Allow sleep icons in Stream Deck.
+-- Add it as a Hammerspoon Toggle to choose plain or steaming coffee-cup icons in Stream Deck.
 
 local sound = require("streamdeck.sound")
 local helpers = require("streamdeck.helpers")
@@ -40,12 +40,11 @@ return {
   appearance = function(_context)
     local enabled = display_idle_state()
     return {
-      title = enabled and "Awake" or "Allow\nsleep",
+      title = "",
       state = enabled and "active" or "inactive",
       appearanceVersion = 1,
-      badge = enabled and "ON" or nil,
       icon = helpers.icon(
-        enabled and "sun" or "moon",
+        enabled and "coffee-steam" or "coffee",
         { foregroundColor = enabled and helpers.colors.warning or helpers.colors.accent }
       ),
     }

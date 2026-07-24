@@ -1,4 +1,22 @@
 return function(test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
+  local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  local function decode_base64(encoded)
+    local output = {}
+    for index = 1, #encoded, 4 do
+      local first = alphabet:find(encoded:sub(index, index), 1, true) - 1
+      local second = alphabet:find(encoded:sub(index + 1, index + 1), 1, true) - 1
+      local third_character = encoded:sub(index + 2, index + 2)
+      local fourth_character = encoded:sub(index + 3, index + 3)
+      local third = third_character == "=" and 0 or alphabet:find(third_character, 1, true) - 1
+      local fourth = fourth_character == "=" and 0 or alphabet:find(fourth_character, 1, true) - 1
+      local combined = first * 262144 + second * 4096 + third * 64 + fourth
+      output[#output + 1] = string.char(math.floor(combined / 65536))
+      if third_character ~= "=" then output[#output + 1] = string.char(math.floor(combined / 256) % 256) end
+      if fourth_character ~= "=" then output[#output + 1] = string.char(combined % 256) end
+    end
+    return table.concat(output)
+  end
+
   test("keep awake action toggles display idle prevention and reports failures", function()
     local display_idle = false
     local failure = nil
@@ -40,7 +58,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local first_context = context("first")
     local second_context = context("second")
     local appearance = action.appearance(first_context)
-    assertEqual(appearance.title, "Allow\nsleep")
+    assertEqual(appearance.title, "")
     assertEqual(appearance.state, "inactive")
     assertEqual(appearance.icon.kind, "custom")
     assertEqual(appearance.badge, nil)
@@ -52,11 +70,19 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(first_context.refreshes, 1, "successful toggle must refresh its context")
     assertEqual(second_context.refreshes, 0)
 
+    local inactive_icon = appearance.icon.dataBase64
+    local inactive_svg = decode_base64(inactive_icon)
+    assertTrue(inactive_svg:find("M16 27", 1, true) ~= nil, "inactive icon must be a coffee cup")
+    assertFalse(inactive_svg:find("M27 21", 1, true) ~= nil, "inactive coffee cup must not steam")
+
     appearance = action.appearance(first_context)
-    assertEqual(appearance.title, "Awake")
+    assertEqual(appearance.title, "")
     assertEqual(appearance.state, "active")
     assertEqual(appearance.icon.kind, "custom")
-    assertEqual(appearance.badge, "ON")
+    assertEqual(appearance.badge, nil)
+    assertFalse(appearance.icon.dataBase64 == inactive_icon, "active icon must differ from inactive icon")
+    assertTrue(decode_base64(appearance.icon.dataBase64):find("M27 21", 1, true) ~= nil,
+      "active coffee cup must steam")
 
 
     action.press(second_context)
@@ -66,8 +92,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(first_context.refreshes, 1)
     assertEqual(second_context.refreshes, 1)
     appearance = action.appearance(first_context)
-    assertEqual(appearance.title, "Allow\nsleep")
+    assertEqual(appearance.title, "")
     assertEqual(appearance.state, "inactive")
+    assertEqual(appearance.icon.dataBase64, inactive_icon)
 
     failure = "get"
     assertError(function()
