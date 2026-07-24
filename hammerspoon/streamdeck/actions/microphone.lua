@@ -177,7 +177,7 @@ local function settings_schema()
       type = "boolean",
       key = "muteMeetingApps",
       label = "Integrate meeting apps",
-      description = "Also send mute shortcuts to selected running meeting apps.",
+      description = "Send mute shortcuts only while the selected microphone is in use; macOS cannot identify which app holds it.",
       default = false,
     },
     {
@@ -264,6 +264,15 @@ local function microphone_muted(device)
     error("failed to read microphone mute state: expected boolean result")
   end
   return muted
+end
+
+local function microphone_in_use(device)
+  if (type(device) ~= "table" and type(device) ~= "userdata")
+    or type(device.inUse) ~= "function" then
+    return false
+  end
+  local ok, in_use = pcall(device.inUse, device)
+  return ok and in_use == true
 end
 
 local function set_microphone_muted(device, muted)
@@ -597,16 +606,17 @@ local function start_push_to_talk(context, device, mute_apps, enabled_apps)
   end
   if not device then error("no input device available") end
   local muted = microphone_muted(device)
+  local mute_apps_active = muted and mute_apps and microphone_in_use(device)
   ptt_state_by_instance[context.instanceId] = {
     device = device,
     restoreMuted = muted,
-    muteApps = muted and mute_apps,
+    muteApps = mute_apps_active,
     enabledApps = enabled_apps,
   }
   if muted then
     set_microphone_muted(device, false)
     record_watched_input_state(device, false)
-    schedule_meeting_shortcuts(context, mute_apps and enabled_apps or nil)
+    schedule_meeting_shortcuts(context, mute_apps_active and enabled_apps or nil)
   end
   context:success("Microphone\nlive", 800)
 end
@@ -619,9 +629,10 @@ local function toggle_microphone(context, device, mute_apps, enabled_apps)
   end
   if not device then error("no input device available") end
   local muted = microphone_muted(device)
+  local mute_apps_active = mute_apps and microphone_in_use(device)
   set_microphone_muted(device, not muted)
   record_watched_input_state(device, not muted)
-  schedule_meeting_shortcuts(context, mute_apps and enabled_apps or nil)
+  schedule_meeting_shortcuts(context, mute_apps_active and enabled_apps or nil)
   context:success(not muted and "Microphone\nmuted" or "Microphone\nlive", 900)
   return not muted and sound.OFF or sound.ON
 end

@@ -36,6 +36,12 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         end
         return self.muted_state
       end
+      function device:inUse()
+        if failure == "in-use-throws" then
+          error("inUse exploded")
+        end
+        return self.in_use == true
+      end
       function device:setInputMuted(desired)
         set_calls[#set_calls + 1] = {
           device = self,
@@ -272,15 +278,35 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
 
 
     local meeting_context = context("meeting", { muteMeetingApps = true })
+    local scheduled_timer_count = #scheduled_timers
     local meeting_refreshes = meeting_context.refreshes
     action.press(meeting_context)
     assertEqual(meeting_context.refreshes, meeting_refreshes + 1,
       "the changed microphone appearance must refresh before meeting shortcuts")
     assertEqual(#shortcut_calls, 0, "meeting shortcuts must run after the microphone refresh")
-    local meeting_timer = scheduled_timers[#scheduled_timers]
+    assertEqual(#scheduled_timers, scheduled_timer_count,
+      "inactive microphones must not schedule meeting-app shortcuts")
+    assertEqual(#shortcut_calls, 0,
+      "meeting shortcuts must not run while the selected microphone is inactive")
+    assertEqual(applications["com.hnc.Discord"].muted, nil,
+      "inactive microphones must not toggle Discord")
+    failure = "in-use-throws"
+    action.press(meeting_context)
+    assertFalse(built_in.muted_state, "failed activity probes must not block microphone changes")
+    assertEqual(#scheduled_timers, scheduled_timer_count,
+      "failed activity probes must not schedule meeting-app shortcuts")
+    assertEqual(#shortcut_calls, 0,
+      "failed activity probes must not toggle meeting apps")
+    failure = nil
+    for _, application in pairs(applications) do
+      application.muted = false
+    end
+    built_in.in_use = true
+    action.press(meeting_context)
+    meeting_timer = scheduled_timers[#scheduled_timers]
     assertEqual(meeting_timer.seconds, 0.2)
     assertTrue(run_scheduled(meeting_timer))
-    assertEqual(#shortcut_calls, 4, "one shortcut per running meeting app and no duplicate Teams delivery")
+    assertEqual(#shortcut_calls, 4, "one shortcut per active meeting app and no duplicate Teams delivery")
     assertEqual(applications["us.zoom.xos"].muted, built_in.muted_state)
     assertEqual(applications["com.microsoft.teams2"].muted, built_in.muted_state)
     assertEqual(applications["com.tinyspeck.slackmacgap"].muted, built_in.muted_state)
@@ -402,6 +428,31 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(#set_calls, set_count, "already-live push-to-talk must not write redundant mute state")
     applications["us.zoom.xos"].running = true
     usb.muted_state = true
+    usb.in_use = false
+    local inactive_push_to_talk = context("inactive-push-to-talk", {
+      inputDevice = "usb-uid",
+      mode = "pushToTalk",
+      muteMeetingApps = true,
+      muteZoom = true,
+      muteTeams = false,
+      muteSlack = false,
+      muteDiscord = false,
+    })
+    shortcut_count = #shortcut_calls
+    local inactive_ptt_timer_count = #scheduled_timers
+    action.press(inactive_push_to_talk)
+    assertFalse(usb.muted_state, "push-to-talk must still unmute an inactive microphone")
+    assertEqual(#scheduled_timers, inactive_ptt_timer_count,
+      "inactive push-to-talk must not schedule meeting-app shortcuts")
+    assertEqual(#shortcut_calls, shortcut_count,
+      "inactive push-to-talk must not toggle meeting apps")
+    action.release(inactive_push_to_talk)
+    assertTrue(usb.muted_state, "push-to-talk must restore an inactive microphone")
+    assertEqual(#shortcut_calls, shortcut_count,
+      "restoring inactive push-to-talk must not toggle meeting apps")
+    applications["us.zoom.xos"].running = true
+    usb.muted_state = true
+    usb.in_use = true
     local disappearing_push_to_talk = context("disappearing-push-to-talk", {
       inputDevice = "usb-uid",
       mode = "pushToTalk",
