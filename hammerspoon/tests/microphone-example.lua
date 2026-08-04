@@ -131,12 +131,16 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       },
     }
 
-    local function run_scheduled(timer)
+    local function run_with_fake_hs(callback)
       local previous_hs = _G.hs
       _G.hs = fake_hs
-      local ok, cause = pcall(timer.callback)
+      local ok, cause = pcall(callback)
       _G.hs = previous_hs
       return ok, cause
+    end
+
+    local function run_scheduled(timer)
+      return run_with_fake_hs(timer.callback)
     end
 
     local function make_application(bundle_id, running)
@@ -334,6 +338,21 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       end
     end
     assertFalse(legacy_teams_queried, "legacy Teams should not be queried when new Teams is available")
+
+    action.appear(meeting_context)
+    local external_shortcut_count = #shortcut_calls
+    built_in.muted_state = false
+    assertTrue(run_with_fake_hs(function()
+      built_in.watcher_callback("builtin-uid", "mute", "inpt")
+    end))
+    local external_mute_timer = scheduled_timers[#scheduled_timers]
+    assertTrue(run_scheduled(external_mute_timer))
+    assertEqual(#shortcut_calls, external_shortcut_count + 4,
+      "external system muting must propagate to every enabled meeting app")
+    assertEqual(applications["us.zoom.xos"].muted, built_in.muted_state)
+    assertEqual(applications["com.microsoft.teams2"].muted, built_in.muted_state)
+    assertEqual(applications["com.tinyspeck.slackmacgap"].muted, built_in.muted_state)
+    assertEqual(applications["com.hnc.Discord"].muted, built_in.muted_state)
 
     local rapid_initial_muted = built_in.muted_state
     local shortcut_count = #shortcut_calls

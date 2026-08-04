@@ -474,6 +474,33 @@ local function refresh_visible_contexts()
   end
 end
 
+local function synchronize_meeting_apps_for_input(device)
+  if not microphone_in_use(device) then return end
+  local input_uid = device_uid(device)
+  local enabled_apps
+  local error_context
+  for _, context in pairs(visible_contexts) do
+    local selected, mute_apps, _, context_apps = settings_for(context)
+    if mute_apps then
+      local selected_ok, selected_device = pcall(resolve_input_device, selected)
+      if selected_ok and selected_device ~= nil then
+        local selected_uid_ok, selected_uid = pcall(device_uid, selected_device)
+        if selected_uid_ok and selected_uid == input_uid then
+          enabled_apps = enabled_apps or {}
+          for name, enabled in pairs(context_apps) do
+            if enabled then enabled_apps[name] = true end
+          end
+          error_context = error_context or context
+        end
+      end
+    end
+  end
+  if enabled_apps ~= nil then
+    schedule_meeting_shortcuts(error_context, enabled_apps)
+  end
+end
+
+
 local function stop_input_watcher(record)
   pcall(function()
     local device = record.device
@@ -514,6 +541,7 @@ local function watch_input(device)
       local current_ok, current = pcall(microphone_muted, record.device)
       if current_ok and current ~= record.muted then
         record.muted = current
+        synchronize_meeting_apps_for_input(record.device)
         refresh_visible_contexts()
       end
     end)
