@@ -1307,6 +1307,8 @@ dofile("hammerspoon/tests/keyboard-layout-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/url-launcher-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
+dofile("hammerspoon/tests/url-toggle-example.lua")(
+  test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/youtube-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/window-snap-example.lua")(
