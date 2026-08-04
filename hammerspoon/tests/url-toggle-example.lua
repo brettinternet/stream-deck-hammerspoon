@@ -18,9 +18,10 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(action.id, "com.brettinternet.hammerspoon.url-toggle")
     assertEqual(action.name, "URL toggle")
     assertEqual(action.settingsSchemaVersion, 1)
-    assertEqual(#action.settingsSchema, 2)
+    assertEqual(#action.settingsSchema, 3)
     assertEqual(action.settingsSchema[1].key, "label")
     assertEqual(action.settingsSchema[2].key, "url")
+    assertEqual(action.settingsSchema[3].key, "openInNewWindow")
 
     local toggle_context = context("toggle", {
       label = "Project docs",
@@ -42,13 +43,27 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(toggle_context.feedbacks[#toggle_context.feedbacks].message, "URL closed")
     assertEqual(toggle_context.refreshes, 2)
 
+    local existing_window_context = context("existing-window", {
+      url = "https://www.hammerspoon.org/docs/",
+      openInNewWindow = false,
+    })
+    javascript_results[3] = "opened"
+    action.press(existing_window_context)
+    assertTrue(string.find(javascript_calls[3], "var openInNewWindow = false", 1, true) ~= nil,
+      "the checkbox must disable new-window opening")
+    assertTrue(string.find(javascript_calls[3], "existingWindow.tabs.push", 1, true) ~= nil,
+      "opening in an existing window must create a tab")
+    assertEqual(existing_window_context.refreshes, 1)
+
     local defaults_context = context("defaults", nil)
     appearance = action.appearance(defaults_context)
     assertEqual(appearance.title, "Toggle URL", "missing settings must use the default label")
-    javascript_results[3] = "opened"
+    javascript_results[4] = "opened"
     action.press(defaults_context)
-    assertTrue(string.find(javascript_calls[3], "https://www.hammerspoon.org/", 1, true) ~= nil,
+    assertTrue(string.find(javascript_calls[4], "https://www.hammerspoon.org/", 1, true) ~= nil,
       "missing URL must use the default URL")
+    assertTrue(string.find(javascript_calls[4], "var openInNewWindow = true", 1, true) ~= nil,
+      "missing checkbox settings must preserve new-window opening")
     assertEqual(defaults_context.refreshes, 1)
 
     local invalid_context = context("invalid", { url = "example.com" })
@@ -57,7 +72,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     end, "invalid URL")
     assertEqual(invalid_context.refreshes, 0)
 
-    javascript_results[4] = "unexpected"
+    javascript_results[5] = "unexpected"
     assertError(function()
       action.press(toggle_context)
     end, "failed to toggle URL")

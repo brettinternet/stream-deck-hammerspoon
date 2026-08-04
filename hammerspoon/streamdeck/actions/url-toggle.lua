@@ -5,10 +5,12 @@ local DEFAULT_URL = "https://www.hammerspoon.org/"
 
 local function settings_for(context)
   local settings = type(context.getSettings) == "function" and context:getSettings() or context.settings
-  if type(settings) ~= "table" then return DEFAULT_LABEL, DEFAULT_URL end
+  if type(settings) ~= "table" then return DEFAULT_LABEL, DEFAULT_URL, true end
   local label = type(settings.label) == "string" and settings.label ~= "" and settings.label or DEFAULT_LABEL
   local url = (settings.url == nil or settings.url == "") and DEFAULT_URL or settings.url
-  return label, url
+  local open_in_new_window = true
+  if type(settings.openInNewWindow) == "boolean" then open_in_new_window = settings.openInNewWindow end
+  return label, url, open_in_new_window
 end
 
 local function valid_url(url)
@@ -31,11 +33,12 @@ local function run_javascript(script)
   return result
 end
 
-local function toggle_url(url)
+local function toggle_url(url, open_in_new_window)
   local script = ([[(function() {
     ObjC.import("Foundation");
     var browser = Application("org.chromium.Chromium");
     var targetUrl = %q;
+    var openInNewWindow = %s;
 
     function comparableUrl(url) {
       var nativeUrl = $.NSURL.URLWithString(url);
@@ -66,13 +69,20 @@ local function toggle_url(url)
         return "closed";
       }
     }
+    if (!openInNewWindow && browser.windows().length > 0) {
+      var existingWindow = browser.windows()[0];
+      existingWindow.tabs.push(browser.Tab({ url: targetUrl }));
+      existingWindow.activeTabIndex = existingWindow.tabs().length;
+      existingWindow.index = 1;
+      return "opened";
+    }
 
     var window = browser.Window().make();
     window.tabs[0].url = targetUrl;
     window.index = 1;
     return "opened";
   })();
-  ]]):format(url)
+  ]]):format(url, tostring(open_in_new_window))
   local result = run_javascript(script)
   if result ~= "opened" and result ~= "closed" then
     error("failed to toggle URL")
@@ -83,13 +93,14 @@ end
 return {
   id = "com.brettinternet.hammerspoon.url-toggle",
   name = "URL toggle",
-  description = "Open the configured URL in Chromium, or close its tab when it is already open.",
+  description = "Open the configured URL in a new or existing Chromium window, or close its tab when it is already open.",
   category = "Applications",
   gesture = "Press: open or close the configured URL",
   settingsSchemaVersion = 1,
   settingsSchema = {
     { type = "text", key = "label", maxLength = 32, description = "Text shown on the Stream Deck key; defaults to Toggle URL." },
     { type = "text", key = "url", maxLength = 1024, description = "URL to open or close; defaults to https://www.hammerspoon.org/." },
+    { type = "boolean", key = "openInNewWindow", label = "Open in new window", default = true, description = "When off, open a new tab in Chromium's frontmost window; defaults to on." },
   },
 
   appearance = function(context)
@@ -101,9 +112,9 @@ return {
   end,
 
   press = function(context)
-    local _, url = settings_for(context)
+    local _, url, open_in_new_window = settings_for(context)
     if not valid_url(url) then error("invalid URL") end
-    local result = toggle_url(url)
+    local result = toggle_url(url, open_in_new_window)
     context:success(result == "opened" and "URL opened" or "URL closed", 850)
   end,
 }
