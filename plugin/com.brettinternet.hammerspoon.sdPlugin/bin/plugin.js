@@ -21028,7 +21028,6 @@ class HammerspoonAction extends SingletonAction {
             void this.sendBridgeState();
         });
         this.bridge.on("diagnostics", () => {
-            this.renderStatus();
             void this.sendBridgeState();
         });
         this.bridge.on("actions", () => {
@@ -21613,7 +21612,7 @@ class HammerspoonAction extends SingletonAction {
     }
 }
 
-const PLUGIN_VERSION = "0.1.0";
+const PLUGIN_VERSION = "0.5.0";
 streamDeck.logger.info(`Starting Hammerspoon Stream Deck plugin v${PLUGIN_VERSION}`);
 const bridge = new BridgeClient({
     url: "ws://localhost:17321/streamdeck",
