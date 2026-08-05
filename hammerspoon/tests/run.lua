@@ -1190,6 +1190,19 @@ test("versioned appearance fields validate and render safely", function()
     },
   }))
   assertTrue(pngIconValid, pngIconCode or "valid PNG icons must pass Lua validation")
+  local dynamicPngValid, dynamicPngCode = Protocol.validate(message("appearance", {
+    instanceId = "instance",
+    actionId = "action",
+    title = "Dynamic PNG",
+    state = 0,
+    appearanceVersion = 1,
+    icon = {
+      kind = "custom",
+      mediaType = "image/png",
+      dataBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAA4UlEQVR4nO3asRGAIBBEUZq0JnuxDQvTVBMJGLyd4QVGZDvH/g/Y2nZcz+8699e3/PryAfQGREACGqsQnfMdmIAENEZlE9QLCMVQbIxiJkhAPGjm2RHFBGSC5m4xFEMxHjT1RtQWcx/Eg4hi4SsLk+ZBKAbzpS+/PIgHoRjM86Dc322UNIrBPA8q7aTqEkxfF5CATBAPcpoPKmXXHQLiQTwoqZOIooDcB8E8DwoqZaLoPgjmeVBSJxFF72IoBvM8KKiUvYuhGMzzoKRO8n+Q0zxRJIo8KEkMneYFZILaj1vsBmimZ9z83SoWAAAAAElFTkSuQmCC",
+    },
+  }))
+  assertTrue(dynamicPngValid, dynamicPngCode or "dynamically compressed PNG icons must pass Lua validation")
   local customIconValid, customIconCode = Protocol.validate(message("appearance", {
     instanceId = "instance",
     actionId = "action",
