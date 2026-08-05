@@ -230,7 +230,6 @@ test("application example toggles focused and configured applications", function
   local watcher_callback
   local watcher_started = false
   local watcher_stopped = false
-  local scheduled_transition_checks = {}
   local events = {
     activated = "activated",
     deactivated = "deactivated",
@@ -252,6 +251,7 @@ test("application example toggles focused and configured applications", function
       kill_calls = 0,
       hide_result = true,
       unhide_result = true,
+      unhide_changes_hidden = false,
       activate_result = true,
       kill_result = true,
       name = function(self)
@@ -286,7 +286,7 @@ test("application example toggles focused and configured applications", function
       end,
       unhide = function(self)
         self.unhide_calls = self.unhide_calls + 1
-        if self.unhide_result then
+        if self.unhide_result or self.unhide_changes_hidden then
           self.hidden = false
         end
         return self.unhide_result
@@ -514,37 +514,15 @@ test("application example toggles focused and configured applications", function
   assertEqual(press_context.refreshes, 3, "failed hide must not refresh")
   app.hide_result = true
 
-  -- Chromium can update its hidden state after unhide() returns false.
-  fake_hs.timer = {
-    doAfter = function(seconds, callback)
-      assertEqual(seconds, 0.25)
-      scheduled_transition_checks[#scheduled_transition_checks + 1] = callback
-      return {}
-    end,
-  }
+  -- Chromium can finish unhide after Hammerspoon snapshots the return value as false.
   app.hidden = true
   app.unhide_result = false
+  app.unhide_changes_hidden = true
   frontmost = app
   action.press(press_context)
-  assertTrue(app.hidden, "asynchronous unhide must not fail before its state transition")
-  assertEqual(#scheduled_transition_checks, 1)
-  local feedbacks_after_press = #press_context.feedbacks
-  local refreshes_before_check = press_context.refreshes
-  app.hidden = false
-  scheduled_transition_checks[1]()
-  assertEqual(#press_context.feedbacks, feedbacks_after_press, "completed delayed unhide must not report an error")
-  assertEqual(press_context.refreshes, refreshes_before_check + 1)
-
-  app.hidden = true
-  action.press(press_context)
-  assertEqual(#scheduled_transition_checks, 2)
-  feedbacks_after_press = #press_context.feedbacks
-  scheduled_transition_checks[2]()
-  assertEqual(#press_context.feedbacks, feedbacks_after_press + 1)
-  assertEqual(press_context.feedbacks[#press_context.feedbacks].kind, "error")
-  assertEqual(press_context.feedbacks[#press_context.feedbacks].message, "Application did not show")
-  fake_hs.timer = nil
-  app.hidden = false
+  assertFalse(app.hidden, "a completed unhide must not fail solely because its return value is false")
+  assertEqual(press_context.refreshes, 4)
+  app.unhide_changes_hidden = false
   app.unhide_result = true
 
   local configured_context = context("configured", {
@@ -574,7 +552,7 @@ test("application example toggles focused and configured applications", function
   action.press(configured_context)
   assertFalse(app.hidden, "configured application must unhide on the next click")
   assertEqual(launch_calls, 0, "a configured target must toggle even when it is not frontmost")
-  assertEqual(app.unhide_calls, 4)
+  assertEqual(app.unhide_calls, 3)
   assertEqual(configured_context.refreshes, 2)
   assertEqual(app.activate_calls, 0, "focus is opt-in")
 
@@ -685,6 +663,97 @@ test("application example toggles focused and configured applications", function
   action.disappear(configured_context)
   assertTrue(watcher_stopped, "watcher must stop after the last instance disappears")
 end)
+
+test("application action defers and invalidates asynchronous transition checks", function()
+  local callbacks = {}
+  local app = {
+    hidden = true,
+    isHidden = function(self) return self.hidden end,
+    mainWindow = function() return {} end,
+    unhide = function() return false end,
+    hide = function(self)
+      self.hidden = true
+      return true
+    end,
+  }
+  local events = {
+    activated = "activated",
+    deactivated = "deactivated",
+    hidden = "hidden",
+    unhidden = "unhidden",
+    launched = "launched",
+    terminated = "terminated",
+  }
+  local fake_hs = {
+    application = {
+      frontmostApplication = function() return app end,
+      watcher = {
+        activated = events.activated,
+        deactivated = events.deactivated,
+        hidden = events.hidden,
+        unhidden = events.unhidden,
+        launched = events.launched,
+        terminated = events.terminated,
+        new = function()
+          return { start = function() end, stop = function() end }
+        end,
+      },
+    },
+    timer = {
+      doAfter = function(seconds, callback)
+        assertEqual(seconds, 0.25)
+        callbacks[#callbacks + 1] = callback
+        return {}
+      end,
+    },
+  }
+  local streamdeck = load_fixture("hammerspoon/streamdeck/actions/application.lua", fake_hs)
+  local action = streamdeck.registrations[1]
+  local action_context = context("asynchronous-application")
+  action.appear(action_context)
+
+  action.press(action_context)
+  assertEqual(#callbacks, 1)
+  local refresh_count = action_context.refreshes
+  app.hidden = false
+  callbacks[1]()
+  assertEqual(action_context.feedbacks[#action_context.feedbacks].kind, "success")
+  assertEqual(action_context.refreshes, refresh_count + 1)
+
+  app.hidden = true
+  action.press(action_context)
+  assertEqual(#callbacks, 2)
+  local feedback_count = #action_context.feedbacks
+  refresh_count = action_context.refreshes
+  action.disappear(action_context)
+  callbacks[2]()
+  assertEqual(#action_context.feedbacks, feedback_count, "disappeared contexts must ignore delayed checks")
+  assertEqual(action_context.refreshes, refresh_count, "disappeared contexts must not refresh")
+
+  action.appear(action_context)
+  action.press(action_context)
+  assertEqual(#callbacks, 3)
+  app.hidden = false
+  action.press(action_context)
+  feedback_count = #action_context.feedbacks
+  refresh_count = action_context.refreshes
+  callbacks[3]()
+  assertEqual(#action_context.feedbacks, feedback_count, "superseded checks must not report an error")
+  assertEqual(action_context.refreshes, refresh_count, "superseded checks must not refresh")
+
+  app.hidden = true
+  action.press(action_context)
+  assertEqual(#callbacks, 4)
+  callbacks[4]()
+  assertEqual(action_context.feedbacks[#action_context.feedbacks].kind, "error")
+  assertEqual(action_context.feedbacks[#action_context.feedbacks].message, "Application did not show")
+
+  fake_hs.timer = nil
+  assertError(function()
+    action.press(action_context)
+  end, "failed to show application")
+end)
+
 
 
 test("configurable timer counts down, flashes on completion, and cleans up timers", function()

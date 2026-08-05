@@ -15,6 +15,7 @@ local relevant_events = {
   [hs.application.watcher.terminated] = true,
 }
 local visible_contexts = {}
+local transition_generation_by_instance = {}
 local application_watcher
 
 local function refresh_visible_contexts()
@@ -169,12 +170,14 @@ end
 
 local transition_check_delay = 0.25
 
-local function schedule_transition_check(context, application, expected_hidden, operation)
+local function schedule_transition_check(context, application, expected_hidden, operation, generation)
   if type(hs) ~= "table" or type(hs.timer) ~= "table" or type(hs.timer.doAfter) ~= "function" then
     return false
   end
 
   local scheduled, timer = pcall(hs.timer.doAfter, transition_check_delay, function()
+    if visible_contexts[context.instanceId] ~= context
+      or transition_generation_by_instance[context.instanceId] ~= generation then return end
     local inspected, hidden = pcall(application_is_hidden, application)
     if not inspected or hidden ~= expected_hidden then
       context:error("Application did not " .. operation, 1200)
@@ -313,6 +316,9 @@ local function restore_fallback_application(context, application)
 end
 
 local function toggle_application(context, application)
+  local instance_id = context.instanceId
+  local transition_generation = (transition_generation_by_instance[instance_id] or 0) + 1
+  transition_generation_by_instance[instance_id] = transition_generation
   local hidden = application_is_hidden(application)
   local method_name = hidden and "unhide" or "hide"
   local operation = hidden and "show" or "hide"
@@ -326,7 +332,7 @@ local function toggle_application(context, application)
     error("failed to " .. operation .. " application: " .. tostring(result))
   end
   if application_is_hidden(application) == hidden
-    and not schedule_transition_check(context, application, not hidden, operation) then
+    and not schedule_transition_check(context, application, not hidden, operation, transition_generation) then
     error("failed to " .. operation .. " application")
   end
   return hidden
@@ -366,6 +372,7 @@ return {
     visible_contexts[context.instanceId] = nil
     target_by_instance[context.instanceId] = nil
     fallback_by_instance[context.instanceId] = nil
+    transition_generation_by_instance[context.instanceId] = nil
     stop_application_watcher_if_unused()
   end,
 
