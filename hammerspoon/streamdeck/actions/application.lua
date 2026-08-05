@@ -308,7 +308,7 @@ local function toggle_application(application)
   if not ok then
     error("failed to " .. operation .. " application: " .. tostring(result))
   end
-  if result ~= true then
+  if application_is_hidden(application) == hidden then
     error("failed to " .. operation .. " application")
   end
   return hidden

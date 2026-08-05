@@ -251,6 +251,7 @@ test("application example toggles focused and configured applications", function
       kill_calls = 0,
       hide_result = true,
       unhide_result = true,
+      unhide_changes_hidden = false,
       activate_result = true,
       kill_result = true,
       name = function(self)
@@ -285,7 +286,7 @@ test("application example toggles focused and configured applications", function
       end,
       unhide = function(self)
         self.unhide_calls = self.unhide_calls + 1
-        if self.unhide_result then
+        if self.unhide_result or self.unhide_changes_hidden then
           self.hidden = false
         end
         return self.unhide_result
@@ -513,6 +514,17 @@ test("application example toggles focused and configured applications", function
   assertEqual(press_context.refreshes, 3, "failed hide must not refresh")
   app.hide_result = true
 
+  -- Chromium can finish unhide after Hammerspoon snapshots the return value as false.
+  app.hidden = true
+  app.unhide_result = false
+  app.unhide_changes_hidden = true
+  frontmost = app
+  action.press(press_context)
+  assertFalse(app.hidden, "a completed unhide must not fail solely because its return value is false")
+  assertEqual(press_context.refreshes, 4)
+  app.unhide_changes_hidden = false
+  app.unhide_result = true
+
   local configured_context = context("configured", {
     bundleID = "com.example.Editor",
   })
@@ -540,7 +552,7 @@ test("application example toggles focused and configured applications", function
   action.press(configured_context)
   assertFalse(app.hidden, "configured application must unhide on the next click")
   assertEqual(launch_calls, 0, "a configured target must toggle even when it is not frontmost")
-  assertEqual(app.unhide_calls, 2)
+  assertEqual(app.unhide_calls, 3)
   assertEqual(configured_context.refreshes, 2)
   assertEqual(app.activate_calls, 0, "focus is opt-in")
 
