@@ -167,6 +167,23 @@ local function application_is_hidden(application)
   return hidden
 end
 
+local transition_check_delay = 0.25
+
+local function schedule_transition_check(context, application, expected_hidden, operation)
+  if type(hs) ~= "table" or type(hs.timer) ~= "table" or type(hs.timer.doAfter) ~= "function" then
+    return false
+  end
+
+  local scheduled, timer = pcall(hs.timer.doAfter, transition_check_delay, function()
+    local inspected, hidden = pcall(application_is_hidden, application)
+    if not inspected or hidden ~= expected_hidden then
+      context:error("Application did not " .. operation, 1200)
+    end
+    context:refresh()
+  end)
+  return scheduled and timer ~= nil
+end
+
 local function application_name(application)
   local ok, name = pcall(application.name, application)
   if not ok or type(name) ~= "string" or name == "" then
@@ -295,7 +312,7 @@ local function restore_fallback_application(context, application)
   fallback_by_instance[key] = nil
 end
 
-local function toggle_application(application)
+local function toggle_application(context, application)
   local hidden = application_is_hidden(application)
   local method_name = hidden and "unhide" or "hide"
   local operation = hidden and "show" or "hide"
@@ -308,7 +325,8 @@ local function toggle_application(application)
   if not ok then
     error("failed to " .. operation .. " application: " .. tostring(result))
   end
-  if application_is_hidden(application) == hidden then
+  if application_is_hidden(application) == hidden
+    and not schedule_transition_check(context, application, not hidden, operation) then
     error("failed to " .. operation .. " application")
   end
   return hidden
@@ -386,10 +404,10 @@ return {
       local was_hidden = application_is_hidden(application)
       if was_hidden and focus_on_show then
         local fallback = frontmost_application()
-        toggle_application(application)
+        toggle_application(context, application)
         focus_application_with_fallback(context, application, fallback)
       else
-        was_hidden = toggle_application(application)
+        was_hidden = toggle_application(context, application)
       end
       if bundle_id == nil then
         local key = target_key(context)
