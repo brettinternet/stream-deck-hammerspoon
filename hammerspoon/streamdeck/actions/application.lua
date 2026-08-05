@@ -1,5 +1,5 @@
--- Stream Deck action: a Stream Deck key that toggles an application's hidden state and uses its system icon.
--- Set an application bundle ID in the action settings, or omit it to track the frontmost application. Active means hidden; hold to close. Enable focusing when showing if the app should also come to the front; hiding it restores the previous frontmost application.
+-- Stream Deck action: a Stream Deck key that opens, hides, shows, and closes an application using its system icon.
+-- Set an application bundle ID in the action settings, or omit it to track the frontmost application. Active means hidden; hold to close. When focusing on show, a visible but unfocused app is focused before the next press hides it and restores the prior app.
 
 local action_id = "com.brettinternet.hammerspoon.application-toggle"
 local helpers = require("streamdeck.helpers")
@@ -355,9 +355,9 @@ end
 return {
   id = action_id,
   name = "Hide/show application",
-  description = "Toggle the configured application's hidden state, or track the frontmost app when no bundle ID is set.",
+  description = "Open, hide, show, or close the configured application; without a bundle ID, track the frontmost app.",
   category = "Applications",
-  gesture = "Press: hide or show · Hold: close application",
+  gesture = "Press: open, hide, or show · Hold: close application",
   settingsSchemaVersion = 1,
   settingsSchema = {
     { type = "text", key = "bundleID", label = "Application bundle ID", maxLength = 128, description = "Optional bundle ID; find it with osascript -e 'id of app \"App Name\"'." },
@@ -409,19 +409,23 @@ return {
       launch_or_focus_with_fallback(context, application, bundle_id or application_bundle_id(application))
     else
       local was_hidden = application_is_hidden(application)
-      if was_hidden and focus_on_show then
-        local fallback = frontmost_application()
-        toggle_application(context, application)
+      local fallback = focus_on_show and frontmost_application() or nil
+      local toggled = false
+      if focus_on_show and fallback ~= application then
+        if was_hidden then
+          toggle_application(context, application)
+          toggled = true
+        end
         focus_application_with_fallback(context, application, fallback)
       else
         was_hidden = toggle_application(context, application)
+        toggled = true
+        if not was_hidden then
+          restore_fallback_application(context, application)
+        end
       end
-      if bundle_id == nil then
-        local key = target_key(context)
-        target_by_instance[key] = was_hidden and nil or application
-      end
-      if not was_hidden then
-        restore_fallback_application(context, application)
+      if toggled and bundle_id == nil then
+        target_by_instance[target_key(context)] = was_hidden and nil or application
       end
     end
     context:success("Application\ntoggled", 900)

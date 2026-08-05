@@ -1,7 +1,6 @@
 local actions = {}
 
 local modules = {
-  ["app-launcher"] = "streamdeck.actions.app-launcher",
   application = "streamdeck.actions.application",
   ["app-windows-to-cursor"] = "streamdeck.actions.app-windows-to-cursor",
   ["audio-input-router"] = "streamdeck.actions.audio-input-router",
@@ -28,7 +27,6 @@ local modules = {
 }
 
 local names = {
-  "app-launcher",
   "application",
   "app-windows-to-cursor",
   "audio-input-router",

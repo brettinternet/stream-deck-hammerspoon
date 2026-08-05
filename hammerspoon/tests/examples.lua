@@ -269,6 +269,9 @@ test("application example toggles focused and configured applications", function
         if activate_error then
           error("activation unavailable")
         end
+        if self.activate_result then
+          frontmost = self
+        end
         return self.activate_result
       end,
       isHidden = function(self)
@@ -569,25 +572,32 @@ test("application example toggles focused and configured applications", function
   assertEqual(other_app.activate_calls, 0, "show must not refocus the fallback before hiding")
   assertEqual(focus_context.refreshes, 1)
   frontmost = latest_app
+  local hide_calls_before_focus = app.hide_calls
   action.press(focus_context)
-  assertTrue(app.hidden)
-  assertEqual(other_app.activate_calls, 0, "hiding must not use a stale fallback")
-  assertEqual(latest_app.activate_calls, 0, "hiding must not activate an already frontmost fallback")
-  assertEqual(focus_context.refreshes, 2)
+  assertFalse(app.hidden, "an unfocused visible app must be focused before it is hidden")
+  assertEqual(app.activate_calls, 2)
+  assertEqual(app.hide_calls, hide_calls_before_focus, "focusing an unfocused visible app must not hide it")
+  assertSame(frontmost, app, "focusing the visible app must make it frontmost")
+  action.press(focus_context)
+  assertTrue(app.hidden, "the next press must hide the now-focused app")
+  assertEqual(other_app.activate_calls, 0, "hiding must not use an older fallback")
+  assertEqual(latest_app.activate_calls, 1, "hiding must refocus the most recently focused app")
+  assertSame(frontmost, latest_app, "the prior frontmost app must be restored after hiding")
+  assertEqual(focus_context.refreshes, 3)
   app.hidden = true
   frontmost = other_app
   app.activate_result = false
   assertError(function()
     action.press(focus_context)
   end, "failed to focus application")
-  assertEqual(focus_context.refreshes, 2, "failed focus must not refresh")
+  assertEqual(focus_context.refreshes, 3, "failed focus must not refresh")
   app.activate_result = true
   app.hidden = true
   activate_error = true
   assertError(function()
     action.press(focus_context)
   end, "failed to focus application")
-  assertEqual(focus_context.refreshes, 2, "thrown focus API must not refresh")
+  assertEqual(focus_context.refreshes, 3, "thrown focus API must not refresh")
   activate_error = false
 
   local frontmost_focus_context = context("frontmost-focus", {
@@ -598,7 +608,7 @@ test("application example toggles focused and configured applications", function
   action.press(frontmost_focus_context)
   frontmost = other_app
   action.press(frontmost_focus_context)
-  assertEqual(app.activate_calls, 4, "frontmost tracking must preserve focus setting")
+  assertEqual(app.activate_calls, 5, "frontmost tracking must preserve focus setting")
   assertTrue(app.activate_all_windows)
 
   configured = nil
@@ -1483,8 +1493,6 @@ dofile("hammerspoon/tests/window-snap-example.lua")(
 dofile("hammerspoon/tests/keep-awake-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/last-application-example.lua")(
-  test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
-dofile("hammerspoon/tests/app-launcher-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/app-windows-to-cursor-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
