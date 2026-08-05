@@ -279,16 +279,14 @@ end
 
 local function restore_fallback_application(context, application)
   local key = target_key(context)
-  local stored_fallback = fallback_by_instance[key]
   local current_frontmost = frontmost_application()
-  local fallback = current_frontmost
-  if not fallback or fallback == application then
-    fallback = stored_fallback
-  end
-  if not fallback then
+  if current_frontmost and current_frontmost ~= application then
+    fallback_by_instance[key] = nil
     return
   end
-  if fallback == application then
+
+  local fallback = fallback_by_instance[key]
+  if not fallback or fallback == application then
     fallback_by_instance[key] = nil
     return
   end

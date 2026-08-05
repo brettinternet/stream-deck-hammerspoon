@@ -534,8 +534,7 @@ test("application example toggles focused and configured applications", function
   assertTrue(app.hidden, "configured frontmost application must be hidden")
   assertEqual(app.hide_calls, 3)
   assertEqual(configured_context.refreshes, 1)
-  assertEqual(other_app.activate_calls, 1, "hiding the target must refocus the fallback application")
-  assertTrue(other_app.activate_all_windows)
+  assertEqual(other_app.activate_calls, 0, "hiding must not refocus the already frontmost fallback")
   fallback_after_hide = nil
   frontmost = other_app
   action.press(configured_context)
@@ -555,14 +554,13 @@ test("application example toggles focused and configured applications", function
   assertFalse(app.hidden)
   assertEqual(app.activate_calls, 1)
   assertTrue(app.activate_all_windows, "show focus must bring all application windows forward")
-  assertEqual(other_app.activate_calls, 1, "show must not refocus the fallback before hiding")
+  assertEqual(other_app.activate_calls, 0, "show must not refocus the fallback before hiding")
   assertEqual(focus_context.refreshes, 1)
   frontmost = latest_app
   action.press(focus_context)
   assertTrue(app.hidden)
-  assertEqual(other_app.activate_calls, 1, "hiding must not use a stale fallback")
-  assertEqual(latest_app.activate_calls, 1, "hiding the shown app must refocus the current fallback")
-  assertTrue(latest_app.activate_all_windows)
+  assertEqual(other_app.activate_calls, 0, "hiding must not use a stale fallback")
+  assertEqual(latest_app.activate_calls, 0, "hiding must not activate an already frontmost fallback")
   assertEqual(focus_context.refreshes, 2)
   app.hidden = true
   frontmost = other_app
