@@ -314,6 +314,46 @@ test("application example toggles focused and configured applications", function
       }
     end,
   }
+  local canvases = {}
+  local state_colors = {
+    open = { red = 52 / 255, green = 199 / 255, blue = 89 / 255 },
+    hidden = { red = 1, green = 204 / 255, blue = 0 },
+    not_running = { red = 1, green = 59 / 255, blue = 48 / 255 },
+  }
+  local function assert_indicator(state, includes_icon, size)
+    local canvas = canvases[#canvases]
+    assertEqual(canvas.frame.w, size)
+    assertEqual(canvas.frame.h, size)
+    local circle = canvas[includes_icon and 2 or 1]
+    local color = state_colors[state]
+    assertEqual(circle.type, "oval")
+    assertEqual(circle.action, "strokeAndFill")
+    assertEqual(circle.frame.w, math.max(8, math.floor(size * 0.2)))
+    assertEqual(circle.frame.h, math.max(8, math.floor(size * 0.2)))
+    assertEqual(circle.fillColor.red, color.red)
+    assertEqual(circle.fillColor.green, color.green)
+    assertEqual(circle.fillColor.blue, color.blue)
+    assertEqual(circle.fillColor.alpha, 1)
+    assertEqual(circle.strokeColor.white, 1)
+    assertEqual(circle.strokeColor.alpha, 1)
+    assertEqual(circle.strokeWidth, 2)
+    if includes_icon then
+      assertEqual(canvas[1].type, "image")
+      assertSame(canvas[1].image, icon_image, "canvas must contain the system application icon")
+      assertEqual(canvas[1].frame.w, size)
+      assertEqual(canvas[1].frame.h, size)
+    end
+  end
+  local fake_canvas = {
+    new = function(frame)
+      local canvas = { frame = frame }
+      function canvas:imageFromCanvas()
+        return icon_image
+      end
+      canvases[#canvases + 1] = canvas
+      return canvas
+    end,
+  }
 
   local fake_hs = {
     application = {
@@ -363,6 +403,7 @@ test("application example toggles focused and configured applications", function
         return icon_available and icon_image or nil
       end,
     },
+    canvas = fake_canvas,
   }
 
   local Protocol = require("streamdeck.protocol")
@@ -391,6 +432,11 @@ test("application example toggles focused and configured applications", function
   local appearance = action.appearance(press_context)
   assertEqual(appearance.title, "No app")
   assertEqual(appearance.state, "inactive")
+  assertEqual(appearance.appearanceVersion, 1, "missing applications must render a state indicator")
+  assertEqual(appearance.icon.kind, "custom")
+  assertEqual(appearance.icon.mediaType, "image/png")
+  assertTrue(Protocol.validateAppearanceIcon(appearance.icon), "missing application PNG must pass the protocol icon validator")
+  assert_indicator("not_running", false, 120)
   assertError(function()
     action.press(press_context)
   end, "no frontmost application")
@@ -407,14 +453,15 @@ test("application example toggles focused and configured applications", function
   assertEqual(appearance.icon.kind, "custom")
   assertEqual(appearance.icon.mediaType, "image/png")
   assertEqual(appearance.icon.dataBase64, pngBySize[120],
-    "icon data must be canonical base64 at the active keypad size")
+    "composited application icons must use the active keypad size")
   assertTrue(Protocol.validateAppearanceIcon(appearance.icon),
-    "application PNG must pass the protocol icon validator")
+    "composited application PNG must pass the protocol icon validator")
+  assert_indicator("open", true, 120)
   assertEqual(icon_requests[1], "com.example.Editor")
   icon_available = false
   local fallback_appearance = action.appearance(press_context)
-  assertEqual(fallback_appearance.icon, nil, "missing system icons must fall back cleanly")
-  assertEqual(fallback_appearance.appearanceVersion, nil)
+  assertEqual(fallback_appearance.icon.mediaType, "image/png")
+  assert_indicator("open", false, 120)
   icon_available = true
   action.press(press_context)
   assertEqual(app.hide_calls, 1)
@@ -423,6 +470,7 @@ test("application example toggles focused and configured applications", function
   appearance = action.appearance(press_context)
   assertEqual(appearance.title, "Editor", "hidden target must remain the focused toggle target")
   assertEqual(appearance.state, "active")
+  assert_indicator("hidden", true, 120)
 
   frontmost = other_app
   action.press(press_context)
@@ -459,10 +507,12 @@ test("application example toggles focused and configured applications", function
   appearance = action.appearance(configured_context)
   assertEqual(appearance.title, "Editor")
   assertEqual(appearance.state, "inactive")
+  assertEqual(appearance.icon.mediaType, "image/png")
   assertEqual(appearance.icon.dataBase64, pngBySize[72],
-    "configured applications must use the 72-pixel fallback icon")
+    "configured applications must use the 72-pixel fallback image size")
   assertTrue(Protocol.validateAppearanceIcon(appearance.icon),
-    "fallback application PNG must pass the protocol icon validator")
+    "configured application PNG must pass the protocol icon validator")
+  assert_indicator("open", true, 72)
   assertEqual(get_calls, 1, "appearance must resolve configured applications")
   fallback_after_hide = other_app
   action.press(configured_context)
@@ -529,8 +579,8 @@ test("application example toggles focused and configured applications", function
   configured = nil
   local missing_appearance = action.appearance(configured_context)
   assertEqual(missing_appearance.title, "No app")
-  assertEqual(missing_appearance.icon.dataBase64, pngBySize[72],
-    "configured applications can show a protocol-valid fallback icon before launch")
+  assertEqual(missing_appearance.icon.mediaType, "image/png")
+  assert_indicator("not_running", true, 72)
   action.press(configured_context)
   assertEqual(launch_calls, 1, "missing configured applications must be opened")
   assertEqual(configured_context.refreshes, 3, "opening a configured application must refresh")
@@ -543,6 +593,8 @@ test("application example toggles focused and configured applications", function
   configured = app
   app.hidden = false
   app.main_window = nil
+  action.appearance(configured_context)
+  assert_indicator("not_running", true, 72)
   local configured_refreshes = configured_context.refreshes
   action.press(configured_context)
   assertEqual(launch_calls, 3, "running applications without a main window must be reopened")

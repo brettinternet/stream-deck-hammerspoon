@@ -103,7 +103,13 @@ local function application_bundle_id(application)
   return bundle_id
 end
 
-local function application_icon(context, application, configured_bundle_id)
+local indicator_colors = {
+  open = { red = 52 / 255, green = 199 / 255, blue = 89 / 255, alpha = 1 },
+  hidden = { red = 1, green = 204 / 255, blue = 0, alpha = 1 },
+  not_running = { red = 1, green = 59 / 255, blue = 48 / 255, alpha = 1 },
+}
+
+local function application_system_icon(application, configured_bundle_id)
   local bundle_id = configured_bundle_id or application_bundle_id(application)
   if not bundle_id
     or type(hs) ~= "table"
@@ -116,7 +122,7 @@ local function application_icon(context, application, configured_bundle_id)
   if not ok then
     return nil
   end
-  return helpers.png(context, image)
+  return image
 end
 
 local function configured_application(bundle_id)
@@ -179,6 +185,60 @@ local function application_has_main_window(application)
     error("failed to inspect application window: " .. tostring(window))
   end
   return window ~= nil
+end
+
+local function application_window_state(application)
+  if not application then
+    return "not_running"
+  end
+  if application_is_hidden(application) then
+    return "hidden"
+  end
+  if not application_has_main_window(application) then
+    return "not_running"
+  end
+  return "open"
+end
+
+local function application_icon(context, application, configured_bundle_id, window_state)
+  local system_icon = application_system_icon(application, configured_bundle_id)
+  if type(hs) ~= "table" or type(hs.canvas) ~= "table" or type(hs.canvas.new) ~= "function" then
+    return helpers.png(context, system_icon)
+  end
+
+  local size = helpers.imageSize(context)
+  local diameter = math.max(8, math.floor(size * 0.2))
+  local inset = math.max(2, math.floor(size * 0.05))
+  local origin = size - diameter - inset
+  local created, canvas = pcall(hs.canvas.new, { x = 0, y = 0, w = size, h = size })
+  if not created or not canvas then
+    return helpers.png(context, system_icon)
+  end
+
+  local composited, image = pcall(function()
+    local index = 1
+    if system_icon then
+      canvas[index] = {
+        type = "image",
+        image = system_icon,
+        frame = { x = 0, y = 0, w = size, h = size },
+      }
+      index = index + 1
+    end
+    canvas[index] = {
+      type = "oval",
+      action = "strokeAndFill",
+      frame = { x = origin, y = origin, w = diameter, h = diameter },
+      fillColor = indicator_colors[window_state],
+      strokeColor = { white = 1, alpha = 1 },
+      strokeWidth = 2,
+    }
+    return canvas:imageFromCanvas()
+  end)
+  if not composited then
+    return helpers.png(context, system_icon)
+  end
+  return helpers.png(context, image) or helpers.png(context, system_icon)
 end
 
 local function focus_application(application)
@@ -291,6 +351,7 @@ return {
 
   appearance = function(context)
     local application, bundle_id = application_for(context)
+    local window_state = application_window_state(application)
     local appearance
     if application then
       appearance = {
@@ -304,11 +365,8 @@ return {
       }
     end
 
-    local icon = application_icon(context, application, bundle_id)
-    if icon then
-      appearance.appearanceVersion = 1
-      appearance.icon = icon
-    end
+    appearance.appearanceVersion = 1
+    appearance.icon = application_icon(context, application, bundle_id, window_state)
     return appearance
   end,
 
