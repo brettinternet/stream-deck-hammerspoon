@@ -372,7 +372,7 @@ return {
     visible_contexts[context.instanceId] = nil
     target_by_instance[context.instanceId] = nil
     fallback_by_instance[context.instanceId] = nil
-    transition_generation_by_instance[context.instanceId] = nil
+    transition_generation_by_instance[context.instanceId] = (transition_generation_by_instance[context.instanceId] or 0) + 1
     stop_application_watcher_if_unused()
   end,
 

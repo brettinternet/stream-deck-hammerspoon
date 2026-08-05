@@ -723,16 +723,15 @@ test("application action defers and invalidates asynchronous transition checks",
   app.hidden = true
   action.press(action_context)
   assertEqual(#callbacks, 2)
-  local feedback_count = #action_context.feedbacks
-  refresh_count = action_context.refreshes
   action.disappear(action_context)
-  callbacks[2]()
-  assertEqual(#action_context.feedbacks, feedback_count, "disappeared contexts must ignore delayed checks")
-  assertEqual(action_context.refreshes, refresh_count, "disappeared contexts must not refresh")
-
   action.appear(action_context)
   action.press(action_context)
   assertEqual(#callbacks, 3)
+  local feedback_count = #action_context.feedbacks
+  refresh_count = action_context.refreshes
+  callbacks[2]()
+  assertEqual(#action_context.feedbacks, feedback_count, "reappeared contexts must ignore previous delayed checks")
+  assertEqual(action_context.refreshes, refresh_count, "reappeared contexts must not refresh for previous checks")
   app.hidden = false
   action.press(action_context)
   feedback_count = #action_context.feedbacks
