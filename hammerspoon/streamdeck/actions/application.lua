@@ -235,6 +235,10 @@ local function application_icon(context, application, configured_bundle_id, wind
     }
     return canvas:imageFromCanvas()
   end)
+  local delete = canvas.delete
+  if type(delete) == "function" then
+    pcall(delete, canvas)
+  end
   if not composited then
     return helpers.png(context, system_icon)
   end

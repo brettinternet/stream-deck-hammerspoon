@@ -223,6 +223,7 @@ test("application example toggles focused and configured applications", function
   local launch_result = true
   local icon_requests = {}
   local icon_available = true
+  local canvas_image_error = false
   local get_error
   local activate_error = false
   local fallback_after_hide
@@ -324,6 +325,7 @@ test("application example toggles focused and configured applications", function
     local canvas = canvases[#canvases]
     assertEqual(canvas.frame.w, size)
     assertEqual(canvas.frame.h, size)
+    assertEqual(canvas.delete_calls, 1, "appearance must release its temporary canvas")
     local circle = canvas[includes_icon and 2 or 1]
     local color = state_colors[state]
     assertEqual(circle.type, "oval")
@@ -348,7 +350,13 @@ test("application example toggles focused and configured applications", function
     new = function(frame)
       local canvas = { frame = frame }
       function canvas:imageFromCanvas()
+        if canvas_image_error then
+          error("canvas image unavailable")
+        end
         return icon_image
+      end
+      function canvas:delete()
+        self.delete_calls = (self.delete_calls or 0) + 1
       end
       canvases[#canvases + 1] = canvas
       return canvas
@@ -458,6 +466,13 @@ test("application example toggles focused and configured applications", function
     "composited application PNG must pass the protocol icon validator")
   assert_indicator("open", true, 120)
   assertEqual(icon_requests[1], "com.example.Editor")
+  canvas_image_error = true
+  local raster_fallback = action.appearance(press_context)
+  assertEqual(raster_fallback.icon.dataBase64, pngBySize[120],
+    "failed rasterization must fall back to the application icon")
+  assertEqual(canvases[#canvases].delete_calls, 1,
+    "failed rasterization must still release its temporary canvas")
+  canvas_image_error = false
   icon_available = false
   local fallback_appearance = action.appearance(press_context)
   assertEqual(fallback_appearance.icon.mediaType, "image/png")
