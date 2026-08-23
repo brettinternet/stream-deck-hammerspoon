@@ -1,6 +1,6 @@
 import require$$0$4 from 'events';
 import require$$1$2 from 'https';
-import require$$2$1 from 'http';
+import require$$2$2 from 'http';
 import require$$3$1 from 'net';
 import require$$4$1 from 'tls';
 import require$$1$1 from 'crypto';
@@ -8,6 +8,7 @@ import require$$0$3 from 'stream';
 import require$$7$1 from 'url';
 import require$$0$1 from 'zlib';
 import require$$0$2 from 'buffer';
+import require$$2$1 from 'util';
 import fs, { existsSync, readFileSync } from 'node:fs';
 import path, { join } from 'node:path';
 import { cwd } from 'node:process';
@@ -243,6 +244,7 @@ function freeze(value) {
         Object.values(value).forEach(freeze);
     }
 }
+
 /**
  * Gets the value at the specified {@link path}.
  * @param source Source object that is being read from.
@@ -255,7 +257,7 @@ function get(source, path) {
 }
 
 /**
- * Internalization provider, responsible for managing localizations and translating resources.
+ * “Internationalization (i18n) provider, responsible for managing localizations and translating resources.
  */
 class I18nProvider {
     /**
@@ -1992,6 +1994,9 @@ function requirePermessageDeflate () {
 	   *     acknowledge disabling of client context takeover
 	   * @param {Number} [options.concurrencyLimit=10] The number of concurrent
 	   *     calls to zlib
+	   * @param {Boolean} [options.isServer=false] Create the instance in either
+	   *     server or client mode
+	   * @param {Number} [options.maxPayload=0] The maximum allowed message length
 	   * @param {(Boolean|Number)} [options.serverMaxWindowBits] Request/confirm the
 	   *     use of a custom server window size
 	   * @param {Boolean} [options.serverNoContextTakeover=false] Request/accept
@@ -2002,16 +2007,13 @@ function requirePermessageDeflate () {
 	   *     deflate
 	   * @param {Object} [options.zlibInflateOptions] Options to pass to zlib on
 	   *     inflate
-	   * @param {Boolean} [isServer=false] Create the instance in either server or
-	   *     client mode
-	   * @param {Number} [maxPayload=0] The maximum allowed message length
 	   */
-	  constructor(options, isServer, maxPayload) {
-	    this._maxPayload = maxPayload | 0;
+	  constructor(options) {
 	    this._options = options || {};
 	    this._threshold =
 	      this._options.threshold !== undefined ? this._options.threshold : 1024;
-	    this._isServer = !!isServer;
+	    this._maxPayload = this._options.maxPayload | 0;
+	    this._isServer = !!this._options.isServer;
 	    this._deflate = null;
 	    this._inflate = null;
 
@@ -2122,7 +2124,9 @@ function requirePermessageDeflate () {
 	            (typeof opts.serverMaxWindowBits === 'number' &&
 	              opts.serverMaxWindowBits > params.server_max_window_bits))) ||
 	        (typeof opts.clientMaxWindowBits === 'number' &&
-	          !params.client_max_window_bits)
+	          (typeof params.client_max_window_bits === 'number'
+	            ? opts.clientMaxWindowBits > params.client_max_window_bits
+	            : !params.client_max_window_bits))
 	      ) {
 	        return false;
 	      }
@@ -2692,6 +2696,10 @@ function requireReceiver () {
 	   *     extensions
 	   * @param {Boolean} [options.isServer=false] Specifies whether to operate in
 	   *     client or server mode
+	   * @param {Number} [options.maxBufferedChunks=0] The maximum number of
+	   *     buffered data chunks
+	   * @param {Number} [options.maxFragments=0] The maximum number of message
+	   *     fragments
 	   * @param {Number} [options.maxPayload=0] The maximum allowed message length
 	   * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
 	   *     not to skip UTF-8 validation for text and close messages
@@ -2706,6 +2714,8 @@ function requireReceiver () {
 	    this._binaryType = options.binaryType || BINARY_TYPES[0];
 	    this._extensions = options.extensions || {};
 	    this._isServer = !!options.isServer;
+	    this._maxBufferedChunks = options.maxBufferedChunks | 0;
+	    this._maxFragments = options.maxFragments | 0;
 	    this._maxPayload = options.maxPayload | 0;
 	    this._skipUTF8Validation = !!options.skipUTF8Validation;
 	    this[kWebSocket] = undefined;
@@ -2723,6 +2733,7 @@ function requireReceiver () {
 
 	    this._totalPayloadLength = 0;
 	    this._messageLength = 0;
+	    this._numFragments = 0;
 	    this._fragments = [];
 
 	    this._errored = false;
@@ -2740,6 +2751,22 @@ function requireReceiver () {
 	   */
 	  _write(chunk, encoding, cb) {
 	    if (this._opcode === 0x08 && this._state == GET_INFO) return cb();
+
+	    if (
+	      this._maxBufferedChunks > 0 &&
+	      this._buffers.length >= this._maxBufferedChunks
+	    ) {
+	      cb(
+	        this.createError(
+	          RangeError,
+	          'Too many buffered chunks',
+	          false,
+	          1008,
+	          'WS_ERR_TOO_MANY_BUFFERED_PARTS'
+	        )
+	      );
+	      return;
+	    }
 
 	    this._bufferedBytes += chunk.length;
 	    this._buffers.push(chunk);
@@ -3130,6 +3157,19 @@ function requireReceiver () {
 	      return;
 	    }
 
+	    if (this._maxFragments > 0 && ++this._numFragments > this._maxFragments) {
+	      const error = this.createError(
+	        RangeError,
+	        'Too many message fragments',
+	        false,
+	        1008,
+	        'WS_ERR_TOO_MANY_BUFFERED_PARTS'
+	      );
+
+	      cb(error);
+	      return;
+	    }
+
 	    if (this._compressed) {
 	      this._state = INFLATING;
 	      this.decompress(data, cb);
@@ -3202,6 +3242,7 @@ function requireReceiver () {
 	    this._totalPayloadLength = 0;
 	    this._messageLength = 0;
 	    this._fragmented = 0;
+	    this._numFragments = 0;
 	    this._fragments = [];
 
 	    if (this._opcode === 2) {
@@ -3370,6 +3411,9 @@ function requireSender () {
 
 	const { Duplex } = require$$0$3;
 	const { randomFillSync } = require$$1$1;
+	const {
+	  types: { isUint8Array }
+	} = require$$2$1;
 
 	const PerMessageDeflate = requirePermessageDeflate();
 	const { EMPTY_BUFFER, kWebSocket, NOOP } = requireConstants();
@@ -3566,8 +3610,10 @@ function requireSender () {
 
 	      if (typeof data === 'string') {
 	        buf.write(data, 2);
-	      } else {
+	      } else if (isUint8Array(data)) {
 	        buf.set(data, 2);
+	      } else {
+	        throw new TypeError('Second argument must be a string or a Uint8Array');
 	      }
 	    }
 
@@ -4491,7 +4537,7 @@ function requireWebsocket () {
 
 	const EventEmitter = require$$0$4;
 	const https = require$$1$2;
-	const http = require$$2$1;
+	const http = require$$2$2;
 	const net = require$$3$1;
 	const tls = require$$4$1;
 	const { randomBytes, createHash } = require$$1$1;
@@ -4688,6 +4734,10 @@ function requireWebsocket () {
 	   *     multiple times in the same tick
 	   * @param {Function} [options.generateMask] The function used to generate the
 	   *     masking key
+	   * @param {Number} [options.maxBufferedChunks=0] The maximum number of
+	   *     buffered data chunks
+	   * @param {Number} [options.maxFragments=0] The maximum number of message
+	   *     fragments
 	   * @param {Number} [options.maxPayload=0] The maximum allowed message size
 	   * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
 	   *     not to skip UTF-8 validation for text and close messages
@@ -4699,6 +4749,8 @@ function requireWebsocket () {
 	      binaryType: this.binaryType,
 	      extensions: this._extensions,
 	      isServer: this._isServer,
+	      maxBufferedChunks: options.maxBufferedChunks,
+	      maxFragments: options.maxFragments,
 	      maxPayload: options.maxPayload,
 	      skipUTF8Validation: options.skipUTF8Validation
 	    });
@@ -5127,6 +5179,10 @@ function requireWebsocket () {
 	 *     masking key
 	 * @param {Number} [options.handshakeTimeout] Timeout in milliseconds for the
 	 *     handshake request
+	 * @param {Number} [options.maxBufferedChunks=262144] The maximum number of
+	 *     buffered data chunks
+	 * @param {Number} [options.maxFragments=16384] The maximum number of message
+	 *     fragments
 	 * @param {Number} [options.maxPayload=104857600] The maximum allowed message
 	 *     size
 	 * @param {Number} [options.maxRedirects=10] The maximum number of redirects
@@ -5147,6 +5203,8 @@ function requireWebsocket () {
 	    autoPong: true,
 	    closeTimeout: CLOSE_TIMEOUT,
 	    protocolVersion: protocolVersions[1],
+	    maxBufferedChunks: 256 * 1024,
+	    maxFragments: 16 * 1024,
 	    maxPayload: 100 * 1024 * 1024,
 	    skipUTF8Validation: false,
 	    perMessageDeflate: true,
@@ -5180,7 +5238,7 @@ function requireWebsocket () {
 	  } else {
 	    try {
 	      parsedUrl = new URL(address);
-	    } catch (e) {
+	    } catch {
 	      throw new SyntaxError(`Invalid URL: ${address}`);
 	    }
 	  }
@@ -5242,11 +5300,11 @@ function requireWebsocket () {
 	  opts.timeout = opts.handshakeTimeout;
 
 	  if (opts.perMessageDeflate) {
-	    perMessageDeflate = new PerMessageDeflate(
-	      opts.perMessageDeflate !== true ? opts.perMessageDeflate : {},
-	      false,
-	      opts.maxPayload
-	    );
+	    perMessageDeflate = new PerMessageDeflate({
+	      ...opts.perMessageDeflate,
+	      isServer: false,
+	      maxPayload: opts.maxPayload
+	    });
 	    opts.headers['Sec-WebSocket-Extensions'] = format({
 	      [PerMessageDeflate.extensionName]: perMessageDeflate.offer()
 	    });
@@ -5504,6 +5562,8 @@ function requireWebsocket () {
 	    websocket.setSocket(socket, head, {
 	      allowSynchronousEvents: opts.allowSynchronousEvents,
 	      generateMask: opts.generateMask,
+	      maxBufferedChunks: opts.maxBufferedChunks,
+	      maxFragments: opts.maxFragments,
 	      maxPayload: opts.maxPayload,
 	      skipUTF8Validation: opts.skipUTF8Validation
 	    });
@@ -6053,12 +6113,13 @@ function requireStream () {
 
 requireStream();
 
+requireExtension();
+
+requirePermessageDeflate();
+
 requireReceiver();
 
 requireSender();
-
-var websocketExports = requireWebsocket();
-var WebSocket = /*@__PURE__*/getDefaultExportFromCjs(websocketExports);
 
 var subprotocol;
 var hasRequiredSubprotocol;
@@ -6130,6 +6191,11 @@ function requireSubprotocol () {
 	return subprotocol;
 }
 
+requireSubprotocol();
+
+var websocketExports = requireWebsocket();
+var WebSocket = /*@__PURE__*/getDefaultExportFromCjs(websocketExports);
+
 /* eslint no-unused-vars: ["error", { "varsIgnorePattern": "^Duplex$", "caughtErrors": "none" }] */
 
 var websocketServer;
@@ -6140,7 +6206,7 @@ function requireWebsocketServer () {
 	hasRequiredWebsocketServer = 1;
 
 	const EventEmitter = require$$0$4;
-	const http = require$$2$1;
+	const http = require$$2$2;
 	const { Duplex } = require$$0$3;
 	const { createHash } = require$$1$1;
 
@@ -6180,6 +6246,10 @@ function requireWebsocketServer () {
 	   *     called
 	   * @param {Function} [options.handleProtocols] A hook to handle protocols
 	   * @param {String} [options.host] The hostname where to bind the server
+	   * @param {Number} [options.maxBufferedChunks=262144] The maximum number of
+	   *     buffered data chunks
+	   * @param {Number} [options.maxFragments=16384] The maximum number of message
+	   *     fragments
 	   * @param {Number} [options.maxPayload=104857600] The maximum allowed message
 	   *     size
 	   * @param {Boolean} [options.noServer=false] Enable no server mode
@@ -6202,6 +6272,8 @@ function requireWebsocketServer () {
 	    options = {
 	      allowSynchronousEvents: true,
 	      autoPong: true,
+	      maxBufferedChunks: 256 * 1024,
+	      maxFragments: 16 * 1024,
 	      maxPayload: 100 * 1024 * 1024,
 	      skipUTF8Validation: false,
 	      perMessageDeflate: false,
@@ -6430,11 +6502,11 @@ function requireWebsocketServer () {
 	      this.options.perMessageDeflate &&
 	      secWebSocketExtensions !== undefined
 	    ) {
-	      const perMessageDeflate = new PerMessageDeflate(
-	        this.options.perMessageDeflate,
-	        true,
-	        this.options.maxPayload
-	      );
+	      const perMessageDeflate = new PerMessageDeflate({
+	        ...this.options.perMessageDeflate,
+	        isServer: true,
+	        maxPayload: this.options.maxPayload
+	      });
 
 	      try {
 	        const offers = extension.parse(secWebSocketExtensions);
@@ -6561,6 +6633,8 @@ function requireWebsocketServer () {
 
 	    ws.setSocket(socket, head, {
 	      allowSynchronousEvents: this.options.allowSynchronousEvents,
+	      maxBufferedChunks: this.options.maxBufferedChunks,
+	      maxFragments: this.options.maxFragments,
 	      maxPayload: this.options.maxPayload,
 	      skipUTF8Validation: this.options.skipUTF8Validation
 	    });
@@ -7184,13 +7258,16 @@ class FileTarget {
         });
     }
     /**
-     * Re-indexes the existing log files associated with this file target, removing old log files whose index exceeds the {@link FileTargetOptions.maxFileCount}, and renaming the
-     * remaining log files, leaving index "0" free for a new log file.
+     * Re-indexes the existing log files associated with this file target, removing old log files whose
+     * index exceeds the `maxFileCount`, and renaming the remaining log files, leaving index "0" free
+     * for a new log file.
      */
     reIndex() {
         // When the destination directory is new, create it, and return.
         if (!fs.existsSync(this.#options.dest)) {
-            fs.mkdirSync(this.#options.dest);
+            fs.mkdirSync(this.#options.dest, {
+                recursive: true,
+            });
             return;
         }
         const logFiles = this.getLogFiles();
@@ -9292,7 +9369,7 @@ function requireScope () {
 	(function (exports) {
 		Object.defineProperty(exports, "__esModule", { value: true });
 		exports.ValueScope = exports.ValueScopeName = exports.Scope = exports.varKinds = exports.UsedValueState = void 0;
-		const code_1 = requireCode$1();
+		const code_1 = /*@__PURE__*/ requireCode$1();
 		class ValueError extends Error {
 		    constructor(name) {
 		        super(`CodeGen: "code" for ${name} not defined`);
@@ -9444,9 +9521,9 @@ function requireCodegen () {
 	(function (exports) {
 		Object.defineProperty(exports, "__esModule", { value: true });
 		exports.or = exports.and = exports.not = exports.CodeGen = exports.operators = exports.varKinds = exports.ValueScopeName = exports.ValueScope = exports.Scope = exports.Name = exports.regexpCode = exports.stringify = exports.getProperty = exports.nil = exports.strConcat = exports.str = exports._ = void 0;
-		const code_1 = requireCode$1();
-		const scope_1 = requireScope();
-		var code_2 = requireCode$1();
+		const code_1 = /*@__PURE__*/ requireCode$1();
+		const scope_1 = /*@__PURE__*/ requireScope();
+		var code_2 = /*@__PURE__*/ requireCode$1();
 		Object.defineProperty(exports, "_", { enumerable: true, get: function () { return code_2._; } });
 		Object.defineProperty(exports, "str", { enumerable: true, get: function () { return code_2.str; } });
 		Object.defineProperty(exports, "strConcat", { enumerable: true, get: function () { return code_2.strConcat; } });
@@ -9455,7 +9532,7 @@ function requireCodegen () {
 		Object.defineProperty(exports, "stringify", { enumerable: true, get: function () { return code_2.stringify; } });
 		Object.defineProperty(exports, "regexpCode", { enumerable: true, get: function () { return code_2.regexpCode; } });
 		Object.defineProperty(exports, "Name", { enumerable: true, get: function () { return code_2.Name; } });
-		var scope_2 = requireScope();
+		var scope_2 = /*@__PURE__*/ requireScope();
 		Object.defineProperty(exports, "Scope", { enumerable: true, get: function () { return scope_2.Scope; } });
 		Object.defineProperty(exports, "ValueScope", { enumerable: true, get: function () { return scope_2.ValueScope; } });
 		Object.defineProperty(exports, "ValueScopeName", { enumerable: true, get: function () { return scope_2.ValueScopeName; } });
@@ -10151,8 +10228,8 @@ function requireUtil () {
 	hasRequiredUtil = 1;
 	Object.defineProperty(util, "__esModule", { value: true });
 	util.checkStrictMode = util.getErrorPath = util.Type = util.useFunc = util.setEvaluated = util.evaluatedPropsToName = util.mergeEvaluated = util.eachItem = util.unescapeJsonPointer = util.escapeJsonPointer = util.escapeFragment = util.unescapeFragment = util.schemaRefOrVal = util.schemaHasRulesButRef = util.schemaHasRules = util.checkUnknownRules = util.alwaysValidSchema = util.toHash = void 0;
-	const codegen_1 = requireCodegen();
-	const code_1 = requireCode$1();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const code_1 = /*@__PURE__*/ requireCode$1();
 	// TODO refactor to use Set
 	function toHash(arr) {
 	    const hash = {};
@@ -10337,7 +10414,7 @@ function requireNames () {
 	if (hasRequiredNames) return names;
 	hasRequiredNames = 1;
 	Object.defineProperty(names, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
 	const names$1 = {
 	    // validation function arguments
 	    data: new codegen_1.Name("data"), // data passed to validation function
@@ -10374,9 +10451,9 @@ function requireErrors () {
 	(function (exports) {
 		Object.defineProperty(exports, "__esModule", { value: true });
 		exports.extendErrors = exports.resetErrorsCount = exports.reportExtraError = exports.reportError = exports.keyword$DataError = exports.keywordError = void 0;
-		const codegen_1 = requireCodegen();
-		const util_1 = requireUtil();
-		const names_1 = requireNames();
+		const codegen_1 = /*@__PURE__*/ requireCodegen();
+		const util_1 = /*@__PURE__*/ requireUtil();
+		const names_1 = /*@__PURE__*/ requireNames();
 		exports.keywordError = {
 		    message: ({ keyword }) => (0, codegen_1.str) `must pass "${keyword}" keyword validation`,
 		};
@@ -10505,9 +10582,9 @@ function requireBoolSchema () {
 	hasRequiredBoolSchema = 1;
 	Object.defineProperty(boolSchema, "__esModule", { value: true });
 	boolSchema.boolOrEmptySchema = boolSchema.topBoolOrEmptySchema = void 0;
-	const errors_1 = requireErrors();
-	const codegen_1 = requireCodegen();
-	const names_1 = requireNames();
+	const errors_1 = /*@__PURE__*/ requireErrors();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const names_1 = /*@__PURE__*/ requireNames();
 	const boolError = {
 	    message: "boolean schema is false",
 	};
@@ -10627,11 +10704,11 @@ function requireDataType () {
 	hasRequiredDataType = 1;
 	Object.defineProperty(dataType, "__esModule", { value: true });
 	dataType.reportTypeError = dataType.checkDataTypes = dataType.checkDataType = dataType.coerceAndCheckDataType = dataType.getJSONTypes = dataType.getSchemaTypes = dataType.DataType = void 0;
-	const rules_1 = requireRules();
-	const applicability_1 = requireApplicability();
-	const errors_1 = requireErrors();
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
+	const rules_1 = /*@__PURE__*/ requireRules();
+	const applicability_1 = /*@__PURE__*/ requireApplicability();
+	const errors_1 = /*@__PURE__*/ requireErrors();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	var DataType;
 	(function (DataType) {
 	    DataType[DataType["Correct"] = 0] = "Correct";
@@ -10839,8 +10916,8 @@ function requireDefaults () {
 	hasRequiredDefaults = 1;
 	Object.defineProperty(defaults, "__esModule", { value: true });
 	defaults.assignDefaults = void 0;
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	function assignDefaults(it, ty) {
 	    const { properties, items } = it.schema;
 	    if (ty === "object" && properties) {
@@ -10885,10 +10962,10 @@ function requireCode () {
 	hasRequiredCode = 1;
 	Object.defineProperty(code, "__esModule", { value: true });
 	code.validateUnion = code.validateArray = code.usePattern = code.callValidateCode = code.schemaProperties = code.allSchemaProperties = code.noPropertyInData = code.propertyInData = code.isOwnProperty = code.hasPropFunc = code.reportMissingProp = code.checkMissingProp = code.checkReportMissingProp = void 0;
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
-	const names_1 = requireNames();
-	const util_2 = requireUtil();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const names_1 = /*@__PURE__*/ requireNames();
+	const util_2 = /*@__PURE__*/ requireUtil();
 	function checkReportMissingProp(cxt, prop) {
 	    const { gen, data, it } = cxt;
 	    gen.if(noPropertyInData(gen, data, prop, it.opts.ownProperties), () => {
@@ -11023,10 +11100,10 @@ function requireKeyword () {
 	hasRequiredKeyword = 1;
 	Object.defineProperty(keyword, "__esModule", { value: true });
 	keyword.validateKeywordUsage = keyword.validSchemaType = keyword.funcKeywordCode = keyword.macroKeywordCode = void 0;
-	const codegen_1 = requireCodegen();
-	const names_1 = requireNames();
-	const code_1 = requireCode();
-	const errors_1 = requireErrors();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const names_1 = /*@__PURE__*/ requireNames();
+	const code_1 = /*@__PURE__*/ requireCode();
+	const errors_1 = /*@__PURE__*/ requireErrors();
 	function macroKeywordCode(cxt, def) {
 	    const { gen, keyword, schema, parentSchema, it } = cxt;
 	    const macroSchema = def.macro.call(it.self, schema, parentSchema, it);
@@ -11156,8 +11233,8 @@ function requireSubschema () {
 	hasRequiredSubschema = 1;
 	Object.defineProperty(subschema, "__esModule", { value: true });
 	subschema.extendSubschemaMode = subschema.extendSubschemaData = subschema.getSubschema = void 0;
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	function getSubschema(it, { keyword, schemaProp, schema, schemaPath, errSchemaPath, topSchemaRef }) {
 	    if (keyword !== undefined && schema !== undefined) {
 	        throw new Error('both "keyword" and "schema" passed, only one allowed');
@@ -11402,7 +11479,7 @@ function requireResolve () {
 	hasRequiredResolve = 1;
 	Object.defineProperty(resolve, "__esModule", { value: true });
 	resolve.getSchemaRefs = resolve.resolveUrl = resolve.normalizeId = resolve._getFullPath = resolve.getFullPath = resolve.inlineRef = void 0;
-	const util_1 = requireUtil();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const equal = requireFastDeepEqual();
 	const traverse = requireJsonSchemaTraverse();
 	// TODO refactor to use keyword definitions
@@ -11564,18 +11641,18 @@ function requireValidate () {
 	hasRequiredValidate = 1;
 	Object.defineProperty(validate, "__esModule", { value: true });
 	validate.getData = validate.KeywordCxt = validate.validateFunctionCode = void 0;
-	const boolSchema_1 = requireBoolSchema();
-	const dataType_1 = requireDataType();
-	const applicability_1 = requireApplicability();
-	const dataType_2 = requireDataType();
-	const defaults_1 = requireDefaults();
-	const keyword_1 = requireKeyword();
-	const subschema_1 = requireSubschema();
-	const codegen_1 = requireCodegen();
-	const names_1 = requireNames();
-	const resolve_1 = requireResolve();
-	const util_1 = requireUtil();
-	const errors_1 = requireErrors();
+	const boolSchema_1 = /*@__PURE__*/ requireBoolSchema();
+	const dataType_1 = /*@__PURE__*/ requireDataType();
+	const applicability_1 = /*@__PURE__*/ requireApplicability();
+	const dataType_2 = /*@__PURE__*/ requireDataType();
+	const defaults_1 = /*@__PURE__*/ requireDefaults();
+	const keyword_1 = /*@__PURE__*/ requireKeyword();
+	const subschema_1 = /*@__PURE__*/ requireSubschema();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const names_1 = /*@__PURE__*/ requireNames();
+	const resolve_1 = /*@__PURE__*/ requireResolve();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const errors_1 = /*@__PURE__*/ requireErrors();
 	// schema compilation - generates validation function, subschemaCode (below) is used for subschemas
 	function validateFunctionCode(it) {
 	    if (isSchemaObj(it)) {
@@ -12111,7 +12188,7 @@ function requireRef_error () {
 	if (hasRequiredRef_error) return ref_error;
 	hasRequiredRef_error = 1;
 	Object.defineProperty(ref_error, "__esModule", { value: true });
-	const resolve_1 = requireResolve();
+	const resolve_1 = /*@__PURE__*/ requireResolve();
 	class MissingRefError extends Error {
 	    constructor(resolver, baseId, ref, msg) {
 	        super(msg || `can't resolve reference ${ref} from id ${baseId}`);
@@ -12133,12 +12210,12 @@ function requireCompile () {
 	hasRequiredCompile = 1;
 	Object.defineProperty(compile, "__esModule", { value: true });
 	compile.resolveSchema = compile.getCompilingSchema = compile.resolveRef = compile.compileSchema = compile.SchemaEnv = void 0;
-	const codegen_1 = requireCodegen();
-	const validation_error_1 = requireValidation_error();
-	const names_1 = requireNames();
-	const resolve_1 = requireResolve();
-	const util_1 = requireUtil();
-	const validate_1 = requireValidate();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const validation_error_1 = /*@__PURE__*/ requireValidation_error();
+	const names_1 = /*@__PURE__*/ requireNames();
+	const resolve_1 = /*@__PURE__*/ requireResolve();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const validate_1 = /*@__PURE__*/ requireValidate();
 	class SchemaEnv {
 	    constructor(env) {
 	        var _a;
@@ -12428,7 +12505,36 @@ function requireUtils () {
 	const isUnreserved = RegExp.prototype.test.bind(/^[\da-z\-._~]$/iu);
 
 	/** @type {(value: string) => boolean} */
-	const isPathCharacter = RegExp.prototype.test.bind(/^[\da-z\-._~!$&'()*+,;=:@/]$/iu);
+	const isPathCharacter = RegExp.prototype.test.bind(/^[A-Za-z0-9\-._~!$&'()*+,;=:@/]$/u);
+
+	/** @type {(value: string) => boolean} */
+	const isQueryFragmentCharacter = RegExp.prototype.test.bind(/^[A-Za-z0-9\-._~!$&'()*+,;=:@/?]$/u);
+
+	/** @type {(value: string) => boolean} */
+	const isUserinfoCharacter = RegExp.prototype.test.bind(/^[A-Za-z0-9\-._~!$&'()*+,;=:]$/u);
+
+	const BYTE_HEX = new Array(256);
+	{
+	  const HEX_DIGITS = '0123456789ABCDEF';
+	  for (let i = 0; i < 256; i++) {
+	    BYTE_HEX[i] = '%' + HEX_DIGITS[i >> 4] + HEX_DIGITS[i & 0xF];
+	  }
+	}
+	function percentEncodeNonAscii (cp) {
+	  if (cp < 0x800) {
+	    return BYTE_HEX[0xC0 | (cp >> 6)] +
+	           BYTE_HEX[0x80 | (cp & 0x3F)]
+	  }
+	  if (cp < 0x10000) {
+	    return BYTE_HEX[0xE0 | (cp >> 12)] +
+	           BYTE_HEX[0x80 | ((cp >> 6) & 0x3F)] +
+	           BYTE_HEX[0x80 | (cp & 0x3F)]
+	  }
+	  return BYTE_HEX[0xF0 | (cp >> 18)] +
+	         BYTE_HEX[0x80 | ((cp >> 12) & 0x3F)] +
+	         BYTE_HEX[0x80 | ((cp >> 6) & 0x3F)] +
+	         BYTE_HEX[0x80 | (cp & 0x3F)]
+	}
 
 	/**
 	 * @param {Array<string>} input
@@ -12461,12 +12567,14 @@ function requireUtils () {
 	  return acc
 	}
 
-	/**
-	 * @typedef {Object} GetIPV6Result
-	 * @property {boolean} error - Indicates if there was an error parsing the IPv6 address.
-	 * @property {string} address - The parsed IPv6 address.
-	 * @property {string} [zone] - The zone identifier, if present.
-	 */
+	/** @type {(value: string) => boolean} */
+	const isHextet = RegExp.prototype.test.bind(/^[\dA-Fa-f]{1,4}$/);
+
+	/** @type {(value: string) => boolean} */
+	const isIPvFuture = RegExp.prototype.test.bind(/^[vV][\dA-Fa-f]+\.[A-Za-z\d\-._~!$&'()*+,;=:]+$/);
+
+	/** @type {(value: string) => boolean} */
+	const isZoneCharacter = RegExp.prototype.test.bind(/^[A-Za-z\d\-._~]$/);
 
 	/**
 	 * @param {string} value
@@ -12475,88 +12583,104 @@ function requireUtils () {
 	const nonSimpleDomain = RegExp.prototype.test.bind(/[^!"$&'()*+,\-.;=_`a-z{}~]/u);
 
 	/**
-	 * @param {Array<string>} buffer
+	 * @param {string} zone
 	 * @returns {boolean}
 	 */
-	function consumeIsZone (buffer) {
-	  buffer.length = 0;
-	  return true
-	}
+	function isZoneIdentifier (zone) {
+	  if (zone.length === 0) return false
 
-	/**
-	 * @param {Array<string>} buffer
-	 * @param {Array<string>} address
-	 * @param {GetIPV6Result} output
-	 * @returns {boolean}
-	 */
-	function consumeHextets (buffer, address, output) {
-	  if (buffer.length) {
-	    const hex = stringArrayToHexStripped(buffer);
-	    if (hex !== '') {
-	      address.push(hex);
-	    } else {
-	      output.error = true;
-	      return false
+	  for (let i = 0; i < zone.length; i++) {
+	    if (isZoneCharacter(zone[i])) continue
+	    if (zone[i] === '%' && i + 2 < zone.length && isHexPair(zone.slice(i + 1, i + 3))) {
+	      i += 2;
+	      continue
 	    }
-	    buffer.length = 0;
+	    return false
 	  }
+
 	  return true
 	}
 
 	/**
+	 * Compresses the longest run of zero hextets to "::" per RFC 5952. A run of a
+	 * single zero hextet is left uncompressed. On ties the leftmost run wins.
+	 *
+	 * @param {string[]} hextets
+	 * @returns {string}
+	 */
+	function compressIPv6ZeroRun (hextets) {
+	  let bestStart = -1;
+	  let bestLength = 0;
+	  let runStart = -1;
+	  let runLength = 0;
+	  for (let i = 0; i < hextets.length; i++) {
+	    if (hextets[i] === '0') {
+	      if (runStart === -1) runStart = i;
+	      runLength++;
+	      if (runLength > bestLength) {
+	        bestLength = runLength;
+	        bestStart = runStart;
+	      }
+	    } else {
+	      runStart = -1;
+	      runLength = 0;
+	    }
+	  }
+
+	  if (bestLength < 2) return hextets.join(':')
+
+	  const head = hextets.slice(0, bestStart).join(':');
+	  const tail = hextets.slice(bestStart + bestLength).join(':');
+	  return head + '::' + tail
+	}
+
+	/**
+	 * Validates an IPv6 address against the alternatives in RFC 3986 section
+	 * 3.2.2 and returns the same address with leading hextet zeroes removed.
+	 * An embedded IPv4 address counts as two hextets and is only valid at the end.
+	 *
 	 * @param {string} input
-	 * @returns {GetIPV6Result}
+	 * @returns {string|undefined}
 	 */
-	function getIPV6 (input) {
-	  let tokenCount = 0;
-	  const output = { error: false, address: '', zone: '' };
-	  /** @type {Array<string>} */
-	  const address = [];
-	  /** @type {Array<string>} */
-	  const buffer = [];
-	  let endipv6Encountered = false;
-	  let endIpv6 = false;
+	function normalizeIPv6Address (input) {
+	  const compression = input.indexOf('::');
+	  if (compression !== -1 && input.indexOf('::', compression + 1) !== -1) return undefined
 
-	  let consume = consumeHextets;
+	  const left = compression === -1 ? input.split(':') : input.slice(0, compression).split(':');
+	  const right = compression === -1 ? [] : input.slice(compression + 2).split(':');
+	  if (compression !== -1) {
+	    if (left.length === 1 && left[0] === '') left.length = 0;
+	    if (right.length === 1 && right[0] === '') right.length = 0;
+	  }
 
-	  for (let i = 0; i < input.length; i++) {
-	    const cursor = input[i];
-	    if (cursor === '[' || cursor === ']') { continue }
-	    if (cursor === ':') {
-	      if (endipv6Encountered === true) {
-	        endIpv6 = true;
-	      }
-	      if (!consume(buffer, address, output)) { break }
-	      if (++tokenCount > 7) {
-	        // not valid
-	        output.error = true;
-	        break
-	      }
-	      if (i > 0 && input[i - 1] === ':') {
-	        endipv6Encountered = true;
-	      }
-	      address.push(':');
-	      continue
-	    } else if (cursor === '%') {
-	      if (!consume(buffer, address, output)) { break }
-	      // switch to zone detection
-	      consume = consumeIsZone;
-	    } else {
-	      buffer.push(cursor);
+	  const parts = left.concat(right);
+	  let hextetCount = 0;
+	  for (let i = 0; i < parts.length; i++) {
+	    const part = parts[i];
+	    if (part === '') return undefined
+
+	    if (part.indexOf('.') !== -1) {
+	      if (i !== parts.length - 1 || (compression !== -1 && right.length === 0) || !isIPv4(part)) return undefined
+	      hextetCount += 2;
 	      continue
 	    }
+
+	    if (!isHextet(part)) return undefined
+	    parts[i] = parseInt(part, 16).toString(16);
+	    hextetCount++;
 	  }
-	  if (buffer.length) {
-	    if (consume === consumeIsZone) {
-	      output.zone = buffer.join('');
-	    } else if (endIpv6) {
-	      address.push(buffer.join(''));
-	    } else {
-	      address.push(stringArrayToHexStripped(buffer));
-	    }
+
+	  if (compression === -1) {
+	    if (hextetCount !== 8) return undefined
+	    return compressIPv6ZeroRun(parts)
 	  }
-	  output.address = address.join('');
-	  return output
+	  if (hextetCount >= 8) return undefined
+
+	  // expand "::" then re-compress the longest run for a canonical result
+	  const expanded = parts.slice(0, left.length);
+	  for (let i = hextetCount; i < 8; i++) expanded.push('0');
+	  for (let i = left.length; i < parts.length; i++) expanded.push(parts[i]);
+	  return compressIPv6ZeroRun(expanded)
 	}
 
 	/**
@@ -12564,26 +12688,49 @@ function requireUtils () {
 	 * @property {string} host - The normalized host.
 	 * @property {string} [escapedHost] - The escaped host.
 	 * @property {boolean} isIPV6 - Indicates if the host is an IPv6 address.
+	 * @property {boolean} [isIPVFuture] - Indicates if the host is an IPvFuture literal.
+	 * @property {boolean} [error] - Indicates if a bracketed IP literal is malformed.
 	 */
 
 	/**
+	 * Validates and normalizes a bracketed IP literal. Raw zone separators remain
+	 * accepted for backwards compatibility, while encoded separators and zone
+	 * contents follow RFC 6874.
+	 *
 	 * @param {string} host
 	 * @returns {NormalizeIPv6Result}
 	 */
 	function normalizeIPv6 (host) {
-	  if (findToken(host, ':') < 2) { return { host, isIPV6: false } }
-	  const ipv6 = getIPV6(host);
+	  const bracketed = host[0] === '[' && host[host.length - 1] === ']';
+	  const hasBracket = host[0] === '[' || host[host.length - 1] === ']';
+	  if (hasBracket && !bracketed) return { host, isIPV6: false, error: true }
 
-	  if (!ipv6.error) {
-	    let newHost = ipv6.address;
-	    let escapedHost = ipv6.address;
-	    if (ipv6.zone) {
-	      newHost += '%' + ipv6.zone;
-	      escapedHost += '%25' + ipv6.zone;
-	    }
-	    return { host: newHost, isIPV6: true, escapedHost }
-	  } else {
-	    return { host, isIPV6: false }
+	  let input = bracketed ? host.slice(1, -1) : host;
+	  if (bracketed && isIPvFuture(input)) {
+	    input = input.toLowerCase();
+	    return { host: `[${input}]`, escapedHost: input, isIPV6: false, isIPVFuture: true }
+	  }
+
+	  if (findToken(input, ':') < 2) {
+	    return { host, isIPV6: false, error: bracketed }
+	  }
+
+	  let zoneIdentifier = '';
+	  const zoneSeparator = input.indexOf('%');
+	  if (zoneSeparator !== -1) {
+	    const separatorLength = input.slice(zoneSeparator, zoneSeparator + 3).toLowerCase() === '%25' ? 3 : 1;
+	    zoneIdentifier = input.slice(zoneSeparator + separatorLength);
+	    if (!isZoneIdentifier(zoneIdentifier)) return { host, isIPV6: false, error: true }
+	    input = input.slice(0, zoneSeparator);
+	  }
+
+	  const address = normalizeIPv6Address(input);
+	  if (address === undefined) return { host, isIPV6: false, error: true }
+
+	  return {
+	    host: address + (zoneIdentifier ? '%' + zoneIdentifier : ''),
+	    escapedHost: address + (zoneIdentifier ? '%25' + zoneIdentifier : ''),
+	    isIPV6: true
 	  }
 	}
 
@@ -12709,7 +12856,7 @@ function requireUtils () {
 
 	/**
 	 * Normalizes percent escapes and optionally decodes only unreserved ASCII bytes.
-	 * Reserved delimiters such as `%2F` and `%2E` stay escaped.
+	 * Reserved delimiters such as `%2F` stay escaped; `%2E` is unreserved.
 	 *
 	 * @param {string} input
 	 * @param {boolean} [decodeUnreserved=false]
@@ -12758,7 +12905,8 @@ function requireUtils () {
 	  let output = '';
 
 	  for (let i = 0; i < input.length; i++) {
-	    if (input[i] === '%' && i + 2 < input.length) {
+	    const ch = input[i];
+	    if (ch === '%' && i + 2 < input.length) {
 	      const hex = input.slice(i + 1, i + 3);
 	      if (isHexPair(hex)) {
 	        const normalizedHex = hex.toUpperCase();
@@ -12775,10 +12923,225 @@ function requireUtils () {
 	      }
 	    }
 
-	    if (isPathCharacter(input[i])) {
-	      output += input[i];
+	    if (isPathCharacter(ch)) {
+	      output += ch;
 	    } else {
-	      output += escape(input[i]);
+	      const code = input.charCodeAt(i);
+	      if (code < 0x80) {
+	        output += isEscapeSafe(code) ? ch : BYTE_HEX[code];
+	      } else if (code < 0xD800 || code > 0xDFFF) {
+	        output += percentEncodeNonAscii(code);
+	      } else if (code <= 0xDBFF && i + 1 < input.length) {
+	        const low = input.charCodeAt(i + 1);
+	        if (low >= 0xDC00 && low <= 0xDFFF) {
+	          output += percentEncodeNonAscii(0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00));
+	          i++;
+	        } else {
+	          output += percentEncodeNonAscii(0xFFFD);
+	        }
+	      } else {
+	        output += percentEncodeNonAscii(0xFFFD);
+	      }
+	    }
+	  }
+
+	  return output
+	}
+
+	/**
+	 * Serializes a path without rewriting reserved data. Raw RFC 3986 path
+	 * characters remain literal, valid escapes are preserved and uppercased, and
+	 * everything else is UTF-8 percent-encoded. In a path-noscheme, a colon in the
+	 * first segment must be escaped so the result cannot be parsed as a scheme.
+	 *
+	 * @param {string} input
+	 * @param {boolean} [pathNoScheme=false]
+	 * @returns {string}
+	 */
+	function serializePathEncoding (input, pathNoScheme = false) {
+	  let output = '';
+	  let firstSegment = pathNoScheme && input[0] !== '/';
+
+	  for (let i = 0; i < input.length; i++) {
+	    const ch = input[i];
+	    if (ch === '%' && i + 2 < input.length) {
+	      const hex = input.slice(i + 1, i + 3);
+	      if (isHexPair(hex)) {
+	        output += '%' + hex.toUpperCase();
+	        i += 2;
+	        continue
+	      }
+	    }
+
+	    if (ch === '/') {
+	      firstSegment = false;
+	    }
+
+	    if (isPathCharacter(ch) && (ch !== ':' || !firstSegment)) {
+	      output += ch;
+	    } else {
+	      const code = input.charCodeAt(i);
+	      if (code < 0x80) {
+	        output += BYTE_HEX[code];
+	      } else if (code < 0xD800 || code > 0xDFFF) {
+	        output += percentEncodeNonAscii(code);
+	      } else if (code <= 0xDBFF && i + 1 < input.length) {
+	        const low = input.charCodeAt(i + 1);
+	        if (low >= 0xDC00 && low <= 0xDFFF) {
+	          output += percentEncodeNonAscii(0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00));
+	          i++;
+	        } else {
+	          output += percentEncodeNonAscii(0xFFFD);
+	        }
+	      } else {
+	        output += percentEncodeNonAscii(0xFFFD);
+	      }
+	    }
+	  }
+
+	  return output
+	}
+
+	/**
+	 * Percent-encodes a URI component using its RFC 3986 literal character set.
+	 * Existing valid escapes are preserved and normalized to uppercase hex.
+	 *
+	 * @param {string} input
+	 * @param {(value: string) => boolean} isAllowed
+	 * @returns {string}
+	 */
+	function encodeComponent (input, isAllowed) {
+	  let output = '';
+
+	  for (let i = 0; i < input.length; i++) {
+	    const ch = input[i];
+	    if (ch === '%' && i + 2 < input.length) {
+	      const hex = input.slice(i + 1, i + 3);
+	      if (isHexPair(hex)) {
+	        output += '%' + hex.toUpperCase();
+	        i += 2;
+	        continue
+	      }
+	    }
+
+	    if (isAllowed(ch)) {
+	      output += ch;
+	    } else {
+	      const code = input.charCodeAt(i);
+	      if (code < 0x80) {
+	        output += BYTE_HEX[code];
+	      } else if (code < 0xD800 || code > 0xDFFF) {
+	        output += percentEncodeNonAscii(code);
+	      } else if (code <= 0xDBFF && i + 1 < input.length) {
+	        const low = input.charCodeAt(i + 1);
+	        if (low >= 0xDC00 && low <= 0xDFFF) {
+	          output += percentEncodeNonAscii(0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00));
+	          i++;
+	        } else {
+	          output += percentEncodeNonAscii(0xFFFD);
+	        }
+	      } else {
+	        output += percentEncodeNonAscii(0xFFFD);
+	      }
+	    }
+	  }
+
+	  return output
+	}
+
+	/**
+	 * Encodes userinfo while preserving its RFC 3986 §3.2.1 literal characters.
+	 * In particular, authority delimiters such as `@`, `/`, `?`, and `#` are data.
+	 *
+	 * @param {string} input
+	 * @returns {string}
+	 */
+	function encodeUserinfo (input) {
+	  return encodeComponent(input, isUserinfoCharacter)
+	}
+
+	/**
+	 * Encodes query data using the RFC 3986 §3.4 grammar. A literal `#` must be
+	 * escaped because it would otherwise begin the fragment component.
+	 *
+	 * @param {string} input
+	 * @returns {string}
+	 */
+	function encodeQuery (input) {
+	  return encodeComponent(input, isQueryFragmentCharacter)
+	}
+
+	/**
+	 * Encodes fragment data using the RFC 3986 §3.5 grammar.
+	 *
+	 * @param {string} input
+	 * @returns {string}
+	 */
+	function encodeFragment (input) {
+	  return encodeComponent(input, isQueryFragmentCharacter)
+	}
+
+	function isEscapeSafe (cp) {
+	  return (
+	    (cp >= 0x30 && cp <= 0x39) ||
+	    (cp >= 0x41 && cp <= 0x5A) ||
+	    (cp >= 0x61 && cp <= 0x7A) ||
+	    cp === 0x2A || cp === 0x2B || cp === 0x2D || cp === 0x2E ||
+	    cp === 0x2F || cp === 0x40 || cp === 0x5F
+	  )
+	}
+
+	/**
+	 * Normalizes the percent-encoding of a query or fragment component.
+	 *
+	 * Like `normalizePathEncoding`, but uses the query/fragment character set
+	 * (which additionally allows `?`) and decodes `.` since it has no dot-segment
+	 * meaning outside of a path.
+	 *
+	 * @param {string} input
+	 * @returns {string}
+	 */
+	function normalizeQueryFragmentEncoding (input) {
+	  let output = '';
+
+	  for (let i = 0; i < input.length; i++) {
+	    const ch = input[i];
+	    if (ch === '%' && i + 2 < input.length) {
+	      const hex = input.slice(i + 1, i + 3);
+	      if (isHexPair(hex)) {
+	        const normalizedHex = hex.toUpperCase();
+	        const decoded = String.fromCharCode(parseInt(normalizedHex, 16));
+
+	        if (isUnreserved(decoded)) {
+	          output += decoded;
+	        } else {
+	          output += '%' + normalizedHex;
+	        }
+
+	        i += 2;
+	        continue
+	      }
+	    }
+
+	    if (isQueryFragmentCharacter(ch)) {
+	      output += ch;
+	    } else {
+	      const code = input.charCodeAt(i);
+	      if (code < 0x80) {
+	        output += isEscapeSafe(code) ? ch : BYTE_HEX[code];
+	      } else if (code < 0xD800 || code > 0xDFFF) {
+	        output += percentEncodeNonAscii(code);
+	      } else if (code <= 0xDBFF && i + 1 < input.length) {
+	        const low = input.charCodeAt(i + 1);
+	        if (low >= 0xDC00 && low <= 0xDFFF) {
+	          output += percentEncodeNonAscii(0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00));
+	          i++;
+	        } else {
+	          output += percentEncodeNonAscii(0xFFFD);
+	        }
+	      } else {
+	        output += percentEncodeNonAscii(0xFFFD);
+	      }
 	    }
 	  }
 
@@ -12818,15 +13181,21 @@ function requireUtils () {
 	  const uriTokens = [];
 
 	  if (component.userinfo !== undefined) {
-	    uriTokens.push(component.userinfo);
+	    uriTokens.push(encodeUserinfo(component.userinfo));
 	    uriTokens.push('@');
 	  }
 
 	  if (component.host !== undefined) {
-	    let host = unescape(component.host);
+	    let host = component.host;
 	    if (!isIPv4(host)) {
-	      const ipV6res = normalizeIPv6(host);
-	      if (ipV6res.isIPV6 === true) {
+	      let ipV6res = normalizeIPv6(host);
+	      if (ipV6res.isIPV6 !== true && ipV6res.isIPVFuture !== true) {
+	        // Decode only unreserved bytes, once. In particular, keep %25 encoded
+	        // so it cannot introduce a second escape during recomposition.
+	        host = normalizePercentEncoding(host, true);
+	        ipV6res = normalizeIPv6(host);
+	      }
+	      if (ipV6res.isIPV6 === true || ipV6res.isIPVFuture === true) {
 	        host = `[${ipV6res.escapedHost}]`;
 	      } else {
 	        host = reescapeHostDelimiters(host, false);
@@ -12848,6 +13217,11 @@ function requireUtils () {
 	  reescapeHostDelimiters,
 	  normalizePercentEncoding,
 	  normalizePathEncoding,
+	  serializePathEncoding,
+	  normalizeQueryFragmentEncoding,
+	  encodeUserinfo,
+	  encodeQuery,
+	  encodeFragment,
 	  escapePreservingEscapes,
 	  removeDotSegments,
 	  isIPv4,
@@ -12866,7 +13240,7 @@ function requireSchemes () {
 	hasRequiredSchemes = 1;
 
 	const { isUUID } = requireUtils();
-	const URN_REG = /([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-.:;=@]|%[\da-f]{2})+)/iu;
+	const URN_REG = /^([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-./:;=@]|%[\da-f]{2})+)$/iu;
 
 	const supportedSchemeNames = /** @type {const} */ (['http', 'https', 'ws',
 	  'wss', 'urn', 'urn:uuid']);
@@ -12978,9 +13352,14 @@ function requireSchemes () {
 
 	  // reconstruct path from resource name
 	  if (wsComponent.resourceName) {
-	    const [path, query] = wsComponent.resourceName.split('?');
+	    const queryIndex = wsComponent.resourceName.indexOf('?');
+	    const path = queryIndex === -1
+	      ? wsComponent.resourceName
+	      : wsComponent.resourceName.slice(0, queryIndex);
 	    wsComponent.path = (path && path !== '/' ? path : undefined);
-	    wsComponent.query = query;
+	    wsComponent.query = queryIndex === -1
+	      ? undefined
+	      : wsComponent.resourceName.slice(queryIndex + 1);
 	    wsComponent.resourceName = undefined;
 	  }
 
@@ -12997,7 +13376,7 @@ function requireSchemes () {
 	    return urnComponent
 	  }
 	  const matches = urnComponent.path.match(URN_REG);
-	  if (matches) {
+	  if (matches && matches[0] === urnComponent.path) {
 	    const scheme = options.scheme || urnComponent.scheme || 'urn';
 	    urnComponent.nid = matches[1].toLowerCase();
 	    urnComponent.nss = matches[2];
@@ -13139,8 +13518,23 @@ function requireFastUri () {
 	if (hasRequiredFastUri) return fastUri.exports;
 	hasRequiredFastUri = 1;
 
-	const { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, escapePreservingEscapes, reescapeHostDelimiters, isIPv4, nonSimpleDomain } = requireUtils();
+	const { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, serializePathEncoding, normalizeQueryFragmentEncoding, encodeQuery, encodeFragment, reescapeHostDelimiters, isIPv4, nonSimpleDomain } = requireUtils();
 	const { SCHEMES, getSchemeHandler } = requireSchemes();
+
+	const VALID_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*$/u;
+	const MALFORMED_SCHEME_ERROR = 'URI scheme is malformed.';
+
+	/**
+	 * @param {string} scheme
+	 * @returns {string}
+	 */
+	function decodeValidScheme (scheme) {
+	  const decodedScheme = unescape(String(scheme));
+	  if (!VALID_SCHEME.test(decodedScheme)) {
+	    throw new TypeError(MALFORMED_SCHEME_ERROR)
+	  }
+	  return decodedScheme
+	}
 
 	/**
 	 * @template {import('./types/index').URIComponent|string} T
@@ -13165,7 +13559,50 @@ function requireFastUri () {
 	 */
 	function resolve (baseURI, relativeURI, options) {
 	  const schemelessOptions = options ? Object.assign({ scheme: 'null' }, options) : { scheme: 'null' };
-	  const resolved = resolveComponent(parse(baseURI, schemelessOptions), parse(relativeURI, schemelessOptions), schemelessOptions, true);
+	  const {
+	    parsed: baseParsed,
+	    malformedAuthorityOrPort: baseMalformed,
+	    malformedPercentEncoding: baseMalformedPercentEncoding,
+	    malformedSchemeSpecific: baseMalformedSchemeSpecific,
+	    malformedHost: baseMalformedHost,
+	    malformedScheme: baseMalformedScheme
+	  } = parseWithStatus(baseURI, schemelessOptions);
+	  const {
+	    parsed: relativeParsed,
+	    malformedAuthorityOrPort: relativeMalformed,
+	    malformedPercentEncoding: relativeMalformedPercentEncoding,
+	    malformedSchemeSpecific: relativeMalformedSchemeSpecific,
+	    malformedHost: relativeMalformedHost,
+	    malformedScheme: relativeMalformedScheme
+	  } = parseWithStatus(relativeURI, schemelessOptions);
+	  if (
+	    baseMalformed ||
+	    relativeMalformed ||
+	    baseMalformedPercentEncoding ||
+	    relativeMalformedPercentEncoding ||
+	    baseMalformedSchemeSpecific ||
+	    relativeMalformedSchemeSpecific ||
+	    baseMalformedHost ||
+	    relativeMalformedHost ||
+	    baseMalformedScheme ||
+	    relativeMalformedScheme
+	  ) {
+	    throw new Error(baseParsed.error || relativeParsed.error || 'URI is malformed.')
+	  }
+	  const resolved = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
+	  const resolvedSchemeHandler = getSchemeHandler((options && options.scheme) || resolved.scheme);
+	  const resolvedHost = resolved.host;
+	  const resolvedHostIsIP = resolvedHost !== undefined && resolvedHost !== '' &&
+	    (isIPv4(resolvedHost) || normalizeIPv6(resolvedHost).isIPV6);
+	  canonicalizeHost(resolved, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
+	  // Percent escapes in an ASCII reg-name are encoded data. The WHATWG hostname
+	  // parser can reject them even though fast-uri preserves them safely as RFC
+	  // 3986 data. A raw non-ASCII host must still fail closed if conversion fails.
+	  const encodedASCIIHost = resolvedHost && resolvedHost.indexOf('%') !== -1 &&
+	    !/\P{ASCII}/u.test(resolvedHost);
+	  if (resolved.error && !encodedASCIIHost) {
+	    throw new Error(resolved.error)
+	  }
 	  schemelessOptions.skipEscape = true;
 	  return serialize(resolved, schemelessOptions)
 	}
@@ -13248,7 +13685,7 @@ function requireFastUri () {
 	  const normalizedA = normalizeComparableURI(uriA, options);
 	  const normalizedB = normalizeComparableURI(uriB, options);
 
-	  return normalizedA !== undefined && normalizedB !== undefined && normalizedA.toLowerCase() === normalizedB.toLowerCase()
+	  return normalizedA !== undefined && normalizedB !== undefined && normalizedA === normalizedB
 	}
 
 	/**
@@ -13276,25 +13713,30 @@ function requireFastUri () {
 	  const options = Object.assign({}, opts);
 	  const uriTokens = [];
 
+	  if (component.scheme) {
+	    component.scheme = decodeValidScheme(component.scheme);
+	  }
+
 	  // find scheme handler
 	  const schemeHandler = getSchemeHandler(options.scheme || component.scheme);
 
 	  // perform scheme specific serialization
 	  if (schemeHandler && schemeHandler.serialize) schemeHandler.serialize(component, options);
 
+	  const hasAuthority = component.userinfo !== undefined || component.host !== undefined || component.port !== undefined;
+	  const pathNoScheme = !options.skipEscape && component.scheme === undefined && !hasAuthority;
+
 	  if (component.path !== undefined) {
 	    if (!options.skipEscape) {
-	      component.path = escapePreservingEscapes(component.path);
-
-	      if (component.scheme !== undefined) {
-	        component.path = component.path.split('%3A').join(':');
-	      }
+	      component.path = serializePathEncoding(component.path, pathNoScheme);
 	    } else {
 	      component.path = normalizePercentEncoding(component.path);
 	    }
 	  }
 
 	  if (options.reference !== 'suffix' && component.scheme) {
+	    // Scheme handlers may replace the scheme during serialization.
+	    component.scheme = decodeValidScheme(component.scheme);
 	    uriTokens.push(component.scheme, ':');
 	  }
 
@@ -13317,6 +13759,13 @@ function requireFastUri () {
 	      s = removeDotSegments(s);
 	    }
 
+	    // Dot-segment removal can expose a colon that was not originally in the
+	    // first segment (for example, "./a:b"). Reapply path-noscheme encoding so
+	    // the serialized relative reference cannot be reparsed as a URI scheme.
+	    if (pathNoScheme) {
+	      s = serializePathEncoding(s, true);
+	    }
+
 	    if (
 	      authority === undefined &&
 	      s[0] === '/' &&
@@ -13330,16 +13779,29 @@ function requireFastUri () {
 	  }
 
 	  if (component.query !== undefined) {
-	    uriTokens.push('?', component.query);
+	    uriTokens.push('?', encodeQuery(component.query));
 	  }
 
 	  if (component.fragment !== undefined) {
-	    uriTokens.push('#', component.fragment);
+	    uriTokens.push('#', encodeFragment(component.fragment));
 	  }
 	  return uriTokens.join('')
 	}
 
 	const URI_PARSE = /^(?:([^#/:?]+):)?(?:\/\/((?:([^#/?@]*)@)?(\[[^#/?\]]+\]|[^#/:?]*)(?::(\d*))?))?([^#?]*)(?:\?([^#]*))?(?:#((?:.|[\n\r])*))?/u;
+
+	// Captures the authority component (between "//" and the next "/", "?" or "#"),
+	// with or without a scheme prefix, for the literal-backslash rejection below.
+	const AUTHORITY_PREFIX = /^(?:[^#/:?]+:)?\/\/([^/?#]*)/;
+
+	// Captures the leading authority-introducer region after an optional scheme: a
+	// run of forward slashes, backslashes, and the characters the WHATWG URL parser
+	// removes before parsing (TAB U+0009, LF U+000A, CR U+000D). A valid introducer
+	// is exactly "//". Node treats "\" as "/" on special schemes and strips those
+	// characters first, so forms like "\\", "/\", "\/", "/<TAB>/", or a leading
+	// "<TAB>//" reach an authority in Node while fast-uri's URI_PARSE folds them into
+	// the path group (host confusion / SSRF / redirect bypass).
+	const AUTHORITY_INTRODUCER_REGION = /^(?:[^#/:?]+:)?([/\\\t\n\r]*)/;
 
 	/**
 	 * @param {import('./types/index').URIComponent} parsed
@@ -13359,9 +13821,73 @@ function requireFastUri () {
 	}
 
 	/**
+	 * Checks percent syntax without decoding the represented octets. RFC 3986
+	 * percent-encoding is byte-oriented, so sequences such as `%FF` are valid even
+	 * though they are not independently valid UTF-8.
+	 *
+	 * @param {string|undefined} component
+	 * @returns {boolean}
+	 */
+	function hasMalformedPercentEncoding (component) {
+	  if (component === undefined) return false
+
+	  let percent = component.indexOf('%');
+	  while (percent !== -1) {
+	    if (percent + 2 >= component.length || !/^[\da-f]{2}$/iu.test(component.slice(percent + 1, percent + 3))) {
+	      return true
+	    }
+	    percent = component.indexOf('%', percent + 3);
+	  }
+
+	  return false
+	}
+
+	/**
+	 * @param {RegExpMatchArray} matches
+	 * @returns {boolean}
+	 */
+	function hasMalformedComponentPercentEncoding (matches) {
+	  // Bracketed IP literals use a raw "%" as the zone separator for historical
+	  // compatibility. Their parsing is intentionally left to normalizeIPv6.
+	  const host = matches[4];
+	  return hasMalformedPercentEncoding(matches[3]) ||
+	    (host !== undefined && !(host[0] === '[' && host[host.length - 1] === ']') && hasMalformedPercentEncoding(host)) ||
+	    hasMalformedPercentEncoding(matches[6]) ||
+	    hasMalformedPercentEncoding(matches[7]) ||
+	    hasMalformedPercentEncoding(matches[8])
+	}
+
+	/**
+	 * @param {import('./types/index').URIComponent} parsed
+	 * @param {import('./types/index').Options} options
+	 * @param {{ domainHost?: boolean, unicodeSupport?: boolean }|undefined} schemeHandler
+	 * @param {boolean} isIP
+	 * @returns {boolean} whether host conversion failed
+	 */
+	function canonicalizeHost (parsed, options, schemeHandler, isIP) {
+	  if (
+	    !options.unicodeSupport &&
+	    (!schemeHandler || !schemeHandler.unicodeSupport) &&
+	    parsed.host &&
+	    parsed.host[0] !== '[' &&
+	    (options.domainHost || (schemeHandler && schemeHandler.domainHost)) &&
+	    isIP === false &&
+	    nonSimpleDomain(parsed.host)
+	  ) {
+	    try {
+	      parsed.host = new URL('http://' + parsed.host).hostname;
+	    } catch (e) {
+	      parsed.error = parsed.error || "Host's domain name can not be converted to ASCII: " + e;
+	      return true
+	    }
+	  }
+	  return false
+	}
+
+	/**
 	 * @param {string} uri
 	 * @param {import('./types/index').Options} [opts]
-	 * @returns {{ parsed: import('./types/index').URIComponent, malformedAuthorityOrPort: boolean }}
+	 * @returns {{ parsed: import('./types/index').URIComponent, malformedAuthorityOrPort: boolean, malformedPercentEncoding: boolean, malformedSchemeSpecific: boolean, malformedHost: boolean, malformedScheme: boolean }}
 	 */
 	function parseWithStatus (uri, opts) {
 	  const options = Object.assign({}, opts);
@@ -13377,6 +13903,11 @@ function requireFastUri () {
 	  };
 
 	  let malformedAuthorityOrPort = false;
+	  let malformedPercentEncoding = false;
+	  let malformedSchemeSpecific = false;
+	  let malformedHost = false;
+	  let malformedIPLiteral = false;
+	  let malformedScheme = false;
 
 	  let isIP = false;
 	  if (options.reference === 'suffix') {
@@ -13384,6 +13915,41 @@ function requireFastUri () {
 	      uri = options.scheme + ':' + uri;
 	    } else {
 	      uri = '//' + uri;
+	    }
+	  }
+
+	  // A literal backslash (U+005C) is not a valid RFC 3986 URI character and is
+	  // not an authority delimiter. Reject it in the authority rather than
+	  // rewriting it: normalizing "\" -> "/" (WHATWG error recovery) could silently
+	  // change the resource identified by an otherwise-invalid input, and lets "\"
+	  // act as a host delimiter here while Node's native URL parses a different
+	  // host (SSRF / redirect / origin-allowlist bypass). Percent-encoded %5C is
+	  // untouched and remains valid encoded data.
+	  const authorityMatch = uri.match(AUTHORITY_PREFIX);
+	  if (authorityMatch !== null && authorityMatch[1].indexOf('\\') !== -1) {
+	    parsed.error = 'URI authority must not contain a literal backslash.';
+	    malformedAuthorityOrPort = true;
+	  }
+
+	  // Reject a malformed or whitespace-smuggled authority introducer. fast-uri
+	  // only recognizes a literal "//"; anything else in the leading separator run
+	  // (a backslash, or a "//" that appears only after removing the TAB/LF/CR that
+	  // Node strips) means the authority fast-uri parses differs from the one Node's
+	  // URL resolves. Reject rather than rewrite, mirroring the literal-backslash
+	  // guard above. Percent-encoded forms (%5C, %09) are untouched, valid data.
+	  const introducerMatch = uri.match(AUTHORITY_INTRODUCER_REGION);
+	  if (introducerMatch !== null) {
+	    const region = introducerMatch[1];
+	    const normalizedRegion = region.replace(/[\t\n\r]/g, '');
+	    // Two or more leading separators introduce an authority.
+	    if (normalizedRegion.length >= 2) {
+	      if (normalizedRegion.slice(0, 2) !== '//') {
+	        parsed.error = parsed.error || 'URI authority must not contain a literal backslash.';
+	        malformedAuthorityOrPort = true;
+	      } else if (region.length !== normalizedRegion.length) {
+	        parsed.error = parsed.error || 'URI authority introducer must not contain whitespace.';
+	        malformedAuthorityOrPort = true;
+	      }
 	    }
 	  }
 
@@ -13399,6 +13965,21 @@ function requireFastUri () {
 	    parsed.query = matches[7];
 	    parsed.fragment = matches[8];
 
+	    if (parsed.scheme !== undefined) {
+	      const decodedScheme = unescape(parsed.scheme);
+	      if (VALID_SCHEME.test(decodedScheme)) {
+	        parsed.scheme = decodedScheme.toLowerCase();
+	      } else {
+	        parsed.error = parsed.error || MALFORMED_SCHEME_ERROR;
+	        malformedScheme = true;
+	      }
+	    }
+
+	    malformedPercentEncoding = hasMalformedComponentPercentEncoding(matches);
+	    if (malformedPercentEncoding) {
+	      parsed.error = parsed.error || 'URI contains malformed percent-encoding.';
+	    }
+
 	    // fix port number
 	    if (isNaN(parsed.port)) {
 	      parsed.port = matches[5];
@@ -13413,9 +13994,16 @@ function requireFastUri () {
 	    if (parsed.host) {
 	      const ipv4result = isIPv4(parsed.host);
 	      if (ipv4result === false) {
+	        const bracketedIPLiteral = parsed.host[0] === '[' && parsed.host[parsed.host.length - 1] === ']';
 	        const ipv6result = normalizeIPv6(parsed.host);
-	        parsed.host = ipv6result.host.toLowerCase();
-	        isIP = ipv6result.isIPV6;
+	        isIP = ipv6result.isIPV6 || ipv6result.isIPVFuture === true;
+	        malformedIPLiteral = bracketedIPLiteral && ipv6result.error === true;
+	        parsed.host = isIP ? ipv6result.host : ipv6result.host.toLowerCase();
+
+	        if (malformedIPLiteral) {
+	          parsed.error = parsed.error || 'URI host is malformed.';
+	          malformedAuthorityOrPort = true;
+	        }
 	      } else {
 	        isIP = true;
 	      }
@@ -13438,49 +14026,38 @@ function requireFastUri () {
 	    // find scheme handler
 	    const schemeHandler = getSchemeHandler(options.scheme || parsed.scheme);
 
-	    // check if scheme can't handle IRIs
-	    if (!options.unicodeSupport && (!schemeHandler || !schemeHandler.unicodeSupport)) {
-	      // if host component is a domain name
-	      if (parsed.host && (options.domainHost || (schemeHandler && schemeHandler.domainHost)) && isIP === false && nonSimpleDomain(parsed.host)) {
-	        // convert Unicode IDN -> ASCII IDN
-	        try {
-	          parsed.host = new URL('http://' + parsed.host).hostname;
-	        } catch (e) {
-	          parsed.error = parsed.error || "Host's domain name can not be converted to ASCII: " + e;
-	        }
-	      }
-	      // convert IRI -> URI
-	    }
+	    // convert Unicode IDN -> ASCII IDN when the effective scheme uses domain hosts
+	    malformedHost = canonicalizeHost(parsed, options, schemeHandler, isIP);
 
 	    if (!schemeHandler || (schemeHandler && !schemeHandler.skipNormalize)) {
 	      if (uri.indexOf('%') !== -1) {
-	        if (parsed.scheme !== undefined) {
-	          parsed.scheme = unescape(parsed.scheme);
-	        }
-	        if (parsed.host !== undefined) {
-	          parsed.host = reescapeHostDelimiters(unescape(parsed.host), isIP);
+	        if (parsed.host !== undefined && !malformedIPLiteral) {
+	          const host = isIP ? parsed.host : normalizePercentEncoding(parsed.host, true);
+	          parsed.host = reescapeHostDelimiters(host, isIP);
 	        }
 	      }
 	      if (parsed.path) {
 	        parsed.path = normalizePathEncoding(parsed.path);
 	      }
+	      if (parsed.query) {
+	        parsed.query = normalizeQueryFragmentEncoding(parsed.query);
+	      }
 	      if (parsed.fragment) {
-	        try {
-	          parsed.fragment = encodeURI(decodeURIComponent(parsed.fragment));
-	        } catch {
-	          parsed.error = parsed.error || 'URI malformed';
-	        }
+	        parsed.fragment = normalizeQueryFragmentEncoding(parsed.fragment);
 	      }
 	    }
 
 	    // perform scheme specific parsing
 	    if (schemeHandler && schemeHandler.parse) {
 	      schemeHandler.parse(parsed, options);
+	      if (schemeHandler === SCHEMES.urn && parsed.nid === undefined) {
+	        malformedSchemeSpecific = true;
+	      }
 	    }
 	  } else {
 	    parsed.error = parsed.error || 'URI can not be parsed.';
 	  }
-	  return { parsed, malformedAuthorityOrPort }
+	  return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme }
 	}
 
 	/**
@@ -13504,13 +14081,17 @@ function requireFastUri () {
 	/**
 	 * @param {string} uri
 	 * @param {import('./types/index').Options} [opts]
-	 * @returns {{ normalized: string, malformedAuthorityOrPort: boolean }}
+	 * @returns {{ normalized: string, malformedAuthorityOrPort: boolean, malformedPercentEncoding: boolean, malformedSchemeSpecific: boolean, malformedHost: boolean, malformedScheme: boolean }}
 	 */
 	function normalizeStringWithStatus (uri, opts) {
-	  const { parsed, malformedAuthorityOrPort } = parseWithStatus(uri, opts);
+	  const { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme } = parseWithStatus(uri, opts);
 	  return {
-	    normalized: malformedAuthorityOrPort ? uri : serialize(parsed, opts),
-	    malformedAuthorityOrPort
+	    normalized: malformedAuthorityOrPort || malformedPercentEncoding || malformedSchemeSpecific || malformedHost || malformedScheme ? uri : serialize(parsed, opts),
+	    malformedAuthorityOrPort,
+	    malformedPercentEncoding,
+	    malformedSchemeSpecific,
+	    malformedHost,
+	    malformedScheme
 	  }
 	}
 
@@ -13520,14 +14101,18 @@ function requireFastUri () {
 	 * @returns {string|undefined}
 	 */
 	function normalizeComparableURI (uri, opts) {
-	  if (typeof uri === 'string') {
-	    const { normalized, malformedAuthorityOrPort } = normalizeStringWithStatus(uri, opts);
-	    return malformedAuthorityOrPort ? undefined : normalized
+	  if (typeof uri !== 'string' && typeof uri !== 'object') {
+	    return undefined
 	  }
 
-	  if (typeof uri === 'object') {
-	    return serialize(uri, opts)
+	  let value;
+	  try {
+	    value = typeof uri === 'string' ? uri : serialize(uri, opts);
+	  } catch {
+	    return undefined
 	  }
+	  const { normalized, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme } = normalizeStringWithStatus(value, opts);
+	  return malformedAuthorityOrPort || malformedPercentEncoding || malformedSchemeSpecific || malformedHost || malformedScheme ? undefined : normalized
 	}
 
 	const fastUri$1 = {
@@ -13567,25 +14152,25 @@ function requireCore$1 () {
 	(function (exports) {
 		Object.defineProperty(exports, "__esModule", { value: true });
 		exports.CodeGen = exports.Name = exports.nil = exports.stringify = exports.str = exports._ = exports.KeywordCxt = void 0;
-		var validate_1 = requireValidate();
+		var validate_1 = /*@__PURE__*/ requireValidate();
 		Object.defineProperty(exports, "KeywordCxt", { enumerable: true, get: function () { return validate_1.KeywordCxt; } });
-		var codegen_1 = requireCodegen();
+		var codegen_1 = /*@__PURE__*/ requireCodegen();
 		Object.defineProperty(exports, "_", { enumerable: true, get: function () { return codegen_1._; } });
 		Object.defineProperty(exports, "str", { enumerable: true, get: function () { return codegen_1.str; } });
 		Object.defineProperty(exports, "stringify", { enumerable: true, get: function () { return codegen_1.stringify; } });
 		Object.defineProperty(exports, "nil", { enumerable: true, get: function () { return codegen_1.nil; } });
 		Object.defineProperty(exports, "Name", { enumerable: true, get: function () { return codegen_1.Name; } });
 		Object.defineProperty(exports, "CodeGen", { enumerable: true, get: function () { return codegen_1.CodeGen; } });
-		const validation_error_1 = requireValidation_error();
-		const ref_error_1 = requireRef_error();
-		const rules_1 = requireRules();
-		const compile_1 = requireCompile();
-		const codegen_2 = requireCodegen();
-		const resolve_1 = requireResolve();
-		const dataType_1 = requireDataType();
-		const util_1 = requireUtil();
+		const validation_error_1 = /*@__PURE__*/ requireValidation_error();
+		const ref_error_1 = /*@__PURE__*/ requireRef_error();
+		const rules_1 = /*@__PURE__*/ requireRules();
+		const compile_1 = /*@__PURE__*/ requireCompile();
+		const codegen_2 = /*@__PURE__*/ requireCodegen();
+		const resolve_1 = /*@__PURE__*/ requireResolve();
+		const dataType_1 = /*@__PURE__*/ requireDataType();
+		const util_1 = /*@__PURE__*/ requireUtil();
 		const $dataRefSchema = require$$9;
-		const uri_1 = requireUri();
+		const uri_1 = /*@__PURE__*/ requireUri();
 		const defaultRegExp = (str, flags) => new RegExp(str, flags);
 		defaultRegExp.code = "new RegExp";
 		const META_IGNORE_OPTIONS = ["removeAdditional", "useDefaults", "coerceTypes"];
@@ -13660,7 +14245,7 @@ function requireCore$1 () {
 		    constructor(opts = {}) {
 		        this.schemas = {};
 		        this.refs = {};
-		        this.formats = {};
+		        this.formats = Object.create(null);
 		        this._compilations = new Set();
 		        this._loading = {};
 		        this._cache = new Map();
@@ -14218,12 +14803,12 @@ function requireRef () {
 	hasRequiredRef = 1;
 	Object.defineProperty(ref, "__esModule", { value: true });
 	ref.callRef = ref.getValidate = void 0;
-	const ref_error_1 = requireRef_error();
-	const code_1 = requireCode();
-	const codegen_1 = requireCodegen();
-	const names_1 = requireNames();
-	const compile_1 = requireCompile();
-	const util_1 = requireUtil();
+	const ref_error_1 = /*@__PURE__*/ requireRef_error();
+	const code_1 = /*@__PURE__*/ requireCode();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const names_1 = /*@__PURE__*/ requireNames();
+	const compile_1 = /*@__PURE__*/ requireCompile();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const def = {
 	    keyword: "$ref",
 	    schemaType: "string",
@@ -14346,8 +14931,8 @@ function requireCore () {
 	if (hasRequiredCore) return core;
 	hasRequiredCore = 1;
 	Object.defineProperty(core, "__esModule", { value: true });
-	const id_1 = requireId();
-	const ref_1 = requireRef();
+	const id_1 = /*@__PURE__*/ requireId();
+	const ref_1 = /*@__PURE__*/ requireRef();
 	const core$1 = [
 	    "$schema",
 	    "$id",
@@ -14373,7 +14958,7 @@ function requireLimitNumber () {
 	if (hasRequiredLimitNumber) return limitNumber;
 	hasRequiredLimitNumber = 1;
 	Object.defineProperty(limitNumber, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
 	const ops = codegen_1.operators;
 	const KWDs = {
 	    maximum: { okStr: "<=", ok: ops.LTE, fail: ops.GT },
@@ -14409,7 +14994,7 @@ function requireMultipleOf () {
 	if (hasRequiredMultipleOf) return multipleOf;
 	hasRequiredMultipleOf = 1;
 	Object.defineProperty(multipleOf, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
 	const error = {
 	    message: ({ schemaCode }) => (0, codegen_1.str) `must be multiple of ${schemaCode}`,
 	    params: ({ schemaCode }) => (0, codegen_1._) `{multipleOf: ${schemaCode}}`,
@@ -14477,9 +15062,9 @@ function requireLimitLength () {
 	if (hasRequiredLimitLength) return limitLength;
 	hasRequiredLimitLength = 1;
 	Object.defineProperty(limitLength, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
-	const ucs2length_1 = requireUcs2length();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const ucs2length_1 = /*@__PURE__*/ requireUcs2length();
 	const error = {
 	    message({ keyword, schemaCode }) {
 	        const comp = keyword === "maxLength" ? "more" : "fewer";
@@ -14513,8 +15098,9 @@ function requirePattern () {
 	if (hasRequiredPattern) return pattern;
 	hasRequiredPattern = 1;
 	Object.defineProperty(pattern, "__esModule", { value: true });
-	const code_1 = requireCode();
-	const codegen_1 = requireCodegen();
+	const code_1 = /*@__PURE__*/ requireCode();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
 	const error = {
 	    message: ({ schemaCode }) => (0, codegen_1.str) `must match pattern "${schemaCode}"`,
 	    params: ({ schemaCode }) => (0, codegen_1._) `{pattern: ${schemaCode}}`,
@@ -14526,11 +15112,19 @@ function requirePattern () {
 	    $data: true,
 	    error,
 	    code(cxt) {
-	        const { data, $data, schema, schemaCode, it } = cxt;
-	        // TODO regexp should be wrapped in try/catchs
+	        const { gen, data, $data, schema, schemaCode, it } = cxt;
 	        const u = it.opts.unicodeRegExp ? "u" : "";
-	        const regExp = $data ? (0, codegen_1._) `(new RegExp(${schemaCode}, ${u}))` : (0, code_1.usePattern)(cxt, schema);
-	        cxt.fail$data((0, codegen_1._) `!${regExp}.test(${data})`);
+	        if ($data) {
+	            const { regExp } = it.opts.code;
+	            const regExpCode = regExp.code === "new RegExp" ? (0, codegen_1._) `new RegExp` : (0, util_1.useFunc)(gen, regExp);
+	            const valid = gen.let("valid");
+	            gen.try(() => gen.assign(valid, (0, codegen_1._) `${regExpCode}(${schemaCode}, ${u}).test(${data})`), () => gen.assign(valid, false));
+	            cxt.fail$data((0, codegen_1._) `!${valid}`);
+	        }
+	        else {
+	            const regExp = (0, code_1.usePattern)(cxt, schema);
+	            cxt.fail$data((0, codegen_1._) `!${regExp}.test(${data})`);
+	        }
 	    },
 	};
 	pattern.default = def;
@@ -14546,7 +15140,7 @@ function requireLimitProperties () {
 	if (hasRequiredLimitProperties) return limitProperties;
 	hasRequiredLimitProperties = 1;
 	Object.defineProperty(limitProperties, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
 	const error = {
 	    message({ keyword, schemaCode }) {
 	        const comp = keyword === "maxProperties" ? "more" : "fewer";
@@ -14579,9 +15173,9 @@ function requireRequired () {
 	if (hasRequiredRequired) return required;
 	hasRequiredRequired = 1;
 	Object.defineProperty(required, "__esModule", { value: true });
-	const code_1 = requireCode();
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
+	const code_1 = /*@__PURE__*/ requireCode();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const error = {
 	    message: ({ params: { missingProperty } }) => (0, codegen_1.str) `must have required property '${missingProperty}'`,
 	    params: ({ params: { missingProperty } }) => (0, codegen_1._) `{missingProperty: ${missingProperty}}`,
@@ -14667,7 +15261,7 @@ function requireLimitItems () {
 	if (hasRequiredLimitItems) return limitItems;
 	hasRequiredLimitItems = 1;
 	Object.defineProperty(limitItems, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
 	const error = {
 	    message({ keyword, schemaCode }) {
 	        const comp = keyword === "maxItems" ? "more" : "fewer";
@@ -14716,10 +15310,10 @@ function requireUniqueItems () {
 	if (hasRequiredUniqueItems) return uniqueItems;
 	hasRequiredUniqueItems = 1;
 	Object.defineProperty(uniqueItems, "__esModule", { value: true });
-	const dataType_1 = requireDataType();
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
-	const equal_1 = requireEqual();
+	const dataType_1 = /*@__PURE__*/ requireDataType();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const equal_1 = /*@__PURE__*/ requireEqual();
 	const error = {
 	    message: ({ params: { i, j } }) => (0, codegen_1.str) `must NOT have duplicate items (items ## ${j} and ${i} are identical)`,
 	    params: ({ params: { i, j } }) => (0, codegen_1._) `{i: ${i}, j: ${j}}`,
@@ -14789,9 +15383,9 @@ function require_const () {
 	if (hasRequired_const) return _const;
 	hasRequired_const = 1;
 	Object.defineProperty(_const, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
-	const equal_1 = requireEqual();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const equal_1 = /*@__PURE__*/ requireEqual();
 	const error = {
 	    message: "must be equal to constant",
 	    params: ({ schemaCode }) => (0, codegen_1._) `{allowedValue: ${schemaCode}}`,
@@ -14823,9 +15417,9 @@ function require_enum () {
 	if (hasRequired_enum) return _enum;
 	hasRequired_enum = 1;
 	Object.defineProperty(_enum, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
-	const equal_1 = requireEqual();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const equal_1 = /*@__PURE__*/ requireEqual();
 	const error = {
 	    message: "must be equal to one of the allowed values",
 	    params: ({ schemaCode }) => (0, codegen_1._) `{allowedValues: ${schemaCode}}`,
@@ -14878,16 +15472,16 @@ function requireValidation () {
 	if (hasRequiredValidation) return validation;
 	hasRequiredValidation = 1;
 	Object.defineProperty(validation, "__esModule", { value: true });
-	const limitNumber_1 = requireLimitNumber();
-	const multipleOf_1 = requireMultipleOf();
-	const limitLength_1 = requireLimitLength();
-	const pattern_1 = requirePattern();
-	const limitProperties_1 = requireLimitProperties();
-	const required_1 = requireRequired();
-	const limitItems_1 = requireLimitItems();
-	const uniqueItems_1 = requireUniqueItems();
-	const const_1 = require_const();
-	const enum_1 = require_enum();
+	const limitNumber_1 = /*@__PURE__*/ requireLimitNumber();
+	const multipleOf_1 = /*@__PURE__*/ requireMultipleOf();
+	const limitLength_1 = /*@__PURE__*/ requireLimitLength();
+	const pattern_1 = /*@__PURE__*/ requirePattern();
+	const limitProperties_1 = /*@__PURE__*/ requireLimitProperties();
+	const required_1 = /*@__PURE__*/ requireRequired();
+	const limitItems_1 = /*@__PURE__*/ requireLimitItems();
+	const uniqueItems_1 = /*@__PURE__*/ requireUniqueItems();
+	const const_1 = /*@__PURE__*/ require_const();
+	const enum_1 = /*@__PURE__*/ require_enum();
 	const validation$1 = [
 	    // number
 	    limitNumber_1.default,
@@ -14923,8 +15517,8 @@ function requireAdditionalItems () {
 	hasRequiredAdditionalItems = 1;
 	Object.defineProperty(additionalItems, "__esModule", { value: true });
 	additionalItems.validateAdditionalItems = void 0;
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const error = {
 	    message: ({ params: { len } }) => (0, codegen_1.str) `must NOT have more than ${len} items`,
 	    params: ({ params: { len } }) => (0, codegen_1._) `{limit: ${len}}`,
@@ -14983,9 +15577,9 @@ function requireItems () {
 	hasRequiredItems = 1;
 	Object.defineProperty(items, "__esModule", { value: true });
 	items.validateTuple = void 0;
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
-	const code_1 = requireCode();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const code_1 = /*@__PURE__*/ requireCode();
 	const def = {
 	    keyword: "items",
 	    type: "array",
@@ -15041,7 +15635,7 @@ function requirePrefixItems () {
 	if (hasRequiredPrefixItems) return prefixItems;
 	hasRequiredPrefixItems = 1;
 	Object.defineProperty(prefixItems, "__esModule", { value: true });
-	const items_1 = requireItems();
+	const items_1 = /*@__PURE__*/ requireItems();
 	const def = {
 	    keyword: "prefixItems",
 	    type: "array",
@@ -15062,10 +15656,10 @@ function requireItems2020 () {
 	if (hasRequiredItems2020) return items2020;
 	hasRequiredItems2020 = 1;
 	Object.defineProperty(items2020, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
-	const code_1 = requireCode();
-	const additionalItems_1 = requireAdditionalItems();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const code_1 = /*@__PURE__*/ requireCode();
+	const additionalItems_1 = /*@__PURE__*/ requireAdditionalItems();
 	const error = {
 	    message: ({ params: { len } }) => (0, codegen_1.str) `must NOT have more than ${len} items`,
 	    params: ({ params: { len } }) => (0, codegen_1._) `{limit: ${len}}`,
@@ -15101,8 +15695,8 @@ function requireContains () {
 	if (hasRequiredContains) return contains;
 	hasRequiredContains = 1;
 	Object.defineProperty(contains, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const error = {
 	    message: ({ params: { min, max } }) => max === undefined
 	        ? (0, codegen_1.str) `must contain at least ${min} valid item(s)`
@@ -15207,9 +15801,9 @@ function requireDependencies () {
 	(function (exports) {
 		Object.defineProperty(exports, "__esModule", { value: true });
 		exports.validateSchemaDeps = exports.validatePropertyDeps = exports.error = void 0;
-		const codegen_1 = requireCodegen();
-		const util_1 = requireUtil();
-		const code_1 = requireCode();
+		const codegen_1 = /*@__PURE__*/ requireCodegen();
+		const util_1 = /*@__PURE__*/ requireUtil();
+		const code_1 = /*@__PURE__*/ requireCode();
 		exports.error = {
 		    message: ({ params: { property, depsCount, deps } }) => {
 		        const property_ies = depsCount === 1 ? "property" : "properties";
@@ -15301,8 +15895,8 @@ function requirePropertyNames () {
 	if (hasRequiredPropertyNames) return propertyNames;
 	hasRequiredPropertyNames = 1;
 	Object.defineProperty(propertyNames, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const error = {
 	    message: "property name must be valid",
 	    params: ({ params }) => (0, codegen_1._) `{propertyName: ${params.propertyName}}`,
@@ -15348,10 +15942,10 @@ function requireAdditionalProperties () {
 	if (hasRequiredAdditionalProperties) return additionalProperties;
 	hasRequiredAdditionalProperties = 1;
 	Object.defineProperty(additionalProperties, "__esModule", { value: true });
-	const code_1 = requireCode();
-	const codegen_1 = requireCodegen();
-	const names_1 = requireNames();
-	const util_1 = requireUtil();
+	const code_1 = /*@__PURE__*/ requireCode();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const names_1 = /*@__PURE__*/ requireNames();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const error = {
 	    message: "must NOT have additional properties",
 	    params: ({ params }) => (0, codegen_1._) `{additionalProperty: ${params.additionalProperty}}`,
@@ -15463,10 +16057,10 @@ function requireProperties () {
 	if (hasRequiredProperties) return properties$8;
 	hasRequiredProperties = 1;
 	Object.defineProperty(properties$8, "__esModule", { value: true });
-	const validate_1 = requireValidate();
-	const code_1 = requireCode();
-	const util_1 = requireUtil();
-	const additionalProperties_1 = requireAdditionalProperties();
+	const validate_1 = /*@__PURE__*/ requireValidate();
+	const code_1 = /*@__PURE__*/ requireCode();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const additionalProperties_1 = /*@__PURE__*/ requireAdditionalProperties();
 	const def = {
 	    keyword: "properties",
 	    type: "object",
@@ -15526,10 +16120,10 @@ function requirePatternProperties () {
 	if (hasRequiredPatternProperties) return patternProperties;
 	hasRequiredPatternProperties = 1;
 	Object.defineProperty(patternProperties, "__esModule", { value: true });
-	const code_1 = requireCode();
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
-	const util_2 = requireUtil();
+	const code_1 = /*@__PURE__*/ requireCode();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const util_2 = /*@__PURE__*/ requireUtil();
 	const def = {
 	    keyword: "patternProperties",
 	    type: "object",
@@ -15610,7 +16204,7 @@ function requireNot () {
 	if (hasRequiredNot) return not;
 	hasRequiredNot = 1;
 	Object.defineProperty(not, "__esModule", { value: true });
-	const util_1 = requireUtil();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const def = {
 	    keyword: "not",
 	    schemaType: ["object", "boolean"],
@@ -15645,7 +16239,7 @@ function requireAnyOf () {
 	if (hasRequiredAnyOf) return anyOf;
 	hasRequiredAnyOf = 1;
 	Object.defineProperty(anyOf, "__esModule", { value: true });
-	const code_1 = requireCode();
+	const code_1 = /*@__PURE__*/ requireCode();
 	const def = {
 	    keyword: "anyOf",
 	    schemaType: "array",
@@ -15666,8 +16260,8 @@ function requireOneOf () {
 	if (hasRequiredOneOf) return oneOf$1;
 	hasRequiredOneOf = 1;
 	Object.defineProperty(oneOf$1, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const error = {
 	    message: "must match exactly one schema in oneOf",
 	    params: ({ params }) => (0, codegen_1._) `{passingSchemas: ${params.passing}}`,
@@ -15735,7 +16329,7 @@ function requireAllOf () {
 	if (hasRequiredAllOf) return allOf$1;
 	hasRequiredAllOf = 1;
 	Object.defineProperty(allOf$1, "__esModule", { value: true });
-	const util_1 = requireUtil();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const def = {
 	    keyword: "allOf",
 	    schemaType: "array",
@@ -15767,8 +16361,8 @@ function require_if () {
 	if (hasRequired_if) return _if;
 	hasRequired_if = 1;
 	Object.defineProperty(_if, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const error = {
 	    message: ({ params }) => (0, codegen_1.str) `must match "${params.ifClause}" schema`,
 	    params: ({ params }) => (0, codegen_1._) `{failingKeyword: ${params.ifClause}}`,
@@ -15842,7 +16436,7 @@ function requireThenElse () {
 	if (hasRequiredThenElse) return thenElse;
 	hasRequiredThenElse = 1;
 	Object.defineProperty(thenElse, "__esModule", { value: true });
-	const util_1 = requireUtil();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const def = {
 	    keyword: ["then", "else"],
 	    schemaType: ["object", "boolean"],
@@ -15862,22 +16456,22 @@ function requireApplicator () {
 	if (hasRequiredApplicator) return applicator;
 	hasRequiredApplicator = 1;
 	Object.defineProperty(applicator, "__esModule", { value: true });
-	const additionalItems_1 = requireAdditionalItems();
-	const prefixItems_1 = requirePrefixItems();
-	const items_1 = requireItems();
-	const items2020_1 = requireItems2020();
-	const contains_1 = requireContains();
-	const dependencies_1 = requireDependencies();
-	const propertyNames_1 = requirePropertyNames();
-	const additionalProperties_1 = requireAdditionalProperties();
-	const properties_1 = requireProperties();
-	const patternProperties_1 = requirePatternProperties();
-	const not_1 = requireNot();
-	const anyOf_1 = requireAnyOf();
-	const oneOf_1 = requireOneOf();
-	const allOf_1 = requireAllOf();
-	const if_1 = require_if();
-	const thenElse_1 = requireThenElse();
+	const additionalItems_1 = /*@__PURE__*/ requireAdditionalItems();
+	const prefixItems_1 = /*@__PURE__*/ requirePrefixItems();
+	const items_1 = /*@__PURE__*/ requireItems();
+	const items2020_1 = /*@__PURE__*/ requireItems2020();
+	const contains_1 = /*@__PURE__*/ requireContains();
+	const dependencies_1 = /*@__PURE__*/ requireDependencies();
+	const propertyNames_1 = /*@__PURE__*/ requirePropertyNames();
+	const additionalProperties_1 = /*@__PURE__*/ requireAdditionalProperties();
+	const properties_1 = /*@__PURE__*/ requireProperties();
+	const patternProperties_1 = /*@__PURE__*/ requirePatternProperties();
+	const not_1 = /*@__PURE__*/ requireNot();
+	const anyOf_1 = /*@__PURE__*/ requireAnyOf();
+	const oneOf_1 = /*@__PURE__*/ requireOneOf();
+	const allOf_1 = /*@__PURE__*/ requireAllOf();
+	const if_1 = /*@__PURE__*/ require_if();
+	const thenElse_1 = /*@__PURE__*/ requireThenElse();
 	function getApplicator(draft2020 = false) {
 	    const applicator = [
 	        // any
@@ -15918,10 +16512,10 @@ function requireDynamicAnchor () {
 	hasRequiredDynamicAnchor = 1;
 	Object.defineProperty(dynamicAnchor, "__esModule", { value: true });
 	dynamicAnchor.dynamicAnchor = void 0;
-	const codegen_1 = requireCodegen();
-	const names_1 = requireNames();
-	const compile_1 = requireCompile();
-	const ref_1 = requireRef();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const names_1 = /*@__PURE__*/ requireNames();
+	const compile_1 = /*@__PURE__*/ requireCompile();
+	const ref_1 = /*@__PURE__*/ requireRef();
 	const def = {
 	    keyword: "$dynamicAnchor",
 	    schemaType: "string",
@@ -15957,9 +16551,9 @@ function requireDynamicRef () {
 	hasRequiredDynamicRef = 1;
 	Object.defineProperty(dynamicRef, "__esModule", { value: true });
 	dynamicRef.dynamicRef = void 0;
-	const codegen_1 = requireCodegen();
-	const names_1 = requireNames();
-	const ref_1 = requireRef();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const names_1 = /*@__PURE__*/ requireNames();
+	const ref_1 = /*@__PURE__*/ requireRef();
 	const def = {
 	    keyword: "$dynamicRef",
 	    schemaType: "string",
@@ -16016,8 +16610,8 @@ function requireRecursiveAnchor () {
 	if (hasRequiredRecursiveAnchor) return recursiveAnchor;
 	hasRequiredRecursiveAnchor = 1;
 	Object.defineProperty(recursiveAnchor, "__esModule", { value: true });
-	const dynamicAnchor_1 = requireDynamicAnchor();
-	const util_1 = requireUtil();
+	const dynamicAnchor_1 = /*@__PURE__*/ requireDynamicAnchor();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const def = {
 	    keyword: "$recursiveAnchor",
 	    schemaType: "boolean",
@@ -16041,7 +16635,7 @@ function requireRecursiveRef () {
 	if (hasRequiredRecursiveRef) return recursiveRef;
 	hasRequiredRecursiveRef = 1;
 	Object.defineProperty(recursiveRef, "__esModule", { value: true });
-	const dynamicRef_1 = requireDynamicRef();
+	const dynamicRef_1 = /*@__PURE__*/ requireDynamicRef();
 	const def = {
 	    keyword: "$recursiveRef",
 	    schemaType: "string",
@@ -16058,10 +16652,10 @@ function requireDynamic () {
 	if (hasRequiredDynamic) return dynamic;
 	hasRequiredDynamic = 1;
 	Object.defineProperty(dynamic, "__esModule", { value: true });
-	const dynamicAnchor_1 = requireDynamicAnchor();
-	const dynamicRef_1 = requireDynamicRef();
-	const recursiveAnchor_1 = requireRecursiveAnchor();
-	const recursiveRef_1 = requireRecursiveRef();
+	const dynamicAnchor_1 = /*@__PURE__*/ requireDynamicAnchor();
+	const dynamicRef_1 = /*@__PURE__*/ requireDynamicRef();
+	const recursiveAnchor_1 = /*@__PURE__*/ requireRecursiveAnchor();
+	const recursiveRef_1 = /*@__PURE__*/ requireRecursiveRef();
 	const dynamic$1 = [dynamicAnchor_1.default, dynamicRef_1.default, recursiveAnchor_1.default, recursiveRef_1.default];
 	dynamic.default = dynamic$1;
 	
@@ -16078,7 +16672,7 @@ function requireDependentRequired () {
 	if (hasRequiredDependentRequired) return dependentRequired;
 	hasRequiredDependentRequired = 1;
 	Object.defineProperty(dependentRequired, "__esModule", { value: true });
-	const dependencies_1 = requireDependencies();
+	const dependencies_1 = /*@__PURE__*/ requireDependencies();
 	const def = {
 	    keyword: "dependentRequired",
 	    type: "object",
@@ -16099,7 +16693,7 @@ function requireDependentSchemas () {
 	if (hasRequiredDependentSchemas) return dependentSchemas;
 	hasRequiredDependentSchemas = 1;
 	Object.defineProperty(dependentSchemas, "__esModule", { value: true });
-	const dependencies_1 = requireDependencies();
+	const dependencies_1 = /*@__PURE__*/ requireDependencies();
 	const def = {
 	    keyword: "dependentSchemas",
 	    type: "object",
@@ -16119,7 +16713,7 @@ function requireLimitContains () {
 	if (hasRequiredLimitContains) return limitContains;
 	hasRequiredLimitContains = 1;
 	Object.defineProperty(limitContains, "__esModule", { value: true });
-	const util_1 = requireUtil();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const def = {
 	    keyword: ["maxContains", "minContains"],
 	    type: "array",
@@ -16141,9 +16735,9 @@ function requireNext () {
 	if (hasRequiredNext) return next;
 	hasRequiredNext = 1;
 	Object.defineProperty(next, "__esModule", { value: true });
-	const dependentRequired_1 = requireDependentRequired();
-	const dependentSchemas_1 = requireDependentSchemas();
-	const limitContains_1 = requireLimitContains();
+	const dependentRequired_1 = /*@__PURE__*/ requireDependentRequired();
+	const dependentSchemas_1 = /*@__PURE__*/ requireDependentSchemas();
+	const limitContains_1 = /*@__PURE__*/ requireLimitContains();
 	const next$1 = [dependentRequired_1.default, dependentSchemas_1.default, limitContains_1.default];
 	next.default = next$1;
 	
@@ -16160,9 +16754,9 @@ function requireUnevaluatedProperties () {
 	if (hasRequiredUnevaluatedProperties) return unevaluatedProperties;
 	hasRequiredUnevaluatedProperties = 1;
 	Object.defineProperty(unevaluatedProperties, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
-	const names_1 = requireNames();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
+	const names_1 = /*@__PURE__*/ requireNames();
 	const error = {
 	    message: "must NOT have unevaluated properties",
 	    params: ({ params }) => (0, codegen_1._) `{unevaluatedProperty: ${params.unevaluatedProperty}}`,
@@ -16234,8 +16828,8 @@ function requireUnevaluatedItems () {
 	if (hasRequiredUnevaluatedItems) return unevaluatedItems;
 	hasRequiredUnevaluatedItems = 1;
 	Object.defineProperty(unevaluatedItems, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
-	const util_1 = requireUtil();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const error = {
 	    message: ({ params: { len } }) => (0, codegen_1.str) `must NOT have more than ${len} items`,
 	    params: ({ params: { len } }) => (0, codegen_1._) `{limit: ${len}}`,
@@ -16281,8 +16875,8 @@ function requireUnevaluated () {
 	if (hasRequiredUnevaluated) return unevaluated;
 	hasRequiredUnevaluated = 1;
 	Object.defineProperty(unevaluated, "__esModule", { value: true });
-	const unevaluatedProperties_1 = requireUnevaluatedProperties();
-	const unevaluatedItems_1 = requireUnevaluatedItems();
+	const unevaluatedProperties_1 = /*@__PURE__*/ requireUnevaluatedProperties();
+	const unevaluatedItems_1 = /*@__PURE__*/ requireUnevaluatedItems();
 	const unevaluated$1 = [unevaluatedProperties_1.default, unevaluatedItems_1.default];
 	unevaluated.default = unevaluated$1;
 	
@@ -16299,7 +16893,7 @@ function requireFormat$1 () {
 	if (hasRequiredFormat$1) return format;
 	hasRequiredFormat$1 = 1;
 	Object.defineProperty(format, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
 	const error = {
 	    message: ({ schemaCode }) => (0, codegen_1.str) `must match format "${schemaCode}"`,
 	    params: ({ schemaCode }) => (0, codegen_1._) `{format: ${schemaCode}}`,
@@ -16398,7 +16992,7 @@ function requireFormat () {
 	if (hasRequiredFormat) return format$1;
 	hasRequiredFormat = 1;
 	Object.defineProperty(format$1, "__esModule", { value: true });
-	const format_1 = requireFormat$1();
+	const format_1 = /*@__PURE__*/ requireFormat$1();
 	const format = [format_1.default];
 	format$1.default = format;
 	
@@ -16438,14 +17032,14 @@ function requireDraft2020 () {
 	if (hasRequiredDraft2020) return draft2020;
 	hasRequiredDraft2020 = 1;
 	Object.defineProperty(draft2020, "__esModule", { value: true });
-	const core_1 = requireCore();
-	const validation_1 = requireValidation();
-	const applicator_1 = requireApplicator();
-	const dynamic_1 = requireDynamic();
-	const next_1 = requireNext();
-	const unevaluated_1 = requireUnevaluated();
-	const format_1 = requireFormat();
-	const metadata_1 = requireMetadata();
+	const core_1 = /*@__PURE__*/ requireCore();
+	const validation_1 = /*@__PURE__*/ requireValidation();
+	const applicator_1 = /*@__PURE__*/ requireApplicator();
+	const dynamic_1 = /*@__PURE__*/ requireDynamic();
+	const next_1 = /*@__PURE__*/ requireNext();
+	const unevaluated_1 = /*@__PURE__*/ requireUnevaluated();
+	const format_1 = /*@__PURE__*/ requireFormat();
+	const metadata_1 = /*@__PURE__*/ requireMetadata();
 	const draft2020Vocabularies = [
 	    dynamic_1.default,
 	    core_1.default,
@@ -16488,11 +17082,11 @@ function requireDiscriminator () {
 	if (hasRequiredDiscriminator) return discriminator;
 	hasRequiredDiscriminator = 1;
 	Object.defineProperty(discriminator, "__esModule", { value: true });
-	const codegen_1 = requireCodegen();
-	const types_1 = requireTypes();
-	const compile_1 = requireCompile();
-	const ref_error_1 = requireRef_error();
-	const util_1 = requireUtil();
+	const codegen_1 = /*@__PURE__*/ requireCodegen();
+	const types_1 = /*@__PURE__*/ requireTypes();
+	const compile_1 = /*@__PURE__*/ requireCompile();
+	const ref_error_1 = /*@__PURE__*/ requireRef_error();
+	const util_1 = /*@__PURE__*/ requireUtil();
 	const error = {
 	    message: ({ params: { discrError, tagName } }) => discrError === types_1.DiscrError.Tag
 	        ? `tag "${tagName}" must be string`
@@ -17168,10 +17762,10 @@ function require_2020 () {
 	(function (module, exports) {
 		Object.defineProperty(exports, "__esModule", { value: true });
 		exports.MissingRefError = exports.ValidationError = exports.CodeGen = exports.Name = exports.nil = exports.stringify = exports.str = exports._ = exports.KeywordCxt = exports.Ajv2020 = void 0;
-		const core_1 = requireCore$1();
-		const draft2020_1 = requireDraft2020();
-		const discriminator_1 = requireDiscriminator();
-		const json_schema_2020_12_1 = requireJsonSchema202012();
+		const core_1 = /*@__PURE__*/ requireCore$1();
+		const draft2020_1 = /*@__PURE__*/ requireDraft2020();
+		const discriminator_1 = /*@__PURE__*/ requireDiscriminator();
+		const json_schema_2020_12_1 = /*@__PURE__*/ requireJsonSchema202012();
 		const META_SCHEMA_ID = "https://json-schema.org/draft/2020-12/schema";
 		class Ajv2020 extends core_1.default {
 		    constructor(opts = {}) {
@@ -17206,25 +17800,25 @@ function require_2020 () {
 		module.exports.Ajv2020 = Ajv2020;
 		Object.defineProperty(exports, "__esModule", { value: true });
 		exports.default = Ajv2020;
-		var validate_1 = requireValidate();
+		var validate_1 = /*@__PURE__*/ requireValidate();
 		Object.defineProperty(exports, "KeywordCxt", { enumerable: true, get: function () { return validate_1.KeywordCxt; } });
-		var codegen_1 = requireCodegen();
+		var codegen_1 = /*@__PURE__*/ requireCodegen();
 		Object.defineProperty(exports, "_", { enumerable: true, get: function () { return codegen_1._; } });
 		Object.defineProperty(exports, "str", { enumerable: true, get: function () { return codegen_1.str; } });
 		Object.defineProperty(exports, "stringify", { enumerable: true, get: function () { return codegen_1.stringify; } });
 		Object.defineProperty(exports, "nil", { enumerable: true, get: function () { return codegen_1.nil; } });
 		Object.defineProperty(exports, "Name", { enumerable: true, get: function () { return codegen_1.Name; } });
 		Object.defineProperty(exports, "CodeGen", { enumerable: true, get: function () { return codegen_1.CodeGen; } });
-		var validation_error_1 = requireValidation_error();
+		var validation_error_1 = /*@__PURE__*/ requireValidation_error();
 		Object.defineProperty(exports, "ValidationError", { enumerable: true, get: function () { return validation_error_1.default; } });
-		var ref_error_1 = requireRef_error();
+		var ref_error_1 = /*@__PURE__*/ requireRef_error();
 		Object.defineProperty(exports, "MissingRefError", { enumerable: true, get: function () { return ref_error_1.default; } });
 		
 	} (_2020, _2020.exports));
 	return _2020.exports;
 }
 
-var _2020Exports = require_2020();
+var _2020Exports = /*@__PURE__*/ require_2020();
 var Ajv2020 = /*@__PURE__*/getDefaultExportFromCjs(_2020Exports);
 
 var $schema = "https://json-schema.org/draft/2020-12/schema";
@@ -19487,7 +20081,7 @@ function serializeClientMessage(message) {
     catch (error) {
         if (error instanceof Error && error.message.includes("frame exceeds"))
             throw error;
-        throw new Error("Invalid client message: value is not JSON-serializable.");
+        throw new Error("Invalid client message: value is not JSON-serializable.", { cause: error });
     }
 }
 

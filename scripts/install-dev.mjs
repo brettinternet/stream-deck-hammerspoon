@@ -73,7 +73,7 @@ async function requireDirectory(path, description) {
     current = await stat(path);
   } catch (error) {
     if (error.code === "ENOENT") {
-      throw new Error(`${description} directory not found at ${path}`);
+      throw new Error(`${description} directory not found at ${path}`, { cause: error });
     }
     throw error;
   }

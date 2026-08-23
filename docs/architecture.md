@@ -213,7 +213,7 @@ Each record is intentionally short but complete. Reversibility describes what ca
 - **Problem:** Plugin TypeScript, compiled Stream Deck files, reusable Lua, protocol schema, and documentation need one reproducible repository boundary without mixing process-owned files.
 - **Choice:** Use a root Bun workspace/package. Keep source under `plugin/`, the compiled artifact under `plugin/com.brettinternet.hammerspoon.sdPlugin/`, Lua under `hammerspoon/streamdeck/`, schema under `protocol/schema/`, docs under `docs/`, and Backlog.md data under `backlog/` only when supported.
 - **Alternatives:** Separate repositories; a plugin-only repository with Lua elsewhere; putting compiled files beside source; a Node package manager instead of Bun.
-- **Tradeoffs / consequences:** One repository makes protocol and cross-process changes reviewable together and preserves an exact packaging boundary. It requires contributors to respect source-versus-artifact ownership and the pinned mise runtimes (Bun 1.3.14, Node 24.18.0, Lua 5.4.8).
+- **Tradeoffs / consequences:** One repository makes protocol and cross-process changes reviewable together and preserves an exact packaging boundary. It requires contributors to respect source-versus-artifact ownership and the pinned mise runtimes (Bun 1.4.0, Node 24.19.0, Lua 5.4.8).
 - **Reversibility:** Directory ownership can be split later through a deliberate repository migration. Moving files ad hoc would break build/package boundaries and is not a v1-compatible change.
 
 ### ADR-006: JSON Schema owns the protocol contract

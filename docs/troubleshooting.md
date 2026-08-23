@@ -11,14 +11,14 @@ bun run check
 bun run test
 bun run build
 mise exec lua -- lua -e 'assert(loadfile("hammerspoon/streamdeck/init.lua"))'
-bunx --package @elgato/cli@1.7.4 streamdeck validate plugin/com.brettinternet.hammerspoon.sdPlugin
+bunx --package @elgato/cli@1.9.0 streamdeck validate plugin/com.brettinternet.hammerspoon.sdPlugin
 ```
 
 Then confirm the Lua module is available to Hammerspoon, the bridge is running, and the linked plugin is restarted with the official CLI:
 
 ```sh
-bunx --package @elgato/cli@1.7.4 streamdeck link plugin/com.brettinternet.hammerspoon.sdPlugin
-bunx --package @elgato/cli@1.7.4 streamdeck restart com.brettinternet.hammerspoon
+bunx --package @elgato/cli@1.9.0 streamdeck link plugin/com.brettinternet.hammerspoon.sdPlugin
+bunx --package @elgato/cli@1.9.0 streamdeck restart com.brettinternet.hammerspoon
 ```
 
 ## The plugin stays offline

@@ -1353,6 +1353,6 @@ export function serializeClientMessage(message: ClientMessage): string {
     return encoded;
   } catch (error) {
     if (error instanceof Error && error.message.includes("frame exceeds")) throw error;
-    throw new Error("Invalid client message: value is not JSON-serializable.");
+    throw new Error("Invalid client message: value is not JSON-serializable.", { cause: error });
   }
 }
