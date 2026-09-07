@@ -244,6 +244,7 @@ test("application example toggles focused and configured applications", function
       app_name = name,
       hidden = false,
       main_window = {},
+      main_window_calls = 0,
       hide_calls = 0,
       unhide_calls = 0,
       activate_calls = 0,
@@ -261,6 +262,7 @@ test("application example toggles focused and configured applications", function
         return "com.example." .. self.app_name
       end,
       mainWindow = function(self)
+        self.main_window_calls = self.main_window_calls + 1
         return self.main_window
       end,
       activate = function(self, all_windows)
@@ -628,8 +630,11 @@ test("application example toggles focused and configured applications", function
   configured = app
   app.hidden = false
   app.main_window = nil
+  local main_window_calls_before_appearance = app.main_window_calls
   action.appearance(configured_context)
-  assert_indicator("not_running", true, 72)
+  assert_indicator("open", true, 72)
+  assertEqual(app.main_window_calls, main_window_calls_before_appearance,
+    "appearance must not block on Accessibility window inspection")
   local configured_refreshes = configured_context.refreshes
   action.press(configured_context)
   assertEqual(launch_calls, 3, "running applications without a main window must be reopened")

@@ -214,9 +214,6 @@ local function application_window_state(application)
   if application_is_hidden(application) then
     return "hidden"
   end
-  if not application_has_main_window(application) then
-    return "not_running"
-  end
   return "open"
 end
 
