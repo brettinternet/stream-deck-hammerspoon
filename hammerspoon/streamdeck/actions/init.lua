@@ -1,31 +1,5 @@
 local actions = {}
 
-local modules = {
-  application = "streamdeck.actions.application",
-  ["app-windows-to-cursor"] = "streamdeck.actions.app-windows-to-cursor",
-  ["audio-input-router"] = "streamdeck.actions.audio-input-router",
-  ["audio-output-router"] = "streamdeck.actions.audio-output-router",
-  ["clipboard-clean"] = "streamdeck.actions.clipboard-clean",
-  ["clipboard-stash"] = "streamdeck.actions.clipboard-stash",
-  ["desktop-space-cycler"] = "streamdeck.actions.desktop-space-cycler",
-  timer = "streamdeck.actions.timer",
-  ["keep-awake"] = "streamdeck.actions.keep-awake",
-  ["keyboard-layout"] = "streamdeck.actions.keyboard-layout",
-  ["last-application"] = "streamdeck.actions.last-application",
-  ["lock-screen"] = "streamdeck.actions.lock-screen",
-  microphone = "streamdeck.actions.microphone",
-  pomodoro = "streamdeck.actions.pomodoro",
-  spotify = "streamdeck.actions.spotify",
-  ["system-monitor"] = "streamdeck.actions.system-monitor",
-  ["url-launcher"] = "streamdeck.actions.url-launcher",
-  ["url-toggle"] = "streamdeck.actions.url-toggle",
-  ["window-center"] = "streamdeck.actions.window-center",
-  ["window-maximize"] = "streamdeck.actions.window-maximize",
-  ["window-next-screen"] = "streamdeck.actions.window-next-screen",
-  ["window-snap"] = "streamdeck.actions.window-snap",
-  youtube = "streamdeck.actions.youtube",
-}
-
 local names = {
   "application",
   "app-windows-to-cursor",
@@ -51,6 +25,11 @@ local names = {
   "window-snap",
   "youtube",
 }
+
+local modules = {}
+for _, name in ipairs(names) do
+  modules[name] = "streamdeck.actions." .. name
+end
 
 local callback_fields = {
   "press",
