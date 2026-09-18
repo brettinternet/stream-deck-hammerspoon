@@ -4,7 +4,7 @@ The Lua installation includes an optional catalog of ready-to-use actions under 
 
 ## Register actions
 
-Register the complete catalog with one bridge instance:
+Register the standard catalog with one bridge instance. This intentionally omits the opt-in `command` action:
 
 ```lua
 local streamdeck = require("streamdeck")
@@ -14,7 +14,7 @@ actions.registerAll(streamdeck)
 streamdeck.start()
 ```
 
-Copy the complete-catalog snippet above into `~/.hammerspoon/init.lua`, or use the selective form below in an existing configuration.
+Copy the standard-catalog snippet above into `~/.hammerspoon/init.lua`, or use the selective form below in an existing configuration.
 
 To expose only selected actions in Stream Deck, register their stable catalog names:
 
@@ -24,6 +24,7 @@ local actions = require("streamdeck.actions")
 
 actions.register(streamdeck, {
   "application",
+  "command",
   "keep-awake",
   "window-snap",
 })
@@ -62,6 +63,10 @@ This lets an existing configuration preserve local policy or integrations while 
 
 Use **Hammerspoon Toggle** when an action reports meaningful inactive and active states, **Hammerspoon Button** for one-shot actions, and **Hammerspoon Multi-State** for the keypad actions whose `presentationState` selects one of four static images.
 
+### Command runner security
+
+The `command` action is available only through explicit selective registration; `registerAll` omits it. Enabling it allows Stream Deck settings to choose any absolute executable path and arguments with the permissions of Hammerspoon. It invokes `hs.task` directly rather than a shell, but an interpreter such as `/bin/sh` can still execute arbitrary code when configured. Enable it only when you trust the local Stream Deck installation and profiles.
+
 ## Catalog
 
 | Name                   | Action ID                                            | Suggested type | Behavior and setup                                                                                                         |
@@ -72,6 +77,7 @@ Use **Hammerspoon Toggle** when an action reports meaningful inactive and active
 | `audio-output-router`  | `com.brettinternet.hammerspoon.audio-output-router`  | Multi-State / Dial | Keys cycle up to four outputs; dials preview outputs while rotating and switch on press. Disconnected choices are skipped and rejoin automatically. |
 | `clipboard-clean`      | `com.brettinternet.hammerspoon.clipboard-clean`      | Toggle         | Trims leading and trailing whitespace from the text clipboard.                                                             |
 | `clipboard-stash`      | `com.brettinternet.hammerspoon.clipboard-stash`      | Toggle         | Stashes and restores clipboard text independently for each key instance.                                                   |
+| `command` (opt-in)     | `com.brettinternet.hammerspoon.command`              | Button         | Runs an absolute executable path with a JSON array of arguments, directly through `hs.task` without a shell. Defaults to `/usr/bin/pmset` with `["displaysleepnow"]` to sleep the displays without sleeping the Mac. |
 | `desktop-space-cycler` | `com.brettinternet.hammerspoon.desktop-space-cycler` | Multi-State    | Cycles through the first four user desktop spaces on the main screen. Requires Accessibility permission.                   |
 | `timer`                | `com.brettinternet.hammerspoon.timer`               | Toggle         | Starts or cancels a configurable per-key timer with a live countdown, progress bar, and flashing completion background.      |
 | `keep-awake`           | `com.brettinternet.hammerspoon.keep-awake`           | Toggle         | Toggles display sleep prevention with distinct successful on/off sounds.                                                   |

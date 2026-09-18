@@ -1485,6 +1485,8 @@ test("clipboard clean example covers trim, refresh, write errors, and unavailabl
   end, "clipboard unavailable")
 end)
 
+dofile("hammerspoon/tests/command-example.lua")(
+  test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/keyboard-layout-example.lua")(
   test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
 dofile("hammerspoon/tests/url-launcher-example.lua")(

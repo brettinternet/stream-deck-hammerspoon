@@ -96,7 +96,7 @@ return function(test, context, assertTrue, assertFalse, assertEqual, assertSame,
     local catalog = require("streamdeck.actions")
     local all_bridge = bridge()
     local definitions = catalog.registerAll(all_bridge)
-    assertEqual(#definitions, 23, "application must replace the retired app launcher")
+    assertEqual(#definitions, 23, "registerAll must omit the opt-in command runner")
 
     local ids = {}
     for _, definition in ipairs(definitions) do
@@ -123,6 +123,11 @@ return function(test, context, assertTrue, assertFalse, assertEqual, assertSame,
       end
     end
     assertTrue(system_monitor ~= nil, "system monitor must remain in the complete catalog")
+    assertFalse(ids["com.brettinternet.hammerspoon.command"],
+      "arbitrary command execution must require explicit registration")
+    local command_bridge = bridge()
+    catalog.register(command_bridge, { "command" })
+    assertEqual(command_bridge.registrations[1].id, "com.brettinternet.hammerspoon.command")
     assertEqual(system_monitor.settingsSchemaVersion, 1,
       "the property inspector only supports version-one schemas")
     assertEqual(#system_monitor.settingsSchema, 2)

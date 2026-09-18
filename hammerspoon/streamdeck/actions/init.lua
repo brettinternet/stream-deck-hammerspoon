@@ -26,7 +26,10 @@ local names = {
   "youtube",
 }
 
-local modules = {}
+local modules = {
+  -- Arbitrary command execution must be selected explicitly; registerAll omits it.
+  command = "streamdeck.actions.command",
+}
 for _, name in ipairs(names) do
   modules[name] = "streamdeck.actions." .. name
 end
