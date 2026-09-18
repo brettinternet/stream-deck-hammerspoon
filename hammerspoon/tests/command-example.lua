@@ -3,14 +3,6 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     local created = {}
     local start_result = true
     local fake_hs = {
-      json = {
-        decode = function(value)
-          if value == '["displaysleepnow"]' then return { "displaysleepnow" } end
-          if value == '["hello world","--flag"]' then return { "hello world", "--flag" } end
-          if value == "{}" then return {} end
-          error("invalid JSON")
-        end,
-      },
       task = {
         new = function(command, callback, stream_callback, arguments)
           local task = {
@@ -34,12 +26,12 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(action.settingsSchemaVersion, 1)
     assertEqual(#action.settingsSchema, 3)
     assertEqual(action.settingsSchema[2].default, "/usr/bin/pmset")
-    assertEqual(action.settingsSchema[3].default, '["displaysleepnow"]')
+    assertEqual(action.settingsSchema[3].default, "displaysleepnow")
 
     local command_context = context("command", {
       label = "Say hello",
       command = "/usr/bin/printf",
-      arguments = '["hello world","--flag"]',
+      argumentString = [[--message "hello world" --path 'two words' escaped\ value ""]],
     })
     local appearance = action.appearance(command_context)
     assertEqual(appearance.title, "Say hello")
@@ -48,8 +40,13 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     action.press(command_context)
     assertEqual(#created, 1)
     assertEqual(created[1].command, "/usr/bin/printf")
-    assertEqual(created[1].arguments[1], "hello world")
-    assertEqual(created[1].arguments[2], "--flag")
+    assertEqual(#created[1].arguments, 6)
+    assertEqual(created[1].arguments[1], "--message")
+    assertEqual(created[1].arguments[2], "hello world")
+    assertEqual(created[1].arguments[3], "--path")
+    assertEqual(created[1].arguments[4], "two words")
+    assertEqual(created[1].arguments[5], "escaped value")
+    assertEqual(created[1].arguments[6], "")
     assertTrue(created[1].stream_callback(), "output must be drained while the task runs")
     assertEqual(action.appearance(command_context).state, "active")
     assertError(function() action.press(command_context) end, "already running")
@@ -71,25 +68,30 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(created[3].arguments[1], "displaysleepnow")
     created[3].callback(0, "", "")
 
+    local empty_context = context("empty", { command = "/bin/echo", argumentString = "" })
+    action.press(empty_context)
+    assertEqual(#created[4].arguments, 0, "an empty string must run without arguments")
+    created[4].callback(0, "", "")
+
     assertError(function()
-      action.press(context("relative", { command = "echo", arguments = '["displaysleepnow"]' }))
+      action.press(context("relative", { command = "echo", argumentString = "displaysleepnow" }))
     end, "absolute executable path")
     assertError(function()
-      action.press(context("bad-arguments", { command = "/bin/echo", arguments = "not JSON" }))
-    end, "JSON array")
+      action.press(context("unterminated", { command = "/bin/echo", argumentString = [["missing]] }))
+    end, "unterminated quote")
     assertError(function()
-      action.press(context("object-arguments", { command = "/bin/echo", arguments = "{}" }))
-    end, "JSON array")
-    assertEqual(#created, 3, "invalid argument objects must not create a task")
+      action.press(context("incomplete-escape", { command = "/bin/echo", argumentString = "missing\\" }))
+    end, "incomplete escape")
+    assertEqual(#created, 4, "invalid argument strings must not create a task")
 
     start_result = false
     assertError(function()
-      action.press(context("start-failure", { command = "/bin/echo", arguments = '["displaysleepnow"]' }))
+      action.press(context("start-failure", { command = "/bin/echo", argumentString = "displaysleepnow" }))
     end, "failed to start command")
 
     local unavailable = load_fixture("hammerspoon/streamdeck/actions/command.lua", {})
     assertError(function()
       unavailable.registrations[1].press(context("unavailable"))
-    end, "arguments unavailable")
+    end, "runner unavailable")
   end)
 end

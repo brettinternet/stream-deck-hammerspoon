@@ -4,7 +4,7 @@ local helpers = require("streamdeck.helpers")
 
 local DEFAULT_LABEL = "Sleep displays"
 local DEFAULT_COMMAND = "/usr/bin/pmset"
-local DEFAULT_ARGUMENTS = '["displaysleepnow"]'
+local DEFAULT_ARGUMENTS = "displaysleepnow"
 local MAX_ARGUMENTS = 64
 local running_by_instance = {}
 
@@ -16,9 +16,9 @@ local function settings_for(context)
 
   local label = type(settings.label) == "string" and settings.label ~= "" and settings.label or DEFAULT_LABEL
   local command = type(settings.command) == "string" and settings.command ~= "" and settings.command or DEFAULT_COMMAND
-  local arguments = type(settings.arguments) == "string" and settings.arguments ~= ""
-    and settings.arguments or DEFAULT_ARGUMENTS
-  return label, command, arguments
+  local argument_string = type(settings.argumentString) == "string"
+    and settings.argumentString or DEFAULT_ARGUMENTS
+  return label, command, argument_string
 end
 
 local function validate_command(command)
@@ -27,35 +27,76 @@ local function validate_command(command)
   end
 end
 
-local function decode_arguments(encoded)
-  if type(hs) ~= "table" or type(hs.json) ~= "table" or type(hs.json.decode) ~= "function" then
-    error("command arguments unavailable")
-  end
-  if not encoded:match("^%s*%[") or not encoded:match("%]%s*$") then
-    error("arguments must be a JSON array of strings")
+local function parse_arguments(input)
+  if input:find("%z") then
+    error("arguments must not contain null bytes")
   end
 
-  local ok, arguments = pcall(hs.json.decode, encoded)
-  if not ok or type(arguments) ~= "table" then
-    error("arguments must be a JSON array of strings")
+  local arguments = {}
+  local current = {}
+  local current_length = 0
+  local token_started = false
+  local quote
+  local index = 1
+
+  local function append(character)
+    current_length = current_length + #character
+    if current_length > 4096 then
+      error("each argument must be at most 4096 bytes")
+    end
+    current[#current + 1] = character
+    token_started = true
   end
 
-  local count = 0
-  for key, argument in pairs(arguments) do
-    if type(key) ~= "number" or key < 1 or key % 1 ~= 0
-      or type(argument) ~= "string" or #argument > 4096 or argument:find("%z") then
-      error("arguments must be a JSON array of strings")
+  local function finish_argument()
+    if not token_started then return end
+    if #arguments >= MAX_ARGUMENTS then
+      error("arguments must contain at most 64 values")
     end
-    count = count + 1
+    arguments[#arguments + 1] = table.concat(current)
+    current = {}
+    current_length = 0
+    token_started = false
   end
-  if count > MAX_ARGUMENTS or count ~= #arguments then
-    error("arguments must be a JSON array of at most 64 strings")
-  end
-  for index = 1, count do
-    if rawget(arguments, index) == nil then
-      error("arguments must be a dense JSON array")
+
+  while index <= #input do
+    local character = input:sub(index, index)
+    if quote == "single" then
+      if character == "'" then
+        quote = nil
+      else
+        append(character)
+      end
+    elseif quote == "double" then
+      if character == '"' then
+        quote = nil
+      elseif character == "\\" then
+        index = index + 1
+        if index > #input then error("arguments end with an incomplete escape") end
+        append(input:sub(index, index))
+      else
+        append(character)
+      end
+    elseif character:match("%s") then
+      finish_argument()
+    elseif character == "'" then
+      quote = "single"
+      token_started = true
+    elseif character == '"' then
+      quote = "double"
+      token_started = true
+    elseif character == "\\" then
+      index = index + 1
+      if index > #input then error("arguments end with an incomplete escape") end
+      append(input:sub(index, index))
+    else
+      append(character)
     end
+    index = index + 1
   end
+
+  if quote ~= nil then error("arguments contain an unterminated quote") end
+  finish_argument()
   return arguments
 end
 
@@ -76,7 +117,7 @@ return {
   settingsSchema = {
     { type = "text", key = "label", default = DEFAULT_LABEL, maxLength = 32, description = "Text shown on the key." },
     { type = "text", key = "command", default = DEFAULT_COMMAND, maxLength = 1024, description = "Absolute executable path; no shell expansion is performed." },
-    { type = "text", key = "arguments", default = DEFAULT_ARGUMENTS, maxLength = 4096, description = "JSON array of arguments, for example [\"displaysleepnow\"]." },
+    { type = "text", key = "argumentString", label = "Arguments", default = DEFAULT_ARGUMENTS, maxLength = 4096, description = "Space-separated arguments; use quotes or backslashes for spaces. No shell expansion is performed." },
   },
 
   appearance = function(context)
@@ -93,9 +134,9 @@ return {
   end,
 
   press = function(context)
-    local _, command, encoded_arguments = settings_for(context)
+    local _, command, argument_string = settings_for(context)
     validate_command(command)
-    local arguments = decode_arguments(encoded_arguments)
+    local arguments = parse_arguments(argument_string)
     local tasks = task_api()
     local instance_id = context.instanceId
     if running_by_instance[instance_id] ~= nil then
