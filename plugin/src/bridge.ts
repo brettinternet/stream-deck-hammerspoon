@@ -500,16 +500,28 @@ export class BridgeClient extends EventEmitter {
     }
   }
 
-  keyDown(instanceId: string, actionId?: string, settings?: JsonSettings): void {
-    if (!isNonEmptyString(instanceId)) return;
+  private snapshotSettingsForEvent(instanceId: string, settings?: JsonSettings): InstanceSnapshot | undefined {
+    if (!isNonEmptyString(instanceId)) return undefined;
     const snapshot = this.instances.get(instanceId);
     if (snapshot && settings) {
       snapshot.settings = copySettings(settings);
       if (snapshot.actionId) snapshot.settings.actionId = snapshot.actionId;
     }
-    if (!this.authenticated || !snapshot) return;
+    return snapshot;
+  }
+
+  private resolveActionIdForEvent(snapshot: InstanceSnapshot, actionId?: string): string | undefined {
+    if (!this.authenticated) return undefined;
     const effectiveActionId = isNonEmptyString(actionId) ? actionId : snapshot.actionId;
-    if (!effectiveActionId || effectiveActionId !== snapshot.actionId || !this.isKnownAction(effectiveActionId)) return;
+    if (!effectiveActionId || effectiveActionId !== snapshot.actionId || !this.isKnownAction(effectiveActionId)) return undefined;
+    return effectiveActionId;
+  }
+
+  keyDown(instanceId: string, actionId?: string, settings?: JsonSettings): void {
+    const snapshot = this.snapshotSettingsForEvent(instanceId, settings);
+    if (!snapshot) return;
+    const effectiveActionId = this.resolveActionIdForEvent(snapshot, actionId);
+    if (!effectiveActionId) return;
     this.send({
       protocolVersion: PROTOCOL_VERSION,
       type: "keyDown",
@@ -519,15 +531,10 @@ export class BridgeClient extends EventEmitter {
   }
 
   keyUp(instanceId: string, actionId?: string, settings?: JsonSettings): void {
-    if (!isNonEmptyString(instanceId)) return;
-    const snapshot = this.instances.get(instanceId);
-    if (snapshot && settings) {
-      snapshot.settings = copySettings(settings);
-      if (snapshot.actionId) snapshot.settings.actionId = snapshot.actionId;
-    }
-    if (!this.authenticated || !snapshot) return;
-    const effectiveActionId = isNonEmptyString(actionId) ? actionId : snapshot.actionId;
-    if (!effectiveActionId || effectiveActionId !== snapshot.actionId || !this.isKnownAction(effectiveActionId)) return;
+    const snapshot = this.snapshotSettingsForEvent(instanceId, settings);
+    if (!snapshot) return;
+    const effectiveActionId = this.resolveActionIdForEvent(snapshot, actionId);
+    if (!effectiveActionId) return;
     this.send({
       protocolVersion: PROTOCOL_VERSION,
       type: "keyUp",
@@ -562,15 +569,10 @@ export class BridgeClient extends EventEmitter {
     settings?: JsonSettings,
     payload: { ticks: number; pressed: boolean } | { hold: boolean; tapPos: [number, number] } | undefined = undefined,
   ): void {
-    if (!isNonEmptyString(instanceId)) return;
-    const snapshot = this.instances.get(instanceId);
-    if (snapshot && settings) {
-      snapshot.settings = copySettings(settings);
-      if (snapshot.actionId) snapshot.settings.actionId = snapshot.actionId;
-    }
-    if (!this.authenticated || !snapshot) return;
-    const effectiveActionId = isNonEmptyString(actionId) ? actionId : snapshot.actionId;
-    if (!effectiveActionId || effectiveActionId !== snapshot.actionId || !this.isKnownAction(effectiveActionId)) return;
+    const snapshot = this.snapshotSettingsForEvent(instanceId, settings);
+    if (!snapshot) return;
+    const effectiveActionId = this.resolveActionIdForEvent(snapshot, actionId);
+    if (!effectiveActionId) return;
     this.send({
       protocolVersion: PROTOCOL_VERSION,
       type,

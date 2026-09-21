@@ -20409,19 +20409,31 @@ class BridgeClient extends EventEmitter$1 {
             });
         }
     }
-    keyDown(instanceId, actionId, settings) {
+    snapshotSettingsForEvent(instanceId, settings) {
         if (!isNonEmptyString(instanceId))
-            return;
+            return undefined;
         const snapshot = this.instances.get(instanceId);
         if (snapshot && settings) {
             snapshot.settings = copySettings(settings);
             if (snapshot.actionId)
                 snapshot.settings.actionId = snapshot.actionId;
         }
-        if (!this.authenticated || !snapshot)
-            return;
+        return snapshot;
+    }
+    resolveActionIdForEvent(snapshot, actionId) {
+        if (!this.authenticated)
+            return undefined;
         const effectiveActionId = isNonEmptyString(actionId) ? actionId : snapshot.actionId;
         if (!effectiveActionId || effectiveActionId !== snapshot.actionId || !this.isKnownAction(effectiveActionId))
+            return undefined;
+        return effectiveActionId;
+    }
+    keyDown(instanceId, actionId, settings) {
+        const snapshot = this.snapshotSettingsForEvent(instanceId, settings);
+        if (!snapshot)
+            return;
+        const effectiveActionId = this.resolveActionIdForEvent(snapshot, actionId);
+        if (!effectiveActionId)
             return;
         this.send({
             protocolVersion: PROTOCOL_VERSION,
@@ -20431,18 +20443,11 @@ class BridgeClient extends EventEmitter$1 {
         });
     }
     keyUp(instanceId, actionId, settings) {
-        if (!isNonEmptyString(instanceId))
+        const snapshot = this.snapshotSettingsForEvent(instanceId, settings);
+        if (!snapshot)
             return;
-        const snapshot = this.instances.get(instanceId);
-        if (snapshot && settings) {
-            snapshot.settings = copySettings(settings);
-            if (snapshot.actionId)
-                snapshot.settings.actionId = snapshot.actionId;
-        }
-        if (!this.authenticated || !snapshot)
-            return;
-        const effectiveActionId = isNonEmptyString(actionId) ? actionId : snapshot.actionId;
-        if (!effectiveActionId || effectiveActionId !== snapshot.actionId || !this.isKnownAction(effectiveActionId))
+        const effectiveActionId = this.resolveActionIdForEvent(snapshot, actionId);
+        if (!effectiveActionId)
             return;
         this.send({
             protocolVersion: PROTOCOL_VERSION,
@@ -20463,18 +20468,11 @@ class BridgeClient extends EventEmitter$1 {
         this.sendDialEvent(instanceId, "dialUp", actionId, settings);
     }
     sendDialEvent(instanceId, type, actionId, settings, payload = undefined) {
-        if (!isNonEmptyString(instanceId))
+        const snapshot = this.snapshotSettingsForEvent(instanceId, settings);
+        if (!snapshot)
             return;
-        const snapshot = this.instances.get(instanceId);
-        if (snapshot && settings) {
-            snapshot.settings = copySettings(settings);
-            if (snapshot.actionId)
-                snapshot.settings.actionId = snapshot.actionId;
-        }
-        if (!this.authenticated || !snapshot)
-            return;
-        const effectiveActionId = isNonEmptyString(actionId) ? actionId : snapshot.actionId;
-        if (!effectiveActionId || effectiveActionId !== snapshot.actionId || !this.isKnownAction(effectiveActionId))
+        const effectiveActionId = this.resolveActionIdForEvent(snapshot, actionId);
+        if (!effectiveActionId)
             return;
         this.send({
             protocolVersion: PROTOCOL_VERSION,
