@@ -148,20 +148,6 @@ export function extractDeviceMetadata(
   }
 }
 
-function cloneJsonValue(value: JsonValue): JsonValue {
-  if (Array.isArray(value)) {
-    return value.map(cloneJsonValue);
-  }
-  if (value !== null && typeof value === "object") {
-    const copy: JsonObject = {};
-    for (const [key, nested] of Object.entries(value)) {
-      copy[key] = cloneJsonValue(nested);
-    }
-    return copy;
-  }
-  return value;
-}
-
 export const HAMMERSPOON_ACTION_UUID = "com.brettinternet.hammerspoon.action";
 export const HAMMERSPOON_BUTTON_UUID = "com.brettinternet.hammerspoon.button";
 export const HAMMERSPOON_MULTI_STATE_UUID =
@@ -860,7 +846,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
   private settingsFrom(
     value: HammerspoonActionSettings,
   ): HammerspoonActionSettings {
-    const settings = cloneJsonValue(value) as HammerspoonActionSettings;
+    const settings = structuredClone(value);
     if (
       typeof settings.actionId !== "string" ||
       settings.actionId.length === 0
@@ -1352,7 +1338,7 @@ export class HammerspoonAction extends SingletonAction<HammerspoonActionSettings
         copy.gesture = action.gesture;
       }
       if (action.settingsSchema) {
-        copy.settingsSchema = action.settingsSchema.map(cloneJsonValue);
+        copy.settingsSchema = structuredClone(action.settingsSchema);
       }
       if (action.settingsSchemaVersion !== undefined) {
         copy.settingsSchemaVersion = action.settingsSchemaVersion;

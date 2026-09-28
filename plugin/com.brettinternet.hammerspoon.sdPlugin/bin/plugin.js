@@ -20121,25 +20121,8 @@ const SOCKET_HANDSHAKE_TIMEOUT_MS = 5_000;
 function isNonEmptyString(value) {
     return typeof value === "string" && value.length > 0;
 }
-function copyJsonValue(value) {
-    if (Array.isArray(value)) {
-        return value.map(copyJsonValue);
-    }
-    if (value !== null && typeof value === "object") {
-        const copied = {};
-        for (const [key, nested] of Object.entries(value)) {
-            copied[key] = copyJsonValue(nested);
-        }
-        return copied;
-    }
-    return value;
-}
 function copySettings(settings) {
-    const copied = {};
-    for (const [key, value] of Object.entries(settings)) {
-        copied[key] = copyJsonValue(value);
-    }
-    return copied;
+    return structuredClone(settings);
 }
 function copyDeviceMetadata(metadata) {
     return {
@@ -20160,7 +20143,7 @@ function copyAction(action) {
         ...(action.gesture === undefined ? {} : { gesture: action.gesture }),
         ...(action.settingsSchema === undefined
             ? {}
-            : { settingsSchema: action.settingsSchema.map(copyJsonValue) }),
+            : { settingsSchema: structuredClone(action.settingsSchema) }),
         ...(action.settingsSchemaVersion === undefined ? {} : { settingsSchemaVersion: action.settingsSchemaVersion }),
     };
 }
@@ -21297,19 +21280,6 @@ function extractDeviceMetadata(action) {
         return undefined;
     }
 }
-function cloneJsonValue(value) {
-    if (Array.isArray(value)) {
-        return value.map(cloneJsonValue);
-    }
-    if (value !== null && typeof value === "object") {
-        const copy = {};
-        for (const [key, nested] of Object.entries(value)) {
-            copy[key] = cloneJsonValue(nested);
-        }
-        return copy;
-    }
-    return value;
-}
 const HAMMERSPOON_ACTION_UUID = "com.brettinternet.hammerspoon.action";
 const HAMMERSPOON_BUTTON_UUID = "com.brettinternet.hammerspoon.button";
 const HAMMERSPOON_MULTI_STATE_UUID = "com.brettinternet.hammerspoon.multistate";
@@ -21813,7 +21783,7 @@ class HammerspoonAction extends SingletonAction {
         return appearance.presentationState ?? appearance.state;
     }
     settingsFrom(value) {
-        const settings = cloneJsonValue(value);
+        const settings = structuredClone(value);
         if (typeof settings.actionId !== "string" ||
             settings.actionId.length === 0) {
             delete settings.actionId;
@@ -22180,7 +22150,7 @@ class HammerspoonAction extends SingletonAction {
                 copy.gesture = action.gesture;
             }
             if (action.settingsSchema) {
-                copy.settingsSchema = action.settingsSchema.map(cloneJsonValue);
+                copy.settingsSchema = structuredClone(action.settingsSchema);
             }
             if (action.settingsSchemaVersion !== undefined) {
                 copy.settingsSchemaVersion = action.settingsSchemaVersion;
