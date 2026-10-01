@@ -89,18 +89,18 @@ Add that configuration to `~/.hammerspoon/init.lua`, register your actions, and 
 
 ## Official CLI flow
 
-Use the official Stream Deck CLI through Bun's package runner, with the CLI version locked by this repository (`@elgato/cli` 1.9.0). The executable is `streamdeck`; `link` is the CLI's install operation. Run these from the repository root after a successful build:
+Use the official Stream Deck CLI through Bun's package runner, with the CLI version locked by this repository (`@elgato/cli` 1.10.1). The executable is `streamdeck`; `link` is the CLI's install operation. Run these from the repository root after a successful build:
 
 ```sh
-bunx --package @elgato/cli@1.9.0 streamdeck validate plugin/com.brettinternet.hammerspoon.sdPlugin
-bunx --package @elgato/cli@1.9.0 streamdeck pack plugin/com.brettinternet.hammerspoon.sdPlugin
-bunx --package @elgato/cli@1.9.0 streamdeck link plugin/com.brettinternet.hammerspoon.sdPlugin
+bunx --package @elgato/cli@1.10.1 streamdeck validate plugin/com.brettinternet.hammerspoon.sdPlugin
+bunx --package @elgato/cli@1.10.1 streamdeck pack plugin/com.brettinternet.hammerspoon.sdPlugin
+bunx --package @elgato/cli@1.10.1 streamdeck link plugin/com.brettinternet.hammerspoon.sdPlugin
 open com.brettinternet.hammerspoon.streamDeckPlugin
-bunx --package @elgato/cli@1.9.0 streamdeck restart com.brettinternet.hammerspoon
-bunx --package @elgato/cli@1.9.0 streamdeck dev
+bunx --package @elgato/cli@1.10.1 streamdeck restart com.brettinternet.hammerspoon
+bunx --package @elgato/cli@1.10.1 streamdeck dev
 ```
 
-`validate` checks the compiled plugin. `pack` (also named `bundle` by the CLI) creates the distributable `.streamDeckPlugin` package. `link` installs the plugin by linking the compiled directory into the official Stream Deck application. `open com.brettinternet.hammerspoon.streamDeckPlugin` opens the local extension. `restart` reloads the installed plugin. `dev` enables developer mode, which permits debugger attachment and property-inspector debugging; it is not a `--debug` plugin runner. Use the Node inspector or an IDE debugger to attach after enabling developer mode. Consult `bunx --package @elgato/cli@1.9.0 streamdeck --help` for version-specific options.
+`validate` checks the compiled plugin. `pack` (also named `bundle` by the CLI) creates the distributable `.streamDeckPlugin` package. `link` installs the plugin by linking the compiled directory into the official Stream Deck application. `open com.brettinternet.hammerspoon.streamDeckPlugin` opens the local extension. `restart` reloads the installed plugin. `dev` enables developer mode, which permits debugger attachment and property-inspector debugging; it is not a `--debug` plugin runner. Use the Node inspector or an IDE debugger to attach after enabling developer mode. Consult `bunx --package @elgato/cli@1.10.1 streamdeck --help` for version-specific options.
 
 Keep the official Stream Deck application running throughout this flow. Do not substitute a direct USB/HID operation or another hardware controller. The CLI flow can validate, package, install, restart, and enable debug support without a connected deck; hardware/UI completion still requires the official application and a connected device.
 For reproducible versioned plugin and Lua artifacts, checksums, installation, and uninstall steps, use the [release guide](releases.md) and run `bun run release`.
