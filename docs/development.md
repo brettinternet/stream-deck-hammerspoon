@@ -58,6 +58,8 @@ bun run test        # full cross-language gate: plugin Bun tests, then Lua tests
 bun run check       # repository checks, including type and static checks
 ```
 
+Compiled JavaScript bundles and source maps in `plugin/com.brettinternet.hammerspoon.sdPlugin/` are generated and Git-ignored. Commit source and dependency changes, not build outputs. `build`, `watch`, `install:dev`, `validate`, `pack`, and `release` regenerate them as needed; rebuilding during a local install should not dirty the checkout.
+
 Run the Lua load check after changing `hammerspoon/streamdeck/`:
 
 ```sh
