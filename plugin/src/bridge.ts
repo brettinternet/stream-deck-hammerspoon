@@ -208,26 +208,8 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
-function copyJsonValue(value: JsonValue): JsonValue {
-  if (Array.isArray(value)) {
-    return value.map(copyJsonValue);
-  }
-  if (value !== null && typeof value === "object") {
-    const copied: JsonSettings = {};
-    for (const [key, nested] of Object.entries(value)) {
-      copied[key] = copyJsonValue(nested);
-    }
-    return copied;
-  }
-  return value;
-}
-
 function copySettings(settings: JsonSettings): JsonSettings {
-  const copied: JsonSettings = {};
-  for (const [key, value] of Object.entries(settings)) {
-    copied[key] = copyJsonValue(value);
-  }
-  return copied;
+  return structuredClone(settings);
 }
 function copyDeviceMetadata(metadata: DeviceMetadata): DeviceMetadata {
   return {
@@ -249,7 +231,7 @@ function copyAction(action: BridgeAction): BridgeAction {
     ...(action.gesture === undefined ? {} : { gesture: action.gesture }),
     ...(action.settingsSchema === undefined
       ? {}
-      : { settingsSchema: action.settingsSchema.map(copyJsonValue) }),
+      : { settingsSchema: structuredClone(action.settingsSchema) }),
     ...(action.settingsSchemaVersion === undefined ? {} : { settingsSchemaVersion: action.settingsSchemaVersion }),
   };
 }
