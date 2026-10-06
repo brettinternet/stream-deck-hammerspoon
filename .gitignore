@@ -3,6 +3,10 @@ node_modules/
 **/node_modules/
 
 # Build, test, and package outputs
+/plugin/com.brettinternet.hammerspoon.sdPlugin/bin/plugin.js
+/plugin/com.brettinternet.hammerspoon.sdPlugin/bin/plugin.js.map
+/plugin/com.brettinternet.hammerspoon.sdPlugin/ui/property-inspector.js
+/plugin/com.brettinternet.hammerspoon.sdPlugin/ui/property-inspector.js.map
 coverage/
 **/coverage/
 dist/
