@@ -2,9 +2,9 @@
 
 local helpers = require("streamdeck.helpers")
 
-local DEFAULT_LABEL = "Sleep displays"
-local DEFAULT_COMMAND = "/usr/bin/pmset"
-local DEFAULT_ARGUMENTS = "displaysleepnow"
+local DEFAULT_LABEL = "Run command"
+local DEFAULT_COMMAND = ""
+local DEFAULT_ARGUMENTS = ""
 local MAX_ARGUMENTS = 64
 local running_by_instance = {}
 
@@ -127,7 +127,7 @@ return {
       title = label,
       state = running and "active" or "inactive",
       appearanceVersion = 1,
-      icon = helpers.icon("display", {
+      icon = helpers.icon("terminal", {
         foregroundColor = running and helpers.colors.active or helpers.colors.accent,
       }),
     }

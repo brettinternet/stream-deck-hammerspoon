@@ -15,6 +15,7 @@ local names = {
   "lock-screen",
   "microphone",
   "pomodoro",
+  "sleep-displays",
   "spotify",
   "system-monitor",
   "url-launcher",

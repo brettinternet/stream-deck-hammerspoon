@@ -114,6 +114,7 @@ helpers.colors = {
 }
 
 local iconShapes = {
+  terminal = [[<rect x="8" y="13" width="56" height="46" rx="5" fill="none" stroke="currentColor" stroke-width="5"/><path d="m19 26 11 10-11 10M38 46h14" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>]],
   speaker = [[<path d="M14 30h12l14-12v36L26 42H14z" fill="currentColor"/><path d="M47 27a14 14 0 0 1 0 18M53 20a24 24 0 0 1 0 32" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>]],
   headphones = [[<path d="M14 39v-7a22 22 0 0 1 44 0v7" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><rect x="10" y="36" width="14" height="24" rx="6" fill="currentColor"/><rect x="48" y="36" width="14" height="24" rx="6" fill="currentColor"/>]],
   display = [[<rect x="9" y="12" width="54" height="38" rx="5" fill="none" stroke="currentColor" stroke-width="5"/><path d="M27 61h18M36 50v11" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>]],

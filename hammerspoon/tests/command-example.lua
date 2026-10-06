@@ -25,8 +25,9 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(action.id, "com.brettinternet.hammerspoon.command")
     assertEqual(action.settingsSchemaVersion, 1)
     assertEqual(#action.settingsSchema, 3)
-    assertEqual(action.settingsSchema[2].default, "/usr/bin/pmset")
-    assertEqual(action.settingsSchema[3].default, "displaysleepnow")
+    assertEqual(action.settingsSchema[1].default, "Run command")
+    assertEqual(action.settingsSchema[2].default, "")
+    assertEqual(action.settingsSchema[3].default, "")
 
     local command_context = context("command", {
       label = "Say hello",
@@ -63,9 +64,14 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertTrue(command_context.feedbacks[2].message:find("exit 7", 1, true) ~= nil)
 
     local defaults_context = context("defaults")
-    action.press(defaults_context)
-    assertEqual(created[3].command, "/usr/bin/pmset")
-    assertEqual(created[3].arguments[1], "displaysleepnow")
+    assertEqual(action.appearance(defaults_context).title, "Run command")
+    assertEqual(appearance.icon.dataBase64, require("streamdeck.helpers").icon("terminal", {
+      foregroundColor = require("streamdeck.helpers").colors.accent,
+    }).dataBase64)
+    assertError(function() action.press(defaults_context) end, "absolute executable path")
+    assertEqual(#created, 2, "unconfigured commands must not create a task")
+    action.press(context("no-arguments", { command = "/bin/echo" }))
+    assertEqual(#created[3].arguments, 0)
     created[3].callback(0, "", "")
 
     local empty_context = context("empty", { command = "/bin/echo", argumentString = "" })
@@ -74,7 +80,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     created[4].callback(0, "", "")
 
     assertError(function()
-      action.press(context("relative", { command = "echo", argumentString = "displaysleepnow" }))
+      action.press(context("relative", { command = "echo", argumentString = "hello" }))
     end, "absolute executable path")
     assertError(function()
       action.press(context("unterminated", { command = "/bin/echo", argumentString = [["missing]] }))
@@ -86,12 +92,12 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
 
     start_result = false
     assertError(function()
-      action.press(context("start-failure", { command = "/bin/echo", argumentString = "displaysleepnow" }))
+      action.press(context("start-failure", { command = "/bin/echo", argumentString = "hello" }))
     end, "failed to start command")
 
     local unavailable = load_fixture("hammerspoon/streamdeck/actions/command.lua", {})
     assertError(function()
-      unavailable.registrations[1].press(context("unavailable"))
+      unavailable.registrations[1].press(context("unavailable", { command = "/bin/echo" }))
     end, "runner unavailable")
   end)
 end
