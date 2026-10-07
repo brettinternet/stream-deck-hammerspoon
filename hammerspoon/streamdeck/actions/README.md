@@ -63,6 +63,8 @@ This lets an existing configuration preserve local policy or integrations while 
 
 Use **Hammerspoon Toggle** when an action reports meaningful inactive and active states, **Hammerspoon Button** for one-shot actions, and **Hammerspoon Multi-State** for the keypad actions whose `presentationState` selects one of four static images.
 
+The `command` action supports separate **Long-press command** and **Long-press arguments** settings. Holding a key runs that command instead of the normal command; if the long-press command is empty, it runs the normal command and arguments once. Long-press arguments default to no arguments and are ignored when the long-press command is empty.
+
 ### Command runner security
 
 The `command` action is available only through explicit selective registration; `registerAll` omits it. Enabling it allows Stream Deck settings to choose any absolute executable path and arguments with the permissions of Hammerspoon. It invokes `hs.task` directly rather than a shell, but an interpreter such as `/bin/sh` can still execute arbitrary code when configured. Enable it only when you trust the local Stream Deck installation and profiles.

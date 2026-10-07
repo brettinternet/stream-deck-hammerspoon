@@ -8,7 +8,7 @@ local DEFAULT_ARGUMENTS = ""
 local MAX_ARGUMENTS = 64
 local running_by_instance = {}
 
-local function settings_for(context)
+local function settings_for(context, long_press)
   local settings = type(context.getSettings) == "function" and context:getSettings() or context.settings
   if type(settings) ~= "table" then
     return DEFAULT_LABEL, DEFAULT_COMMAND, DEFAULT_ARGUMENTS
@@ -18,6 +18,11 @@ local function settings_for(context)
   local command = type(settings.command) == "string" and settings.command ~= "" and settings.command or DEFAULT_COMMAND
   local argument_string = type(settings.argumentString) == "string"
     and settings.argumentString or DEFAULT_ARGUMENTS
+  if long_press and type(settings.longPressCommand) == "string" and settings.longPressCommand ~= "" then
+    command = settings.longPressCommand
+    argument_string = type(settings.longPressArgumentString) == "string"
+      and settings.longPressArgumentString or DEFAULT_ARGUMENTS
+  end
   return label, command, argument_string
 end
 
@@ -107,17 +112,51 @@ local function task_api()
   return hs.task
 end
 
+local function run_command(context, command, argument_string)
+  validate_command(command)
+  local arguments = parse_arguments(argument_string)
+  local tasks = task_api()
+  local instance_id = context.instanceId
+  if running_by_instance[instance_id] ~= nil then
+    error("command is already running")
+  end
+
+  local created, task = pcall(tasks.new, command, function(exit_code)
+    running_by_instance[instance_id] = nil
+    if exit_code == 0 then
+      context:success("Command\ncomplete", 850)
+    else
+      context:error("Command failed\n(exit " .. tostring(exit_code) .. ")", 1200)
+    end
+    context:refresh()
+  end, function()
+    return true
+  end, arguments)
+  if not created or task == nil then
+    error("failed to create command task" .. (created and "" or ": " .. tostring(task)))
+  end
+
+  running_by_instance[instance_id] = task
+  local started, result = pcall(task.start, task)
+  if not started or result == false or result == nil then
+    running_by_instance[instance_id] = nil
+    error("failed to start command" .. (started and "" or ": " .. tostring(result)))
+  end
+end
+
 return {
   id = "com.brettinternet.hammerspoon.command",
   name = "Run command",
   description = "Run a configured executable and arguments directly without a shell.",
   category = "System",
-  gesture = "Press: run the configured command",
+  gesture = "Press: run the configured command; hold: run the long-press command, or the normal command if unset",
   settingsSchemaVersion = 1,
   settingsSchema = {
     { type = "text", key = "label", default = DEFAULT_LABEL, maxLength = 32, description = "Text shown on the key." },
     { type = "text", key = "command", default = DEFAULT_COMMAND, maxLength = 1024, description = "Absolute executable path; no shell expansion is performed." },
     { type = "text", key = "argumentString", label = "Arguments", default = DEFAULT_ARGUMENTS, maxLength = 4096, description = "Space-separated arguments; use quotes or backslashes for spaces. No shell expansion is performed." },
+    { type = "text", key = "longPressCommand", label = "Long-press command", default = DEFAULT_COMMAND, maxLength = 1024, description = "Optional absolute executable path for a hold. Leave empty to run the normal command and arguments." },
+    { type = "text", key = "longPressArgumentString", label = "Long-press arguments", default = DEFAULT_ARGUMENTS, maxLength = 4096, description = "Arguments for the long-press command, using the same quoting rules as Arguments." },
   },
 
   appearance = function(context)
@@ -135,34 +174,11 @@ return {
 
   press = function(context)
     local _, command, argument_string = settings_for(context)
-    validate_command(command)
-    local arguments = parse_arguments(argument_string)
-    local tasks = task_api()
-    local instance_id = context.instanceId
-    if running_by_instance[instance_id] ~= nil then
-      error("command is already running")
-    end
+    run_command(context, command, argument_string)
+  end,
 
-    local created, task = pcall(tasks.new, command, function(exit_code)
-      running_by_instance[instance_id] = nil
-      if exit_code == 0 then
-        context:success("Command\ncomplete", 850)
-      else
-        context:error("Command failed\n(exit " .. tostring(exit_code) .. ")", 1200)
-      end
-      context:refresh()
-    end, function()
-      return true
-    end, arguments)
-    if not created or task == nil then
-      error("failed to create command task" .. (created and "" or ": " .. tostring(task)))
-    end
-
-    running_by_instance[instance_id] = task
-    local started, result = pcall(task.start, task)
-    if not started or result == false or result == nil then
-      running_by_instance[instance_id] = nil
-      error("failed to start command" .. (started and "" or ": " .. tostring(result)))
-    end
+  longPress = function(context)
+    local _, command, argument_string = settings_for(context, true)
+    run_command(context, command, argument_string)
   end,
 }
