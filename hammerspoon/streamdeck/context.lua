@@ -23,12 +23,12 @@ local function isAppearanceBadge(value)
   return length ~= nil and length <= 4
 end
 
-local function isAppearanceValue(value)
+local function isBoundedText(value, maximum)
   if type(value) ~= "string" or value == "" then
     return false
   end
   local ok, length = pcall(utf8.len, value)
-  if not ok or length == nil or length > 16 then
+  if not ok or length == nil or length > maximum then
     return false
   end
   return pcall(function()
@@ -39,6 +39,11 @@ local function isAppearanceValue(value)
     end
   end)
 end
+
+local function isAppearanceValue(value)
+  return isBoundedText(value, 16)
+end
+
 local function isPresentationState(value)
   return type(value) == "number"
     and value == value
@@ -72,20 +77,7 @@ local MIN_FEEDBACK_DURATION_MS = 100
 local MAX_FEEDBACK_DURATION_MS = 10000
 
 local function isFeedbackMessage(value)
-  if type(value) ~= "string" or value == "" then
-    return false
-  end
-  local ok, length = pcall(utf8.len, value)
-  if not ok or length == nil or length > MAX_FEEDBACK_MESSAGE_LENGTH then
-    return false
-  end
-  return pcall(function()
-    for _, codePoint in utf8.codes(value) do
-      if (codePoint >= 0 and codePoint <= 0x1f) or (codePoint >= 0x7f and codePoint <= 0x9f) then
-        error("control character")
-      end
-    end
-  end)
+  return isBoundedText(value, MAX_FEEDBACK_MESSAGE_LENGTH)
 end
 
 local function isFeedbackDuration(value)
