@@ -1,5 +1,5 @@
 return function(test, load_fixture, context, assertTrue, assertFalse, assertEqual, assertSame, assertError)
-  test("microphone selects devices, toggles mute, and delivers meeting shortcuts", function()
+  test("microphone controls hardware without changing app mute states", function()
     local default_device
     local devices
     local failure
@@ -37,9 +37,6 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
         return self.muted_state
       end
       function device:inUse()
-        if failure == "in-use-throws" then
-          error("inUse exploded")
-        end
         return self.in_use == true
       end
       function device:setInputMuted(desired)
@@ -95,17 +92,11 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       application = {
         get = function(bundle_id)
           application_calls[#application_calls + 1] = bundle_id
-          if failure == "application-get-throws" then
-            error("application.get exploded")
-          end
           return applications[bundle_id]
         end,
       },
       eventtap = {
         keyStroke = function(modifiers, key, delay, application)
-          if failure == "shortcut-throws" then
-            error("keyStroke exploded")
-          end
           application.muted = not application.muted
           shortcut_calls[#shortcut_calls + 1] = {
             modifiers = modifiers,
@@ -137,10 +128,6 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
       local ok, cause = pcall(callback)
       _G.hs = previous_hs
       return ok, cause
-    end
-
-    local function run_scheduled(timer)
-      return run_with_fake_hs(timer.callback)
     end
 
     local function make_application(bundle_id, running)
@@ -185,14 +172,6 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertEqual(schema[2].type, "select")
     assertEqual(schema[2].options[3].value, "toggleAndPushToTalk")
     assertFalse(type(action.longPress) == "function")
-    assertEqual(schema[3].key, "muteMeetingApps")
-    assertEqual(schema[3].type, "boolean")
-    assertTrue(type(schema[3].description) == "string")
-    assertEqual(schema[4].visibleWhen.key, "muteMeetingApps")
-    assertTrue(schema[4].visibleWhen.equals)
-    assertEqual(schema[7].key, "muteDiscord")
-    assertEqual(schema[7].default, true)
-    assertEqual(schema[7].visibleWhen.key, "muteMeetingApps")
 
     local default_context = context("default", {})
     local appearance = action.appearance(default_context)
@@ -281,149 +260,53 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     action.disappear(default_context)
 
 
-    local meeting_context = context("meeting", { muteMeetingApps = true })
-    local scheduled_timer_count = #scheduled_timers
-    local meeting_refreshes = meeting_context.refreshes
-    action.press(meeting_context)
-    assertEqual(meeting_context.refreshes, meeting_refreshes + 1,
-      "the changed microphone appearance must refresh before meeting shortcuts")
-    assertEqual(#shortcut_calls, 0, "meeting shortcuts must run after the microphone refresh")
-    assertEqual(#scheduled_timers, scheduled_timer_count,
-      "inactive microphones must not schedule meeting-app shortcuts")
-    assertEqual(#shortcut_calls, 0,
-      "meeting shortcuts must not run while the selected microphone is inactive")
-    assertEqual(applications["com.hnc.Discord"].muted, nil,
-      "inactive microphones must not toggle Discord")
-    failure = "in-use-throws"
-    action.press(meeting_context)
-    assertFalse(built_in.muted_state, "failed activity probes must not block microphone changes")
-    assertEqual(#scheduled_timers, scheduled_timer_count,
-      "failed activity probes must not schedule meeting-app shortcuts")
-    assertEqual(#shortcut_calls, 0,
-      "failed activity probes must not toggle meeting apps")
-    failure = nil
-    for _, application in pairs(applications) do
-      application.muted = false
-    end
+    -- Saved integration settings must not revive blind toggles. In particular,
+    -- muting live hardware must not unmute an already-muted Discord.
+    local legacy_settings = {
+      muteMeetingApps = true,
+      muteZoom = true,
+      muteTeams = true,
+      muteSlack = true,
+      muteDiscord = true,
+    }
+    local meeting_context = context("meeting", legacy_settings)
+    applications["com.hnc.Discord"].muted = true
+    applications["com.tinyspeck.slackmacgap"].muted = true
+    applications["us.zoom.xos"].muted = false
+    applications["com.microsoft.teams2"].muted = false
     built_in.in_use = true
-    action.press(meeting_context)
-    meeting_timer = scheduled_timers[#scheduled_timers]
-    assertEqual(meeting_timer.seconds, 0.2)
-    assertTrue(run_scheduled(meeting_timer))
-    assertEqual(#shortcut_calls, 4, "one shortcut per active meeting app and no duplicate Teams delivery")
-    assertEqual(applications["us.zoom.xos"].muted, built_in.muted_state)
-    assertEqual(applications["com.microsoft.teams2"].muted, built_in.muted_state)
-    assertEqual(applications["com.tinyspeck.slackmacgap"].muted, built_in.muted_state)
-    assertEqual(applications["com.hnc.Discord"].muted, built_in.muted_state)
-    assertEqual(shortcut_calls[1].key, "a")
-    assertEqual(shortcut_calls[1].application, applications["us.zoom.xos"])
-    assertEqual(shortcut_calls[2].key, "m")
-    assertEqual(shortcut_calls[2].application, applications["com.microsoft.teams2"])
-    assertEqual(shortcut_calls[3].key, "space")
-    assertEqual(shortcut_calls[3].application, applications["com.tinyspeck.slackmacgap"])
-    assertEqual(shortcut_calls[4].key, "m")
-    assertEqual(shortcut_calls[4].application, applications["com.hnc.Discord"])
-    assertEqual(shortcut_calls[4].modifiers[1], "cmd")
-    assertEqual(shortcut_calls[4].modifiers[2], "shift")
-    assertEqual(shortcut_calls[1].delay, 0)
-    assertEqual(shortcut_calls[1].modifiers[1], "cmd")
-    assertEqual(shortcut_calls[1].modifiers[2], "shift")
-    assertEqual(applications["com.microsoft.teams"].bundle_id, "com.microsoft.teams")
-    assertEqual(#application_calls, 4, "Zoom, new Teams, Slack, and Discord should be checked without focusing them")
-    local legacy_teams_queried = false
-    for _, bundle_id in ipairs(application_calls) do
-      if bundle_id == "com.microsoft.teams" then
-        legacy_teams_queried = true
-        break
-      end
+    local function assert_apps_unchanged()
+      assertTrue(applications["com.hnc.Discord"].muted,
+        "hardware changes must preserve an independent Discord mute")
+      assertTrue(applications["com.tinyspeck.slackmacgap"].muted)
+      assertFalse(applications["us.zoom.xos"].muted,
+        "hardware muting must not toggle a live app either")
+      assertFalse(applications["com.microsoft.teams2"].muted)
+      assertEqual(#shortcut_calls, 0, "hardware control must never send app shortcuts")
+      assertEqual(#application_calls, 0, "hardware control must not access apps")
     end
-    assertFalse(legacy_teams_queried, "legacy Teams should not be queried when new Teams is available")
-
+    local scheduled_timer_count = #scheduled_timers
     action.appear(meeting_context)
-    local external_shortcut_count = #shortcut_calls
-    built_in.muted_state = false
-    assertTrue(run_with_fake_hs(function()
-      built_in.watcher_callback("builtin-uid", "mute", "inpt")
-    end))
-    local external_mute_timer = scheduled_timers[#scheduled_timers]
-    assertTrue(run_scheduled(external_mute_timer))
-    assertEqual(#shortcut_calls, external_shortcut_count + 4,
-      "external system muting must propagate to every enabled meeting app")
-    assertEqual(applications["us.zoom.xos"].muted, built_in.muted_state)
-    assertEqual(applications["com.microsoft.teams2"].muted, built_in.muted_state)
-    assertEqual(applications["com.tinyspeck.slackmacgap"].muted, built_in.muted_state)
-    assertEqual(applications["com.hnc.Discord"].muted, built_in.muted_state)
-
-    local rapid_initial_muted = built_in.muted_state
-    local shortcut_count = #shortcut_calls
-    action.press(meeting_context)
-    local superseded_meeting_timer = scheduled_timers[#scheduled_timers]
-    action.press(meeting_context)
-    assertEqual(built_in.muted_state, rapid_initial_muted,
-      "two rapid presses must restore the microphone's initial state")
-    assertTrue(superseded_meeting_timer.stopped,
-      "a newer microphone transition must supersede the pending integration delivery")
-    assertTrue(run_scheduled(superseded_meeting_timer))
-    assertEqual(#shortcut_calls, shortcut_count,
-      "two rapid presses must cancel every meeting-app toggle")
-    assertEqual(applications["us.zoom.xos"].muted, built_in.muted_state)
-    assertEqual(applications["com.microsoft.teams2"].muted, built_in.muted_state)
-    assertEqual(applications["com.tinyspeck.slackmacgap"].muted, built_in.muted_state)
-    assertEqual(applications["com.hnc.Discord"].muted, built_in.muted_state)
-
-    action.press(meeting_context)
-    local first_odd_timer = scheduled_timers[#scheduled_timers]
-    action.press(meeting_context)
-    action.press(meeting_context)
-    local final_odd_timer = scheduled_timers[#scheduled_timers]
-    assertTrue(first_odd_timer.stopped)
-    assertEqual(final_odd_timer.seconds, 0.2)
-    assertTrue(run_scheduled(first_odd_timer))
-    assertTrue(run_scheduled(final_odd_timer))
-    assertEqual(#shortcut_calls, shortcut_count + 4,
-      "three rapid presses must deliver one toggle to every meeting app")
-    assertEqual(applications["us.zoom.xos"].muted, built_in.muted_state)
-    assertEqual(applications["com.microsoft.teams2"].muted, built_in.muted_state)
-    assertEqual(applications["com.tinyspeck.slackmacgap"].muted, built_in.muted_state)
-    assertEqual(applications["com.hnc.Discord"].muted, built_in.muted_state)
-
-    shortcut_count = #shortcut_calls
-    action.press(meeting_context)
-    local integration_disabled_timer = scheduled_timers[#scheduled_timers]
-    action.press(context("integration-disabled-rapidly", { muteMeetingApps = false }))
-    assertTrue(integration_disabled_timer.stopped)
-    assertTrue(run_scheduled(integration_disabled_timer))
-    assertEqual(#shortcut_calls, shortcut_count,
-      "disabling integration during a rapid pair must cancel pending app toggles")
-
-    action.press(meeting_context)
-    local app_disabled_timer = scheduled_timers[#scheduled_timers]
-    action.press(context("discord-disabled-rapidly", {
-      muteMeetingApps = true,
-      muteDiscord = false,
-    }))
-    assertTrue(app_disabled_timer.stopped)
-    assertTrue(run_scheduled(app_disabled_timer))
-    assertEqual(#shortcut_calls, shortcut_count,
-      "disabling one app during a rapid pair must not leave its stale toggle pending")
-
-    applications["us.zoom.xos"].running = false
-    applications["com.microsoft.teams2"].running = false
-    applications["com.microsoft.teams"].running = false
-    applications["com.tinyspeck.slackmacgap"].running = false
-    applications["com.hnc.Discord"].running = false
-    shortcut_count = #shortcut_calls
-    action.press(meeting_context)
-    assertTrue(run_scheduled(scheduled_timers[#scheduled_timers]))
-    assertEqual(#shortcut_calls, shortcut_count, "unavailable apps must not receive shortcuts")
-    applications["com.hnc.Discord"].running = true
-    action.press(context("discord-disabled", {
-      muteMeetingApps = true,
-      muteDiscord = false,
-    }))
-    assertTrue(run_scheduled(scheduled_timers[#scheduled_timers]))
-    assertEqual(#shortcut_calls, shortcut_count, "disabled Discord integration must not send a shortcut")
-    applications["com.hnc.Discord"].running = false
+    local meeting_refreshes = meeting_context.refreshes
+    for _, muted in ipairs({ true, false }) do
+      built_in.muted_state = muted
+      assertTrue(run_with_fake_hs(function()
+        built_in.watcher_callback("builtin-uid", "mute", "inpt")
+      end))
+      meeting_refreshes = meeting_refreshes + 1
+      assertEqual(meeting_context.refreshes, meeting_refreshes,
+        "external changes must still refresh the visible hardware state")
+      assertEqual(action.appearance(meeting_context).state, muted and "active" or "inactive")
+      assert_apps_unchanged()
+    end
+    for _, muted in ipairs({ true, false }) do
+      action.press(meeting_context)
+      assertEqual(built_in.muted_state, muted)
+      assert_apps_unchanged()
+    end
+    assertEqual(#scheduled_timers, scheduled_timer_count,
+      "legacy integration settings must not schedule deferred app changes")
+    action.disappear(meeting_context)
 
     local push_to_talk = context("push-to-talk", {
       inputDevice = "usb-uid",
@@ -445,72 +328,38 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     action.release(push_to_talk)
     assertFalse(usb.muted_state, "push-to-talk must preserve an already-live microphone")
     assertEqual(#set_calls, set_count, "already-live push-to-talk must not write redundant mute state")
-    applications["us.zoom.xos"].running = true
-    usb.muted_state = true
-    usb.in_use = false
-    local inactive_push_to_talk = context("inactive-push-to-talk", {
-      inputDevice = "usb-uid",
-      mode = "pushToTalk",
-      muteMeetingApps = true,
-      muteZoom = true,
-      muteTeams = false,
-      muteSlack = false,
-      muteDiscord = false,
-    })
-    shortcut_count = #shortcut_calls
-    local inactive_ptt_timer_count = #scheduled_timers
-    action.press(inactive_push_to_talk)
-    assertFalse(usb.muted_state, "push-to-talk must still unmute an inactive microphone")
-    assertEqual(#scheduled_timers, inactive_ptt_timer_count,
-      "inactive push-to-talk must not schedule meeting-app shortcuts")
-    assertEqual(#shortcut_calls, shortcut_count,
-      "inactive push-to-talk must not toggle meeting apps")
-    action.release(inactive_push_to_talk)
-    assertTrue(usb.muted_state, "push-to-talk must restore an inactive microphone")
-    assertEqual(#shortcut_calls, shortcut_count,
-      "restoring inactive push-to-talk must not toggle meeting apps")
-    applications["us.zoom.xos"].running = true
     usb.muted_state = true
     usb.in_use = true
-    local disappearing_push_to_talk = context("disappearing-push-to-talk", {
+    local legacy_push_to_talk = context("legacy-push-to-talk", {
       inputDevice = "usb-uid",
       mode = "pushToTalk",
       muteMeetingApps = true,
       muteZoom = true,
-      muteTeams = false,
-      muteSlack = false,
+      muteTeams = true,
+      muteSlack = true,
+      muteDiscord = true,
     })
-    applications["us.zoom.xos"].muted = true
-    shortcut_count = #shortcut_calls
-    action.press(disappearing_push_to_talk)
-    local ptt_start_timer = scheduled_timers[#scheduled_timers]
-    assertFalse(usb.muted_state, "push-to-talk must unmute before disappearance")
-    assertTrue(run_scheduled(ptt_start_timer))
-    action.disappear(disappearing_push_to_talk)
-    local ptt_restore_timer = scheduled_timers[#scheduled_timers]
+    action.press(legacy_push_to_talk)
+    assertFalse(usb.muted_state, "push-to-talk must unmute hardware while held")
+    assert_apps_unchanged()
+    action.release(legacy_push_to_talk)
+    assertTrue(usb.muted_state, "push-to-talk must restore hardware mute")
+    assert_apps_unchanged()
+    action.press(legacy_push_to_talk)
+    set_count = #set_calls
+    action.disappear(legacy_push_to_talk)
     assertTrue(usb.muted_state, "disappearance must restore a held microphone")
-    assertTrue(run_scheduled(ptt_restore_timer))
-    assertEqual(#shortcut_calls, shortcut_count + 2, "disappearance must restore meeting-app mute")
-    assertEqual(applications["us.zoom.xos"].muted, usb.muted_state)
-    action.release(disappearing_push_to_talk)
-    assertEqual(#shortcut_calls, shortcut_count + 2, "release after disappearance must not restore twice")
-
-    shortcut_count = #shortcut_calls
-    action.press(disappearing_push_to_talk)
-    local quick_ptt_timer = scheduled_timers[#scheduled_timers]
-    action.disappear(disappearing_push_to_talk)
-    assertTrue(quick_ptt_timer.stopped,
-      "restoring push-to-talk inside the quiet period must cancel its app toggle")
-    assertTrue(run_scheduled(quick_ptt_timer))
-    assertEqual(#shortcut_calls, shortcut_count,
-      "quick push-to-talk restoration must not emit stale meeting-app shortcuts")
-    assertEqual(applications["us.zoom.xos"].muted, usb.muted_state)
-    action.release(disappearing_push_to_talk)
-    applications["us.zoom.xos"].running = false
+    assertEqual(#set_calls, set_count + 1)
+    action.release(legacy_push_to_talk)
+    assertEqual(#set_calls, set_count + 1, "release after disappearance must not restore twice")
+    assert_apps_unchanged()
+    assertEqual(#scheduled_timers, scheduled_timer_count,
+      "push-to-talk must not defer app changes")
 
     local combined_mode = context("combined-mode", {
       inputDevice = "usb-uid",
       mode = "toggleAndPushToTalk",
+      muteMeetingApps = true,
     })
     usb.muted_state = true
     set_count = #set_calls
@@ -528,7 +377,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     action.press(combined_mode)
     local hold_timer = scheduled_timers[#scheduled_timers]
     assertEqual(hold_timer.seconds, 0.5)
-    hold_timer.callback()
+    assertTrue(run_with_fake_hs(hold_timer.callback))
     assertFalse(usb.muted_state, "combined mode must unmute while held")
     action.release(combined_mode)
     assertTrue(usb.muted_state, "combined mode must restore mute after a hold")
@@ -536,6 +385,7 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertFalse(usb.muted_state, "combined mode must support push-to-talk from a pedal or dial")
     action.release(combined_mode)
     assertTrue(usb.muted_state, "pedal or dial release must restore mute")
+    assert_apps_unchanged()
 
     failure = "muted-throws"
     assertError(function()
@@ -553,21 +403,6 @@ return function(test, load_fixture, context, assertTrue, assertFalse, assertEqua
     assertError(function()
       action.press(default_context)
     end, "expected true result")
-    failure = "application-get-throws"
-    action.press(meeting_context)
-    local application_failure_timer = scheduled_timers[#scheduled_timers]
-    local application_callback_ok = run_scheduled(application_failure_timer)
-    assertTrue(application_callback_ok, "deferred application failures must not escape the timer callback")
-    assertEqual(meeting_context.feedbacks[#meeting_context.feedbacks].kind, "error")
-    assertEqual(meeting_context.feedbacks[#meeting_context.feedbacks].message, "Meeting app mute failed")
-    failure = "shortcut-throws"
-    applications["us.zoom.xos"].running = true
-    action.press(meeting_context)
-    local shortcut_failure_timer = scheduled_timers[#scheduled_timers]
-    local shortcut_callback_ok = run_scheduled(shortcut_failure_timer)
-    assertTrue(shortcut_callback_ok, "deferred shortcut failures must not escape the timer callback")
-    assertEqual(meeting_context.feedbacks[#meeting_context.feedbacks].kind, "error")
-
     failure = nil
     local missing_context = context("missing", { inputDevice = "missing-uid" })
     assertError(function()

@@ -53,6 +53,12 @@ If Hammerspoon cannot report the old socket's close, this sequence is still safe
 
 Reloading Lua intentionally drops the instance registry, session ID, and instance contexts. Wait for the plugin's bounded reconnect, then confirm it re-authenticates, receives a fresh session ID, requests actions, resends visible instances, and requests appearance. A repeated `instanceAppeared` for an unchanged instance/action only refreshes settings; it must not rerun `appear`. An unknown/stale instance, action, or session ID should be corrected by restarting/reconnecting the two endpoints and selecting a current registered action in the property inspector, not by editing protocol messages manually.
 
+## Microphone mute differs from app mute
+
+The built-in **Microphone mute** action reports and changes only the selected hardware input. **Live** does not mean an app is unmuted; **Muted** does not change an app's own mute indicator. Push-to-talk also leaves app mute states unchanged.
+
+Meeting-app shortcut integration was removed because toggle shortcuts could unmute an already-muted app when the hardware was muted. Saved integration settings are ignored. Update the Lua module and reload Hammerspoon to stop the old integration, including pending shortcuts. External input mute changes (such as Volume Controller changes) still update visible microphone keys.
+
 ## Module cannot be loaded
 
 Check that `~/.hammerspoon/streamdeck/` is a link or copy of the repository's `hammerspoon/streamdeck/` directory, reload Hammerspoon, and run the Lua load check again. A load check does not prove that Hammerspoon has started the server or that callbacks are registered.

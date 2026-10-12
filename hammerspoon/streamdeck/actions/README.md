@@ -86,7 +86,7 @@ The `command` action is available only through explicit selective registration; 
 | `keyboard-layout`      | `com.brettinternet.hammerspoon.keyboard-layout`      | Toggle         | Switches between two enabled layouts selected from refreshable system dropdowns and shows the active layout badge.          |
 | `last-application`     | `com.brettinternet.hammerspoon.last-application`     | Toggle         | Switches between the two most recently active applications.                                                                |
 | `lock-screen`          | `com.brettinternet.hammerspoon.lock-screen`          | Button         | Locks the screen and plays the normal successful press sound.                                                              |
-| `microphone`           | `com.brettinternet.hammerspoon.microphone-toggle`    | Toggle / Pedal | Toggles a selected input, provides push-to-talk, or combines tap-to-toggle with hold-to-talk; follows external input mute changes and can send per-app Zoom, Teams, Slack, and Discord mute shortcuts. |
+| `microphone`           | `com.brettinternet.hammerspoon.microphone-toggle`    | Toggle / Pedal | Toggles a selected input, provides push-to-talk, or combines tap-to-toggle with hold-to-talk; follows external input mute changes without changing app-level mute states. |
 | `pomodoro`             | `com.brettinternet.hammerspoon.pomodoro`             | Toggle         | Press pauses or resumes the focus schedule, hold resets it, and the live phase countdown updates every second.               |
 | `sleep-displays`       | `com.brettinternet.hammerspoon.sleep-displays`       | Button         | Sleeps the displays without putting the Mac to sleep. Uses a fixed `/usr/bin/pmset displaysleepnow` command; no configuration required. |
 | `spotify`              | `com.brettinternet.hammerspoon.spotify`              | Toggle / Dial  | Press launches or toggles playback; artwork shows artist, track, progress, and state while dial rotation controls volume or tracks. |
@@ -98,6 +98,14 @@ The `command` action is available only through explicit selective registration; 
 | `window-maximize`      | `com.brettinternet.hammerspoon.window-maximize`      | Toggle         | Toggles the focused window's zoom state independently for each key. Requires Accessibility permission.                     |
 | `window-next-screen`   | `com.brettinternet.hammerspoon.window-next-screen`   | Button         | Moves the focused window to the next display while preserving its relative frame. Requires Accessibility permission.       |
 | `window-snap`          | `com.brettinternet.hammerspoon.window-snap`          | Toggle         | Cycles the focused window through left, right, and full-screen layouts. Requires Accessibility permission.                 |
+
+### Microphone mute safety
+
+The `microphone` action controls only the selected audio input. Its **Live** / **Muted** display reflects that device, not Discord, Slack, Zoom, or Teams. App mute controls remain independent: unmuting the input or holding push-to-talk will not clear a mute set inside an app.
+
+Meeting-app integration is unavailable. The former shortcut integration blindly toggled apps, so muting an input could unmute an already-muted app. Its settings have been removed; saved `muteMeetingApps`, `muteZoom`, `muteTeams`, `muteSlack`, and `muteDiscord` values are ignored. Reload Hammerspoon after updating the Lua module to stop the old code and its pending shortcuts. Existing microphone keys do not need to be recreated.
+
+A future integration must validate each app's readable mute state and explicit mute controls, verify changes, and reconcile state after reconnects. Unknown or unsupported state must not trigger a blind toggle, and hardware unmute must preserve an independent app mute. No app synchronization is implied by the hardware indicator.
 
 `Network status` reports whether macOS has a primary IPv4 or IPv6 interface; it does not measure upload/download throughput. Disk activity and network byte rates are intentionally excluded because Hammerspoon has no native counter for either and polling command-line tools would add avoidable overhead.
 
