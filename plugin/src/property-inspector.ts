@@ -1,6 +1,5 @@
 import { parseInitialActionInfo } from "./property-inspector-state";
-
-type JsonObject = Record<string, unknown>;
+import { isJsonObject, type JsonObject } from "./json";
 
 type KeyboardEventLike = {
   altKey?: boolean;
@@ -206,10 +205,6 @@ const CATEGORY_ORDER: readonly ActionCategory[] = [
   "System",
   "Media",
 ];
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function parseJsonObject(value: string): JsonObject {
   try {

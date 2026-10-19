@@ -1,8 +1,4 @@
-type JsonObject = Record<string, unknown>;
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isJsonObject } from "./json";
 
 export function parseInitialActionInfo(actionInfo: string): string {
   try {
