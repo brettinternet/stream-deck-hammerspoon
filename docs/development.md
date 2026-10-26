@@ -9,7 +9,7 @@ Current development targets are:
 - Stream Deck SDK documentation 2.0.0
 - Stream Deck 7.1 or newer
 - Node.js 24.19.0 (declared by the root package)
-- `@elgato/streamdeck` 2.1.2
+- `@elgato/streamdeck` 3.0.1
 - Bun 1.4.0 (pinned in root package metadata)
 - Lua 5.4.8 (pinned by mise)
 - A macOS installation of Hammerspoon
