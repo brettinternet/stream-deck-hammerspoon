@@ -833,8 +833,6 @@ function validateSettingsSchema(action: ActionDefinition, actionIndex: number): 
       if (field.default !== undefined && !optionValues.has(field.default)) {
         throw settingsSchemaError(actionIndex, fieldIndex, "default must match a select option");
       }
-    } else if (field.type === "boolean") {
-      // Boolean fields have no kind-specific constraints.
     }
   });
   fields.forEach((field, fieldIndex) => {
