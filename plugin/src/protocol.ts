@@ -1,6 +1,7 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import { inflateSync } from "node:zlib";
 import protocolSchema from "../../protocol/schema/protocol-v1.json";
+import { isJsonObject } from "./json";
 
 export const PROTOCOL_VERSION = 1 as const;
 export const TOUCH_TAP_CANVAS_WIDTH = 800 as const;
@@ -58,7 +59,7 @@ const DEVICE_TYPE_VALUES: Record<string, true> = {
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (!isObject(value)) return false;
+  if (!isJsonObject(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 }
@@ -624,10 +625,6 @@ export function preflightJson(
 const ajv = new Ajv2020({ allErrors: true });
 const validateProtocolMessage = ajv.compile(protocolSchema);
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isJsonValue(value: unknown, seen = new Set<object>()): value is JsonValue {
   if (value === null) {
     return true;
@@ -1153,7 +1150,7 @@ function sanitizeSvg(value: string): string | undefined {
 }
 
 export function isSafeAppearanceIcon(value: unknown): value is AppearanceIcon {
-  if (!isObject(value)) {
+  if (!isJsonObject(value)) {
     return false;
   }
   if (value.kind === "bundled") {
@@ -1235,7 +1232,7 @@ export function parseServerMessage(data: string): ServerMessage {
   } catch {
     throw malformedJson("Cannot parse server message: invalid JSON.");
   }
-  if (!isObject(parsed)) {
+  if (!isJsonObject(parsed)) {
     throw new Error("Invalid server message: expected a JSON object.");
   }
   classifyServerType(parsed.type);
@@ -1325,7 +1322,7 @@ export function parseServerMessage(data: string): ServerMessage {
 }
 
 export function serializeClientMessage(message: ClientMessage): string {
-  if (!isObject(message)) {
+  if (!isJsonObject(message)) {
     throw new Error("Invalid client message: expected a JSON object.");
   }
   classifyClientType(message.type);
