@@ -105,12 +105,12 @@ local function validateGestureThreshold(definition, thresholdField, callbackFiel
     return
   end
   if definition[callbackField] == nil then
-    error("Stream Deck action " .. thresholdField .. " requires " .. callbackField, 3)
+    error("Stream Deck action " .. thresholdField .. " requires " .. callbackField, 4)
   end
   if not isInteger(threshold)
       or threshold < MIN_GESTURE_THRESHOLD_MS
       or threshold > MAX_GESTURE_THRESHOLD_MS then
-    error("Stream Deck action " .. thresholdField .. " must be an integer from 100 through 10000", 3)
+    error("Stream Deck action " .. thresholdField .. " must be an integer from 100 through 10000", 4)
   end
 end
 
