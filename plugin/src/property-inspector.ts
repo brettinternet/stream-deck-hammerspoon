@@ -713,11 +713,7 @@ function numberIsValid(
 }
 
 function stringLength(value: string): number {
-  let length = 0;
-  for (const character of value) {
-    length += character.length > 0 ? 1 : 0;
-  }
-  return length;
+  return [...value].length;
 }
 
 function fieldValueIsValid(field: SettingsField, value: unknown): boolean {
